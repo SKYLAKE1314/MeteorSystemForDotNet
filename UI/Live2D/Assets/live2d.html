@@ -1,0 +1,93 @@
+﻿<!DOCTYPE html>
+<html lang="zh-tw">
+<head>
+    <meta charset="utf-8">
+    <title>Live2Dview</title>
+
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: transparent;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="canvas"></canvas>
+
+    <script src="https://appassets/pixi.min.js"></script>
+    <script src="https://appassets/live2dcubismcore.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pixi-live2d-display@0.4.0/dist/cubism4.min.js"></script>
+
+    <script>
+        (async function () {
+
+            const canvas = document.getElementById("canvas");
+
+            const app = new PIXI.Application({
+                view: canvas,
+                resizeTo: window,
+                transparent: true,
+                resolution: window.devicePixelRatio,
+                autoDensity: true
+            });
+
+            const model = await PIXI.live2d.Live2DModel.from(
+                "https://appassets/kawaiijk/jk%E7%9B%90.model3.json"
+            );
+
+            await model.ready;
+
+            app.stage.addChild(model);
+
+            // =========================
+            // 尺寸 + 位置
+            // =========================
+            const width = app.renderer.width;
+            const height = app.renderer.height;
+
+            const scale = Math.min(width / model.width, height / model.height) * 0.7;
+            model.scale.set(scale);
+
+            model.anchor.set(0.5, 0.5);
+            model.x = width / 2 - 100;
+            model.y = height / 2 - 40;
+
+            // =========================
+            // 滑鼠跟隨
+            // =========================
+            let targetX = 0, targetY = 0;
+            let currentX = 0, currentY = 0;
+
+            window.addEventListener("mousemove", (e) => {
+                targetX = (e.clientX / window.innerWidth) * 2 - 1;
+                targetY = (e.clientY / window.innerHeight) * 2 - 1;
+            });
+
+            app.ticker.add(() => {
+
+                currentX += (targetX - currentX) * 0.08;
+                currentY += (targetY - currentY) * 0.08;
+
+                const core = model.internalModel.coreModel;
+
+                if (!core) return;
+
+                core.setParameterValueById("ParamAngleX", currentX * 30);
+                core.setParameterValueById("ParamAngleY", -currentY * 30);
+
+                core.setParameterValueById("ParamEyeBallX", currentX);
+                core.setParameterValueById("ParamEyeBallY", -currentY);
+
+                core.setParameterValueById("ParamBodyAngleX", currentX * 10);
+                core.setParameterValueById("ParamBodyAngleY", -currentY * 10);
+            });
+            window.addEventListener("mousemove", () => {
+                console.log("move");
+            });
+        })();
+    </script>
+
+</body>
+</html>

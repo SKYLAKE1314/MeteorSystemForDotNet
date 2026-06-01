@@ -1,0 +1,3 @@
+﻿Class DetectionPage
+
+End Class

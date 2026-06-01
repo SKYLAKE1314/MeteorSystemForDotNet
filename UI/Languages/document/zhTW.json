@@ -1,0 +1,15 @@
+{
+  "Nav_Run": "執行",
+  "Nav_AI": "機器學習⌈實驗性⌋",
+  "Nav_Algorithm": "算法設定",
+  "Nav_Setting": "軟體設定",
+
+  "Main_Title": "MeteorSystem by SKYLAKE",
+  "Side_Title": "METEOR SYSTEM",
+
+  "Algo_Title": "目標檢測工具",
+  "Algo_LoadSource": "載入原圖",
+  "Algo_CreateTemplate": "生成模板",
+  "Algo_LoadMatch": "載入比對圖"
+
+}

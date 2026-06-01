@@ -1,0 +1,159 @@
+﻿<Page x:Class="HomePage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+      Background="#1E1E1E"
+      Loaded="Page_Loaded">
+
+    <Grid Margin="10">
+
+        <Grid.RowDefinitions>
+
+            <!-- Toolbar -->
+            <RowDefinition Height="50"/>
+
+            <!-- Main -->
+            <RowDefinition Height="*"/>
+
+        </Grid.RowDefinitions>
+
+        <!-- ========================= -->
+        <!-- Toolbar -->
+        <!-- ========================= -->
+        <Border Grid.Row="0"
+                Background="#252526"
+                BorderBrush="#3C3C3C"
+                BorderThickness="1"
+                CornerRadius="6"
+                Padding="8"
+                Margin="0,0,0,10">
+
+            <StackPanel Orientation="Horizontal">
+
+                <!-- 選擇圖像 -->
+                <Button x:Name="BtnLoadImage"
+                        Content="選擇圖像"
+                        Width="120"
+                        Height="32"
+                        Margin="0,0,10,0"
+                        Click="BtnLoadImage_Click"/>
+
+                <!-- 清空 -->
+                <Button x:Name="BtnClear"
+                        Content="清空"
+                        Width="100"
+                        Height="32"
+                        Click="BtnClear_Click"/>
+
+            </StackPanel>
+
+        </Border>
+
+        <!-- ========================= -->
+        <!-- Main -->
+        <!-- ========================= -->
+        <Grid Grid.Row="1">
+
+            <Grid.ColumnDefinitions>
+
+                <!-- 左 -->
+                <ColumnDefinition Width="2*" />
+
+                <!-- 右 -->
+                <ColumnDefinition Width="3*" />
+
+            </Grid.ColumnDefinitions>
+
+            <!-- ========================= -->
+            <!-- Log -->
+            <!-- ========================= -->
+            <Border Grid.Column="0"
+                    Background="#252526"
+                    BorderBrush="#3C3C3C"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    Padding="6"
+                    Margin="0,0,10,0">
+
+                <Grid>
+
+                    <Grid.RowDefinitions>
+
+                        <RowDefinition Height="40"/>
+                        <RowDefinition Height="*"/>
+
+                    </Grid.RowDefinitions>
+
+                    <!-- Title -->
+                    <TextBlock Text="運行日誌"
+                               Foreground="White"
+                               FontSize="16"
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center"/>
+
+                    <!-- Log -->
+                    <RichTextBox x:Name="rtbLog"
+                                 Grid.Row="1"
+                                 IsReadOnly="True"
+                                 FontFamily="Consolas"
+                                 FontSize="13"
+                                 Background="AliceBlue"
+                                 Foreground="#D4D4D4"
+                                 BorderThickness="0"
+                                 VerticalScrollBarVisibility="Auto"/>
+
+                </Grid>
+
+            </Border>
+
+            <!-- ========================= -->
+            <!-- Render -->
+            <!-- ========================= -->
+            <Border Grid.Column="1"
+                    Background="#252526"
+                    BorderBrush="#3C3C3C"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    Padding="6">
+
+                <Grid>
+
+                    <Grid.RowDefinitions>
+
+                        <RowDefinition Height="40"/>
+                        <RowDefinition Height="*"/>
+
+                    </Grid.RowDefinitions>
+
+                    <!-- Title -->
+                    <TextBlock Text="運行結果"
+                               Foreground="White"
+                               FontSize="16"
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center"/>
+
+                    <!-- Image -->
+                    <Border Grid.Row="1"
+                            Background="#1E1E1E"
+                            BorderBrush="#3C3C3C"
+                            BorderThickness="1"
+                            CornerRadius="4">
+
+                        <Viewbox Stretch="Uniform">
+
+                            <Image x:Name="RenderImage"
+                                   Stretch="Uniform"/>
+
+                        </Viewbox>
+
+                    </Border>
+
+                </Grid>
+
+            </Border>
+
+        </Grid>
+
+    </Grid>
+
+</Page>

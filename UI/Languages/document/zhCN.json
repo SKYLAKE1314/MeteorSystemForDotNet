@@ -1,0 +1,14 @@
+{
+  "Nav_Run": "执行",
+  "Nav_AI": "深度学习⌈测试⌋",
+  "Nav_Algorithm": "算法设置",
+  "Nav_Setting": "软体设置",
+
+  "Main_Title": "MeteorSystem by SKYLAKE",
+  "Side_Title": "METEOR SYSTEM",
+
+  "Algo_Title": "目标检测工具",
+  "Algo_LoadSource": "载入原图",
+  "Algo_CreateTemplate": "生成模板",
+  "Algo_LoadMatch": "载入比对图"
+}

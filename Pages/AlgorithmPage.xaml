@@ -1,0 +1,328 @@
+﻿<Page x:Class="AlgorithmPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      mc:Ignorable="d"
+      Title="AlgorithmPage"
+      Background="#1E1E1E">
+
+    <Grid Background="#1E1E1E">
+
+        <!-- 主布局 -->
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="80"/>
+        </Grid.RowDefinitions>
+
+        <!-- 上方區域 -->
+        <Grid Grid.Row="0">
+
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="220"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 左側控制區 -->
+            <Border Grid.Column="0"
+                    Margin="10"
+                    Background="#2D2D30"
+                    BorderBrush="#3F3F46"
+                    BorderThickness="1"
+                    CornerRadius="5">
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+
+                    <StackPanel Margin="10">
+
+                        <!-- 標題 -->
+                        <TextBlock x:Name="TxtTitle"
+                                   Text="目標匹配工具"
+                                   Foreground="White"
+                                   FontSize="20"
+                                   FontWeight="Bold"
+                                   Margin="0,0,0,20"/>
+
+                        <UniformGrid Columns="2" Margin="0,0,0,15">
+
+                            <UniformGrid.Resources>
+
+                                <Style TargetType="Button">
+                                    <Setter Property="Height" Value="42"/>
+                                    <Setter Property="Margin" Value="5"/>
+                                    <Setter Property="Foreground" Value="White"/>
+                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                    <Setter Property="BorderThickness" Value="0"/>
+                                    <Setter Property="Cursor" Value="Hand"/>
+
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border x:Name="bd"
+                                                        CornerRadius="0"
+                                                        Background="{TemplateBinding Background}">
+
+                                                    <Border.Effect>
+                                                        <DropShadowEffect BlurRadius="10"
+                                                                          ShadowDepth="2"
+                                                                          Opacity="0.25"/>
+                                                    </Border.Effect>
+
+                                                    <ContentPresenter HorizontalAlignment="Center"
+                                                                      VerticalAlignment="Center"/>
+                                                </Border>
+
+                                                <ControlTemplate.Triggers>
+
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="bd" Property="Opacity" Value="0.85"/>
+                                                    </Trigger>
+
+                                                    <Trigger Property="IsPressed" Value="True">
+                                                        <Setter TargetName="bd" Property="Opacity" Value="0.7"/>
+                                                    </Trigger>
+
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+
+                            </UniformGrid.Resources>
+                            <Button x:Name="BtnLoadSource"
+                                    Content="載入原圖"
+                                    Background="#AA4A90E2"
+                                    Click="LoadSource_Click"/>
+                            
+                            <Button x:Name="BtnCreateTemplate"
+                                    Content="生成模板"
+                                    Background="#AA50C878"
+                                    Click="CreateTemplate_Click"/>
+
+                            <Button x:Name="BtnLoadMatch"
+                                    Content="選擇比對圖"
+                                    Background="#AAFF8C42"
+                                    Click="LoadMatch_Click"/>
+
+                            <Button x:Name="BtnOcrRegion"
+                                    Content="OCR區域"
+                                    Background="CadetBlue"
+                                    Click="OcrRegion_Click"/>
+
+                            <Button x:Name="BtnDecodeRegion"
+                                    Content="解码區域"
+                                    Background="LimeGreen"
+                                    Click="DecodeRegion_Click"/>
+
+                            <Button Content="儲存模板"
+                                    Background="#AA9B59B6"
+                                    Click="SaveTemplate_Click"/>
+
+                            <Button Content="載入模板"
+                                    Background="#AAE74C3C"
+                                    Click="LoadTemplate_Click"/>
+
+                        </UniformGrid>
+
+                        <Separator Margin="0,0,0,15"/>
+
+                        <!-- 匹配閾值 -->
+                        <StackPanel Margin="0,0,0,15">
+
+                            <TextBlock Text="匹配閾值"
+                                       Foreground="White"
+                                       Margin="0,0,0,5"/>
+
+                            <Slider x:Name="ThresholdSlider"
+                                    Minimum="0"
+                                    Maximum="1"
+                                    Value="0.8"
+                                    TickFrequency="0.1"/>
+
+                            <TextBlock Text="{Binding ElementName=ThresholdSlider, Path=Value, StringFormat=F2}"
+                                       Foreground="LightGreen"
+                                       HorizontalAlignment="Right"
+                                       Margin="0,5,0,0"/>
+
+                        </StackPanel>
+
+                        <!-- 匹配方法 -->
+                        <TextBlock Text="匹配方法"
+                                   Foreground="White"
+                                   Margin="0,0,0,5"/>
+
+                        <ComboBox x:Name="MatchMethodBox"
+                                  SelectedIndex="0"
+                                  Margin="0,0,0,15">
+
+                            <ComboBoxItem Content="TM_CCOEFF_NORMED"/>
+                            <ComboBoxItem Content="TM_CCORR_NORMED"/>
+                            <ComboBoxItem Content="TM_SQDIFF_NORMED"/>
+
+                        </ComboBox>
+
+                        <!-- ROI -->
+                        <CheckBox x:Name="ChkShowContour"
+                                  Content="模板顯示輪廓"
+                                  IsChecked="True"
+                                  Foreground="White"
+                                  Margin="0,0,0,15"/>
+
+                        <TextBlock Text="ROI資訊"
+                                   Foreground="White"
+                                   Margin="0,10,0,5"/>
+
+                        <TextBox x:Name="RoiText"
+                                 Height="70"
+                                 IsReadOnly="True"
+                                 TextWrapping="Wrap"
+                                 Background="#1E1E1E"
+                                 Foreground="LightBlue"/>
+
+                    </StackPanel>
+
+                </ScrollViewer>
+
+            </Border>
+
+            <!-- 圖像區（保持不變） -->
+            <Grid Grid.Column="1" Margin="10">
+
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="3*"/>
+                    <RowDefinition Height="2*"/>
+                </Grid.RowDefinitions>
+
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="240"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- 原圖 -->
+                <Border x:Name="ViewerBorder"
+        Background="#111111"
+        ClipToBounds="True"
+        MouseWheel="Viewer_MouseWheel"
+        MouseDown="Viewer_MouseDown"
+        MouseMove="Viewer_MouseMove"
+        MouseUp="Viewer_MouseUp">
+
+                    <Grid x:Name="ImageHost"
+          RenderTransformOrigin="0.5,0.5">
+
+                        <Grid.RenderTransform>
+                            <TransformGroup>
+                                <ScaleTransform x:Name="ImageScale"/>
+                                <TranslateTransform x:Name="ImageTranslate"/>
+                            </TransformGroup>
+                        </Grid.RenderTransform>
+
+                        <Image x:Name="SrcImage"
+               Stretch="Uniform"/>
+
+                        <InkCanvas x:Name="RoiCanvas"
+                   Background="Transparent"
+                   EditingMode="None"
+                   MouseLeftButtonDown="RoiCanvas_MouseLeftButtonDown"
+                   MouseMove="RoiCanvas_MouseMove"
+                   MouseLeftButtonUp="RoiCanvas_MouseLeftButtonUp"/>
+
+                    </Grid>
+                </Border>
+
+                <!-- 模板 -->
+                <Border Grid.Row="0"
+                        Grid.Column="1"
+                        Margin="5"
+                        BorderBrush="Orange"
+                        BorderThickness="1"
+                        Background="#111111">
+
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="35"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <Border Background="#2A2A2A">
+                            <TextBlock Text="模板"
+                                       Foreground="Orange"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
+                        </Border>
+
+                        <Image x:Name="TemplateImage"
+                               Grid.Row="1"
+                               Margin="5"
+                               Stretch="Uniform"/>
+                    </Grid>
+
+                </Border>
+
+                <!-- 結果 -->
+                <Border Grid.Row="1"
+                        Grid.ColumnSpan="2"
+                        Margin="5"
+                        BorderBrush="Gray"
+                        BorderThickness="1"
+                        Background="#111111">
+
+                    <Image x:Name="ResultImage" Stretch="Uniform"/>
+
+                </Border>
+
+            </Grid>
+
+        </Grid>
+
+        <!-- 底部狀態（不動） -->
+        <Border Grid.Row="1"
+                Background="#2D2D30"
+                BorderBrush="#3F3F46"
+                BorderThickness="1,1,0,0">
+
+            <Grid Margin="15,10">
+
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel>
+                    <TextBlock Text="匹配分數" Foreground="White"/>
+                    <TextBlock x:Name="ScoreText"
+                               Foreground="LightGreen"
+                               FontSize="24"
+                               FontWeight="Bold"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1">
+                    <TextBlock Text="ROI狀態" Foreground="White"/>
+                    <TextBlock x:Name="RoiStatusText"
+                               Foreground="LightBlue"
+                               FontSize="24"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="模板狀態" Foreground="White"/>
+                    <TextBlock x:Name="TemplateStatusText"
+                               Foreground="Orange"
+                               FontSize="24"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="3">
+                    <TextBlock Text="檢測結果" Foreground="White"/>
+                    <TextBlock x:Name="ResultText"
+                               Foreground="Yellow"
+                               FontSize="28"/>
+                </StackPanel>
+
+            </Grid>
+
+        </Border>
+
+    </Grid>
+
+</Page>

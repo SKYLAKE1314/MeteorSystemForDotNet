@@ -1,0 +1,135 @@
+﻿<Window x:Class="MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:MetroSystemForDotNet"
+        Title="MetroSystem"
+        Height="600"
+        Width="1000"
+        WindowStartupLocation="CenterScreen"
+        Background="#0F1117"
+        WindowStyle="None"  
+    AllowsTransparency="True"
+    ResizeMode="CanResizeWithGrip">
+    <!-- 可調整大小 -->
+
+    <!-- ===== 全域資源 ===== -->
+    <Window.Resources>
+        <SolidColorBrush x:Key="AccentColor" Color="#CBA0FF"/>
+        <SolidColorBrush x:Key="AccentGlow" Color="#80CBA0FF"/>
+        <Style x:Key="NavListBoxStyle" TargetType="ListBox">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled"/>
+        </Style>
+        <Style x:Key="NavItemStyle" TargetType="ListBoxItem">
+            <Setter Property="Height" Value="56"/>
+            <Setter Property="Margin" Value="0,6"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Root"
+                                CornerRadius="12"
+                                Background="#1A1E29"
+                                Padding="16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="4"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Border x:Name="Indicator"
+                                        Width="4"
+                                        CornerRadius="2"
+                                        Background="Transparent"/>
+                                <TextBlock Grid.Column="1"
+                                           Text="{TemplateBinding Content}"
+                                           Foreground="#E6E8EE"
+                                           FontSize="16"
+                                           VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="#23283A"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Indicator"
+                                        Property="Background"
+                                        Value="{StaticResource AccentColor}"/>
+                                <Setter TargetName="Root"
+                                        Property="Background"
+                                        Value="#2A3148"/>
+                                <Setter Property="Foreground"
+                                        Value="{StaticResource AccentColor}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <!-- ===== 主布局 ===== -->
+    <Grid>
+        <!-- ===== 自訂頂部欄 ===== -->
+        <Border x:Name="TitleBar" Background="#161A26" Height="36" VerticalAlignment="Top" CornerRadius="12,12,0,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition/>
+                    <ColumnDefinition Width="120"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="MeteorSystem by SKYLAKE" VerticalAlignment="Center" Foreground="{StaticResource AccentColor}" Margin="12,0,0,0"/>
+                <StackPanel Orientation="Horizontal" Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Button x:Name="MinButton" Width="36" Height="36" Content="—" Background="Transparent" Foreground="AliceBlue" BorderThickness="0"/>
+                    <Button x:Name="MaxButton" Width="36" Height="36" Content="□" Background="Transparent" Foreground="AliceBlue" BorderThickness="0"/>
+                    <Button x:Name="CloseButton" Width="36" Height="36" Content="×" Background="Transparent" Foreground="AliceBlue" BorderThickness="0"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ===== 左右主體布局 ===== -->
+        <Grid Margin="0,36,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="NavColumn" Width="240"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 左側導航欄 -->
+            <Border Grid.Column="0" Background="#161A26" Padding="20" CornerRadius="0,0,0,0">
+                <StackPanel>
+                    <ToggleButton x:Name="CollapseBtn"
+              Width="32"
+              Height="32"
+              Content="☰"
+              Background="Transparent"
+              Foreground="{StaticResource AccentColor}"
+              BorderThickness="0"
+              HorizontalAlignment="Left"
+              Checked="CollapseBtn_Checked"
+              Unchecked="CollapseBtn_Unchecked"/>
+                    <TextBlock x:Name="SideTitle"
+           Text="METEOR SYSTEM"
+           FontSize="18"
+           FontWeight="SemiBold"
+           Foreground="{StaticResource AccentColor}"
+           Margin="8,0,0,24"/>
+                    
+                    <ListBox x:Name="NavList"
+                             Style="{StaticResource NavListBoxStyle}"
+                             ItemContainerStyle="{StaticResource NavItemStyle}"
+                             SelectionChanged="NavList_SelectionChanged">
+                        <ListBoxItem Content="{DynamicResource Nav_Run}" Tag="HomePage"/>
+                        <ListBoxItem Content="{DynamicResource Nav_AI}" Tag="DetectionPage"/>
+                        <ListBoxItem Content="{DynamicResource Nav_Algorithm}" Tag="AlgorithmPage"/>
+                        <ListBoxItem Content="{DynamicResource Nav_Setting}" Tag="SettingPage"/>
+                    </ListBox>
+                </StackPanel>
+            </Border>
+
+            <!-- 主內容區 -->
+            <Border Grid.Column="1" Margin="16" Background="#0F1117" CornerRadius="24">
+                <Frame x:Name="ContentFrame" NavigationUIVisibility="Hidden"/>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>
