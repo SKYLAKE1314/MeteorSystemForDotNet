@@ -17,42 +17,34 @@ Public Class SettingPage
     ' =========================
     Private Sub SettingPage_Loaded(sender As Object, e As RoutedEventArgs)
         _isLoaded = True
+
+        Select Case LanguageManager.CurrentLanguage
+            Case "zhTW"
+                LanguageComboBox.SelectedIndex = 0
+            Case "zhCN"
+                LanguageComboBox.SelectedIndex = 1
+            Case "enUS"
+                LanguageComboBox.SelectedIndex = 2
+            Case Else
+                LanguageComboBox.SelectedIndex = 0
+        End Select
     End Sub
 
     ' =========================
     ' Language Switch
     ' =========================
-    Private Sub LanguageComboBox_SelectionChanged(
-        sender As Object,
-        e As SelectionChangedEventArgs)
+    Private Sub LanguageComboBox_SelectionChanged(sender As Object, e As SelectionChangedEventArgs)
 
-        '  避免設計器觸發
         If DesignerProperties.GetIsInDesignMode(Me) Then Return
-
-        '  避免初始化時觸發
         If Not _isLoaded Then Return
 
-        Dim combo = TryCast(sender, ComboBox)
-        If combo Is Nothing Then Return
-
-        Select Case combo.SelectedIndex
-
-            Case 0
-                LanguageManager.Load("zhTW")
-
-            Case 1
-                LanguageManager.Load("zhCN")
-
-            Case 2
-                LanguageManager.Load("enUS")
-
+        Select Case LanguageComboBox.SelectedIndex
+            Case 0 : LanguageManager.Load("zhTW")
+            Case 1 : LanguageManager.Load("zhCN")
+            Case 2 : LanguageManager.Load("enUS")
         End Select
 
-        ' =========================
-        ' 安全更新 MainWindow UI
-        ' =========================
         Dim main = TryCast(Application.Current?.MainWindow, MainWindow)
-
         If main IsNot Nothing Then
             main.RefreshLanguageUI()
         End If
