@@ -40,6 +40,7 @@ Public Class SettingPage
 
         Select Case LanguageComboBox.SelectedIndex
             Case 0 : LanguageManager.Load("zhTW")
+                Logger.Debug("正體中文")
             Case 1 : LanguageManager.Load("zhCN")
             Case 2 : LanguageManager.Load("enUS")
         End Select

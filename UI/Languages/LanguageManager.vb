@@ -23,14 +23,18 @@
 
         _currentLang = lang
 
+        ' 儲存設定
+        My.Settings.Language = lang
+        My.Settings.Save()
+
         Dim file = IO.Path.Combine(
-            AppDomain.CurrentDomain.BaseDirectory,
-            "UI\Languages\document",
-            $"{lang}.json"
-        )
+        AppDomain.CurrentDomain.BaseDirectory,
+        "UI\Languages\document",
+        $"{lang}.json"
+    )
 
         If Not IO.File.Exists(file) Then
-            _dict = New Dictionary(Of String, String)()
+            _dict = New Dictionary(Of String, String)
             RaiseEvent LanguageChanged(Nothing, EventArgs.Empty)
             Return
         End If
@@ -38,8 +42,7 @@
         Dim json = IO.File.ReadAllText(file)
 
         _dict = System.Text.Json.JsonSerializer.Deserialize(
-            Of Dictionary(Of String, String))(json
-        )
+        Of Dictionary(Of String, String))(json)
 
         RaiseEvent LanguageChanged(Nothing, EventArgs.Empty)
 

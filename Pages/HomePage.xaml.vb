@@ -26,6 +26,8 @@ Class HomePage
 
         Logger.SetWpfRichTextBox(rtbLog)
 
+        AddHandler Logger.LogReceived, AddressOf GlobalLogReceived
+
         Logger.Info("HomePage 已載入")
 
         ' =========================
@@ -152,6 +154,21 @@ Class HomePage
         ' =========================
         RenderImage.Source =
         result.ResultImage.ToWriteableBitmap()
+
+    End Sub
+
+    Private Sub GlobalLogReceived(level As String, msg As String)
+
+        Dispatcher.Invoke(Sub()
+
+                              ' 這裡你可以：
+                              ' 1. 更新本頁 log
+                              ' 2. 或丟到共享 log window
+
+                              rtbLog.AppendText($"[{level}] {msg}" & Environment.NewLine)
+                              rtbLog.ScrollToEnd()
+
+                          End Sub)
 
     End Sub
 

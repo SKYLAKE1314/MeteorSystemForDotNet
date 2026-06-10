@@ -7,7 +7,14 @@ Class Application
 
     Private Async Sub Application_Startup(sender As Object, e As StartupEventArgs) Handles Me.Startup
 
-        LanguageManager.Load("zhTW")
+        ' 讀取上次儲存的語言
+        Dim lang As String = My.Settings.Language
+
+        If String.IsNullOrWhiteSpace(lang) Then
+            lang = "zhTW"
+        End If
+
+        LanguageManager.Load(lang)
         ' =========================
         ' Startup UI
         ' =========================
