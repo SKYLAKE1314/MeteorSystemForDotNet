@@ -43,7 +43,21 @@
                         Content="清空"
                         Width="100"
                         Height="32"
+                        Margin="0,0,10,0"
                         Click="BtnClear_Click"/>
+
+                <Button x:Name="BtnStart"
+                        Content="開始"
+                        Width="100"
+                        Height="32"
+                        Margin="0,0,10,0"
+                        Click="BtnStart_Click"/>
+
+                <Button x:Name="BtnStop"
+                        Content="停止"
+                        Width="100"
+                        Height="32"
+                        Click="BtnStop_Click"/>
 
             </StackPanel>
 

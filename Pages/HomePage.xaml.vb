@@ -13,6 +13,8 @@ Class HomePage
 
     Private _currentMat As Mat
 
+    Private _camera As New CameraLink()
+
     ' =========================================
     ' Page Loaded
     ' =========================================
@@ -169,6 +171,50 @@ Class HomePage
                               rtbLog.ScrollToEnd()
 
                           End Sub)
+
+    End Sub
+
+    Private Sub OnFrameArrived(bitmap As BitmapSource)
+
+        Dispatcher.BeginInvoke(Sub()
+                                   RenderImage.Source = bitmap
+                               End Sub)
+
+    End Sub
+
+    Private Sub Page_Unloaded(sender As Object, e As RoutedEventArgs) Handles Me.Unloaded
+
+        _camera.StopCamera()
+
+    End Sub
+
+    Private Sub BtnStart_Click(sender As Object, e As RoutedEventArgs)
+
+        Try
+            RemoveHandler _camera.FrameArrived, AddressOf OnFrameArrived
+            AddHandler _camera.FrameArrived, AddressOf OnFrameArrived
+
+            _camera.StartCamera()
+
+            Logger.Info("相機已啟動")
+
+        Catch ex As Exception
+            MessageBox.Show(ex.Message)
+        End Try
+
+    End Sub
+
+    Private Sub BtnStop_Click(sender As Object, e As RoutedEventArgs)
+
+        Try
+            RemoveHandler _camera.FrameArrived, AddressOf OnFrameArrived
+            _camera.StopCamera()
+
+            Logger.Info("相機已停止")
+
+        Catch ex As Exception
+            MessageBox.Show(ex.Message)
+        End Try
 
     End Sub
 
