@@ -23,10 +23,10 @@
 
   <ItemGroup>
     <Reference Include="halcondotnet">
-      <HintPath>libs\halcon2405Runtime\dotnet35\halcondotnet.dll</HintPath>
+      <HintPath>..\..\FranceLake_0.1000.1010\MetroSystemForDotNet\libs\halcon2405Runtime\dotnet35\halcondotnet.dll</HintPath>
     </Reference>
     <Reference Include="hdevenginedotnet">
-      <HintPath>libs\halcon2405Runtime\dotnet35\hdevenginedotnet.dll</HintPath>
+      <HintPath>..\..\FranceLake_0.1000.1010\MetroSystemForDotNet\libs\halcon2405Runtime\dotnet35\hdevenginedotnet.dll</HintPath>
     </Reference>
     <Reference Include="MVSDK_Net">
       <HintPath>libs\MVSDKruntime\donet35\MVSDK_Net.dll</HintPath>
