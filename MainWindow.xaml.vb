@@ -27,12 +27,12 @@ Class MainWindow
 
         NavList.SelectedIndex = 0
 
-        Try
-            Dim kawaiiWindow As New KawaiiJK()
-            kawaiiWindow.Show()
-        Catch ex As Exception
-            MessageBox.Show($"開啟live2d失敗: {ex.Message}")
-        End Try
+        'Try
+        '    Dim kawaiiWindow As New KawaiiJK()
+        '    kawaiiWindow.Show()
+        'Catch ex As Exception
+        '    MessageBox.Show($"開啟live2d失敗: {ex.Message}")
+        'End Try
 
         ' ⭐ 加這個
         RefreshLanguageUI()
@@ -48,6 +48,7 @@ Class MainWindow
             {"HomePage", GetType(HomePage)},
             {"DetectionPage", GetType(DetectionPage)},
             {"AlgorithmPage", GetType(AlgorithmPage)},
+            {"ProcessPage", GetType(ProcessPage)},
             {"SettingPage", GetType(SettingPage)}
         }
 
@@ -117,7 +118,8 @@ Class MainWindow
         CType(items(0), ListBoxItem).Content = LanguageManager.T("Nav_Run")
         CType(items(1), ListBoxItem).Content = LanguageManager.T("Nav_AI")
         CType(items(2), ListBoxItem).Content = LanguageManager.T("Nav_Algorithm")
-        CType(items(3), ListBoxItem).Content = LanguageManager.T("Nav_Setting")
+        CType(items(3), ListBoxItem).Content = LanguageManager.T("Nav_Process")
+        CType(items(4), ListBoxItem).Content = LanguageManager.T("Nav_Setting")
 
         SideTitle.Text = LanguageManager.T("Side_Title")
 

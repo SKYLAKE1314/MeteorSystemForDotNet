@@ -1,0 +1,172 @@
+﻿<Page x:Class="ProcessPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      mc:Ignorable="d"
+      d:DesignHeight="650"
+      d:DesignWidth="1100">
+
+    <Grid Margin="15">
+
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- ================= SERVER ================= -->
+        <GroupBox Header="WebSocket Server"
+                  Grid.Row="0"
+                  Margin="0,0,0,10">
+
+            <Grid Margin="10">
+
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="120"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="120"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- IP -->
+                <TextBlock Text="IP:"
+                           VerticalAlignment="Center"/>
+
+                <TextBox x:Name="IpBox"
+                         Grid.Column="1"
+                         Text="127.0.0.1"
+                         Margin="5,0,15,0"/>
+
+                <!-- PORT -->
+                <TextBlock Grid.Column="2"
+                           Text="Port:"
+                           VerticalAlignment="Center"/>
+
+                <TextBox x:Name="PortBox"
+                         Grid.Column="3"
+                         Text="5000"
+                         Margin="5,0,15,0"/>
+
+                <Button x:Name="BtnStartServer"
+                        Grid.Column="4"
+                        Content="Start"
+                        Width="100"
+                        Margin="0,0,5,0"
+                        Click="StartServer_Click"/>
+
+                <Button x:Name="BtnStopServer"
+                        Grid.Column="5"
+                        Content="Stop"
+                        Width="100"
+                        Click="StopServer_Click"/>
+
+            </Grid>
+
+        </GroupBox>
+
+        <!-- ================= CLIENT ================= -->
+        <GroupBox Header="WebSocket Client"
+                  Grid.Row="1"
+                  Margin="0,0,0,10">
+
+            <Grid Margin="10">
+
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Text="URL:"
+                           VerticalAlignment="Center"/>
+
+                <TextBox x:Name="UrlBox"
+                         Grid.Column="1"
+                         Text="ws://127.0.0.1:5000/ws"
+                         Margin="10,0,10,0"/>
+
+                <Button x:Name="BtnConnect"
+                        Grid.Column="2"
+                        Content="Connect"
+                        Width="100"
+                        Margin="0,0,5,0"
+                        Click="Connect_Click"/>
+
+                <Button x:Name="BtnDisconnect"
+                        Grid.Column="3"
+                        Content="Disconnect"
+                        Width="100"
+                        Click="Disconnect_Click"/>
+
+            </Grid>
+
+        </GroupBox>
+
+        <!-- ================= MESSAGE ================= -->
+        <GroupBox Header="Message Sender"
+                  Grid.Row="2"
+                  Margin="0,0,0,10">
+
+            <Grid Margin="10">
+
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBox x:Name="SendBox"
+                         Height="32"
+                         VerticalContentAlignment="Center"/>
+
+                <Button x:Name="BtnSend"
+                        Grid.Column="1"
+                        Content="Send"
+                        Width="120"
+                        Margin="10,0,0,0"
+                        Click="Send_Click"/>
+
+                <Button x:Name="BtnBroadcast"
+                        Grid.Column="2"
+                        Content="Broadcast"
+                        Width="120"
+                        Margin="10,0,0,0"
+                        Click="Broadcast_Click"/>
+
+            </Grid>
+
+        </GroupBox>
+
+        <!-- ================= LOG ================= -->
+        <GroupBox Header="Log Console"
+                  Grid.Row="3">
+
+            <DockPanel>
+
+                <StackPanel Orientation="Horizontal"
+                            DockPanel.Dock="Top"
+                            HorizontalAlignment="Right">
+
+                    <Button Content="Clear"
+                            Width="80"
+                            Margin="5"
+                            Click="ClearLog_Click"/>
+
+                </StackPanel>
+
+                <ListBox x:Name="LogBox"
+                         Margin="5"
+                         FontFamily="Consolas"/>
+
+            </DockPanel>
+
+        </GroupBox>
+
+    </Grid>
+
+</Page>

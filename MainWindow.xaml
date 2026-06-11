@@ -121,6 +121,7 @@
                         <ListBoxItem Content="{DynamicResource Nav_Run}" Tag="HomePage"/>
                         <ListBoxItem Content="{DynamicResource Nav_AI}" Tag="DetectionPage"/>
                         <ListBoxItem Content="{DynamicResource Nav_Algorithm}" Tag="AlgorithmPage"/>
+                        <ListBoxItem Content="{DynamicResource Nav_Process}" Tag="ProcessPage"/>
                         <ListBoxItem Content="{DynamicResource Nav_Setting}" Tag="SettingPage"/>
                     </ListBox>
                 </StackPanel>
