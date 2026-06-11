@@ -44,6 +44,8 @@ Class HomePage
         Logger.Info(
             "Live2D SubSysPath: " & live2dPath)
 
+        AddHandler CameraManager.CameraChanged, AddressOf OnCameraChanged
+
     End Sub
 
     ' =========================================
@@ -186,6 +188,9 @@ Class HomePage
 
         _camera.StopCamera()
 
+        RemoveHandler CameraManager.CameraChanged, AddressOf OnCameraChanged
+        _camera.StopCamera()
+
     End Sub
 
     Private Sub BtnStart_Click(sender As Object, e As RoutedEventArgs)
@@ -214,6 +219,21 @@ Class HomePage
 
         Catch ex As Exception
             MessageBox.Show(ex.Message)
+        End Try
+
+    End Sub
+
+    Private Sub OnCameraChanged()
+
+        Try
+
+            _camera.StopCamera()
+            _camera.StartCamera()
+
+            Logger.Info("相機已切換")
+
+        Catch ex As Exception
+            Logger.Info(ex.Message)
         End Try
 
     End Sub
