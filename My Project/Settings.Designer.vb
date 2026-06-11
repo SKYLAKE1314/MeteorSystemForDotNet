@@ -77,6 +77,18 @@ Namespace My
                 Me("CameraDeviceId") = value
             End Set
         End Property
+        
+        <Global.System.Configuration.UserScopedSettingAttribute(),  _
+         Global.System.Diagnostics.DebuggerNonUserCodeAttribute(),  _
+         Global.System.Configuration.DefaultSettingValueAttribute("")>  _
+        Public Property CameraName() As String
+            Get
+                Return CType(Me("CameraName"),String)
+            End Get
+            Set
+                Me("CameraName") = value
+            End Set
+        End Property
     End Class
 End Namespace
 

@@ -12,10 +12,24 @@ Public Class CameraLink
 
     Public Sub StartCamera()
 
-        _capture = New VideoCapture(0)
+        Dim index As Integer =
+        CameraManager.FindIndexByDeviceId(
+            My.Settings.CameraDeviceId)
+
+        If index < 0 Then
+
+            Throw New Exception(
+            "找不到已設定的相機")
+
+        End If
+
+        _capture = New VideoCapture(index)
+
         _running = True
 
-        _cameraThread = New Thread(AddressOf CaptureLoop)
+        _cameraThread =
+        New Thread(AddressOf CaptureLoop)
+
         _cameraThread.IsBackground = True
         _cameraThread.Start()
 
@@ -27,16 +41,23 @@ Public Class CameraLink
 
         While _running
 
-            _capture.Read(frame)
+            Try
 
-            If Not frame.Empty() Then
+                If _capture Is Nothing OrElse
+               _capture.IsDisposed Then Exit While
+
+                _capture.Read(frame)
+
+                If frame Is Nothing OrElse frame.Empty() Then Continue While
 
                 Dim bitmap = BitmapSourceConverter.ToBitmapSource(frame)
                 bitmap.Freeze()
 
                 RaiseEvent FrameArrived(bitmap)
 
-            End If
+            Catch ex As Exception
+                Exit While ' 退出循環
+            End Try
 
             Thread.Sleep(10)
 
@@ -48,8 +69,15 @@ Public Class CameraLink
 
         _running = False
 
-        _capture?.Release()
-        _capture?.Dispose()
+        If _cameraThread IsNot Nothing Then
+            _cameraThread.Join(500) '等待 thread 結束
+        End If
+
+        If _capture IsNot Nothing Then
+            _capture.Release()
+            _capture.Dispose()
+            _capture = Nothing
+        End If
 
     End Sub
 
