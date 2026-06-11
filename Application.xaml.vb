@@ -67,7 +67,7 @@ Class Application
 
         AppProgress.Report(70, "初始化相機")
 
-        ' CameraManager.Initialize()  ' 如果你有相機
+        CameraManager.Initialize()
 
         AppProgress.Report(100, "完成")
 

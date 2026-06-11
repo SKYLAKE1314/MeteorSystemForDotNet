@@ -1,7 +1,10 @@
 ﻿Imports System.Management
 Imports OpenCvSharp
+
 Public Class CameraManager
-    Public Shared Event CameraChanged As Action ' 相機列表變更事件
+
+    Public Shared Event CameraChanged As Action
+
     Public Shared Sub NotifyCameraChanged()
         RaiseEvent CameraChanged()
     End Sub
@@ -11,38 +14,32 @@ Public Class CameraManager
         Dim result As New List(Of CameraInfo)
 
         Dim searcher As New ManagementObjectSearcher(
-            "SELECT * FROM Win32_PnPEntity WHERE PNPClass='Camera' OR PNPClass='Image'")
+        "SELECT * FROM Win32_PnPEntity WHERE PNPClass='Camera' OR PNPClass='Image'")
 
         Dim deviceList As New List(Of CameraInfo)
 
         For Each obj As ManagementObject In searcher.Get()
 
-            Dim info As New CameraInfo()
-
-            info.Name =
-                obj("Name")?.ToString()
-
-            info.DeviceId =
-                obj("PNPDeviceID")?.ToString()
-
-            deviceList.Add(info)
+            deviceList.Add(New CameraInfo With {
+            .Name = obj("Name")?.ToString(),
+            .DeviceId = obj("PNPDeviceID")?.ToString()
+        })
 
         Next
 
-        ' 嘗試對應 OpenCV Index
-        Dim currentIndex As Integer = 0
+        ' match OpenCV index
+        Dim index As Integer = 0
 
-        For Each device In deviceList
+        For Each cam In deviceList
 
-            Using cap As New VideoCapture(currentIndex)
+            Using cap As New VideoCapture(index)
 
                 If cap.IsOpened() Then
 
-                    device.Index = currentIndex
+                    cam.Index = index
+                    result.Add(cam)
 
-                    result.Add(device)
-
-                    currentIndex += 1
+                    index += 1
 
                 End If
 
@@ -54,24 +51,33 @@ Public Class CameraManager
 
     End Function
 
-    Public Shared Function FindIndexByDeviceId(
-    deviceId As String) As Integer
+    Public Shared Function FindIndexByDeviceId(deviceId As String) As Integer
 
-        Dim list =
-        GetCameras()
+        Dim list = GetCameras()
 
-        Dim cam =
-        list.FirstOrDefault(
-            Function(x)
-                Return x.DeviceId = deviceId
-            End Function)
+        Dim cam = list.FirstOrDefault(Function(x) x.DeviceId = deviceId)
 
-        If cam Is Nothing Then
-            Return -1
-        End If
+        If cam Is Nothing Then Return -1
 
         Return cam.Index
 
+    End Function
+
+    Private Shared _cameraCache As List(Of CameraInfo)
+
+    Private Shared _initialized As Boolean = False
+
+    Public Shared Sub Initialize()
+
+        If _initialized Then Return
+        _initialized = True
+
+        _cameraCache = GetCameras()
+
+    End Sub
+
+    Public Shared Function GetCachedCameras() As List(Of CameraInfo)
+        Return _cameraCache
     End Function
 
 

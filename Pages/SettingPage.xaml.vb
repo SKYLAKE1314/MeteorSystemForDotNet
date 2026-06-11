@@ -35,16 +35,15 @@ Public Class SettingPage
 
         LoadCameraList()
 
-        Dim savedDeviceId As String =
-        My.Settings.CameraDeviceId
+        Dim savedId As String = My.Settings.CameraDeviceId
 
         For i As Integer = 0 To CameraComboBox.Items.Count - 1
 
             Dim item As ComboBoxItem =
-            CType(CameraComboBox.Items(i), ComboBoxItem)
+        CType(CameraComboBox.Items(i), ComboBoxItem)
 
             If item.Tag IsNot Nothing AndAlso
-           item.Tag.ToString() = savedDeviceId Then
+       item.Tag.ToString() = savedId Then
 
                 CameraComboBox.SelectedIndex = i
                 Exit For
@@ -102,19 +101,17 @@ Public Class SettingPage
 
     Private Sub LoadCameraList()
 
-        CameraComboBox.Items.Clear()
+        _cameraList = CameraManager.GetCachedCameras()
 
-        _cameraList =
-        CameraManager.GetCameras()
+        CameraComboBox.Items.Clear()
 
         For Each cam In _cameraList
 
-            Dim item As New ComboBoxItem With {
+            CameraComboBox.Items.Add(
+        New ComboBoxItem With {
             .Content = cam.Name,
-            .Tag = cam.DeviceId
-        }
-
-            CameraComboBox.Items.Add(item)
+            .Tag = cam.DeviceId    '  存 DeviceId
+        })
 
         Next
 
