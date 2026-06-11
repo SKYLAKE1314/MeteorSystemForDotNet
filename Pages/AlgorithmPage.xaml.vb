@@ -33,35 +33,37 @@ Public Class AlgorithmPage
     Private _roiCtrl As RoiController
     Private _roi As CvRect
 
+
     ' =========================
     ' Loaded
     ' =========================
-    Private Sub AlgorithmPage_Loaded(sender As Object, e As RoutedEventArgs)
+    Private Async Sub AlgorithmPage_Loaded(sender As Object, e As RoutedEventArgs)
 
-        ' =========================
-        ' OCR 永遠初始化（一定要先做）
-        ' =========================
-        _ocr = New PaddleOcrService()
+        RefreshLanguageUI()
 
-        _decoder = New BarcodeDecodeService()
+        Await Task.Run(Sub()
 
-        ' =========================
-        ' Template restore（可選）
-        ' =========================
+                       End Sub)
+
+        ' ⭐ 模板 restore 也背景處理
         Dim lastTemplatePath = LastTemplateStore.Load()
 
         If Not String.IsNullOrWhiteSpace(lastTemplatePath) Then
 
-            Dim data = TemplateManager.LoadTemplate(lastTemplatePath)
+            Dim data = Await Task.Run(Function()
+                                          Return TemplateManager.LoadTemplate(lastTemplatePath)
+                                      End Function)
 
             If data IsNot Nothing Then
-                ApplyTemplate(data.Template, data.Config)
-                TemplateStatusText.Text = "已回復"
+
+                Dispatcher.Invoke(Sub()
+                                      ApplyTemplate(data.Template, data.Config)
+                                      TemplateStatusText.Text = "已回復"
+                                  End Sub)
+
             End If
 
         End If
-
-        RefreshLanguageUI()
 
     End Sub
 
@@ -350,7 +352,7 @@ Public Class AlgorithmPage
     End Sub
 
     ' OCR
-    Private _ocr As PaddleOcrService
+    Private _ocr As PaddleOcrService = AppRuntime.OCR
 
     Private Sub OcrRegion_Click(sender As Object, e As RoutedEventArgs)
 
@@ -393,8 +395,8 @@ Public Class AlgorithmPage
 
     End Sub
 
-    ' decode
-    Private _decoder As BarcodeDecodeService
+#Region "Barcode"
+    Private _decoder As BarcodeDecodeService = AppRuntime.Barcode
     Private Sub DecodeRegion_Click(sender As Object, e As RoutedEventArgs)
 
         Try
@@ -424,7 +426,7 @@ Public Class AlgorithmPage
         End Try
 
     End Sub
-
+#End Region
     ' =========================
     ' Safe run
     ' =========================

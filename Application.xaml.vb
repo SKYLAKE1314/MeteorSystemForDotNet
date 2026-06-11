@@ -69,10 +69,25 @@ Class Application
 
         CameraManager.Initialize()
 
-        AppProgress.Report(100, "完成")
+        AppProgress.Report(80, "初始化OCR")
+
+        AppRuntime.OCR = New PaddleOcrService()
+
+        AppProgress.Report(90, "初始化Barcode")
+
+        AppRuntime.Barcode = New BarcodeDecodeService()
+
+        AppProgress.Report(100, "稍安勿躁~")
 
         System.Threading.Thread.Sleep(300)
 
     End Sub
+
+End Class
+
+Public Class AppRuntime
+
+    Public Shared OCR As PaddleOcrService
+    Public Shared Barcode As BarcodeDecodeService
 
 End Class
