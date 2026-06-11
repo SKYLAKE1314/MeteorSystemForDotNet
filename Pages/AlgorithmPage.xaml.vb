@@ -170,7 +170,12 @@ Public Class AlgorithmPage
     Private Sub RoiCanvas_MouseLeftButtonUp(sender As Object, e As MouseButtonEventArgs)
         _roiCtrl?.MouseUp()
 
-        _roi = _roiCtrl.Roi
+        Try
+            _roi = _roiCtrl.Roi
+        Catch ex As Exception
+            Logger.Error("ROI錯誤：" & ex.Message)
+            MessageBox.Show("ROI錯誤: " & ex.Message)
+        End Try
         RoiStatusText.Text = "已選擇"
     End Sub
 
