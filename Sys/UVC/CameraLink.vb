@@ -11,6 +11,7 @@ Public Class CameraLink
     Private _running As Boolean = False
 
     Public Sub StartCamera()
+        If _running Then Return
 
         Dim index As Integer =
         CameraManager.FindIndexByDeviceId(
@@ -51,15 +52,15 @@ Public Class CameraLink
                 If frame Is Nothing OrElse frame.Empty() Then Continue While
 
                 Dim bitmap = BitmapSourceConverter.ToBitmapSource(frame)
-                bitmap.Freeze()
+
+                bitmap.Freeze() ' ⭐⭐⭐ 在產生 thread 直接 freeze
 
                 RaiseEvent FrameArrived(bitmap)
-
             Catch ex As Exception
                 Exit While ' 退出循環
             End Try
 
-            Thread.Sleep(10)
+            Thread.Sleep(33)
 
         End While
 
@@ -70,7 +71,7 @@ Public Class CameraLink
         _running = False
 
         If _cameraThread IsNot Nothing Then
-            _cameraThread.Join(500) '等待 thread 結束
+            _cameraThread.Join(500)
         End If
 
         If _capture IsNot Nothing Then

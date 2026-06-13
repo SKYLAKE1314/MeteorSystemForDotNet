@@ -1,9 +1,8 @@
 ﻿Imports System.IO
 Imports System.Windows
-
-Imports Microsoft.Web.WebView2.Core
+Imports System.Windows.Threading
 Imports MetroSystemForDotNet
-
+Imports Microsoft.Web.WebView2.Core
 Imports OpenCvSharp
 Imports OpenCvSharp.WpfExtensions
 
@@ -12,9 +11,6 @@ Class HomePage
     Private _initialized As Boolean = False
 
     Private _currentMat As Mat
-
-    Private _camera As New CameraLink()
-
     ' =========================================
     ' Page Loaded
     ' =========================================
@@ -35,16 +31,19 @@ Class HomePage
         ' =========================
         ' Live2D Path
         ' =========================
-        Dim live2dPath As String =
-            Path.Combine(
-                AppDomain.CurrentDomain.BaseDirectory,
-                "UI",
-                "live2d")
+        'Dim live2dPath As String =
+        '    Path.Combine(
+        '        AppDomain.CurrentDomain.BaseDirectory,
+        '        "UI",
+        '        "live2d")
 
-        Logger.Info(
-            "Live2D SubSysPath: " & live2dPath)
+        'Logger.Info(
+        '    "Live2D SubSysPath: " & live2dPath)
 
         AddHandler CameraManager.CameraChanged, AddressOf OnCameraChanged
+
+        AddHandler CameraService.Instance.FrameArrived,
+           AddressOf OnFrameArrived
 
     End Sub
 
@@ -179,62 +178,77 @@ Class HomePage
     Private Sub OnFrameArrived(bitmap As BitmapSource)
 
         Dispatcher.BeginInvoke(Sub()
+
                                    RenderImage.Source = bitmap
+
                                End Sub)
 
     End Sub
 
     Private Sub Page_Unloaded(sender As Object, e As RoutedEventArgs) Handles Me.Unloaded
 
-        _camera.StopCamera()
-
         RemoveHandler CameraManager.CameraChanged, AddressOf OnCameraChanged
-        _camera.StopCamera()
+        RemoveHandler CameraService.Instance.FrameArrived, AddressOf OnFrameArrived
+
+        CameraService.Instance.Stop()   ' ⭐⭐⭐ 必加
+
+        RenderImage.Source = Nothing
 
     End Sub
 
-    Private Sub BtnStart_Click(sender As Object, e As RoutedEventArgs)
+    Private Sub BtnStart_Click(
+    sender As Object,
+    e As RoutedEventArgs)
 
         Try
-            RemoveHandler _camera.FrameArrived, AddressOf OnFrameArrived
-            AddHandler _camera.FrameArrived, AddressOf OnFrameArrived
 
-            _camera.StartCamera()
+            CameraService.Instance.Start()
 
             Logger.Info("相機已啟動")
 
         Catch ex As Exception
+
             MessageBox.Show(ex.Message)
+
         End Try
 
     End Sub
 
-    Private Sub BtnStop_Click(sender As Object, e As RoutedEventArgs)
+    Private Sub BtnStop_Click(
+    sender As Object,
+    e As RoutedEventArgs)
 
         Try
-            RemoveHandler _camera.FrameArrived, AddressOf OnFrameArrived
-            _camera.StopCamera()
+
+            CameraService.Instance.Stop()
 
             Logger.Info("相機已停止")
 
         Catch ex As Exception
+
             MessageBox.Show(ex.Message)
+
         End Try
 
     End Sub
 
     Private Sub OnCameraChanged()
 
-        Try
+        Task.Run(Sub()
 
-            _camera.StopCamera()
-            _camera.StartCamera()
+                     CameraService.Instance.Stop()
+                     CameraService.Instance.Start()
 
-            Logger.Info("相機已切換")
+                 End Sub)
 
-        Catch ex As Exception
-            Logger.Info(ex.Message)
-        End Try
+    End Sub
+    Private Sub UpdateFrame(sender As Object, e As EventArgs)
+
+        Dim frame = CameraService.Instance.LatestFrame
+
+        If frame Is Nothing Then Return
+
+        RenderImage.Source = frame
 
     End Sub
 

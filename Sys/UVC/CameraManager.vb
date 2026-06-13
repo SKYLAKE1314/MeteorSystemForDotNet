@@ -51,13 +51,22 @@ Public Class CameraManager
 
     End Function
 
-    Public Shared Function FindIndexByDeviceId(deviceId As String) As Integer
+    Public Shared Function FindIndexByDeviceId(
+    deviceId As String) As Integer
 
-        Dim list = GetCameras()
+        If _cameraCache Is Nothing Then
+            Return -1
+        End If
 
-        Dim cam = list.FirstOrDefault(Function(x) x.DeviceId = deviceId)
+        Dim cam =
+        _cameraCache.FirstOrDefault(
+            Function(x)
+                Return x.DeviceId = deviceId
+            End Function)
 
-        If cam Is Nothing Then Return -1
+        If cam Is Nothing Then
+            Return -1
+        End If
 
         Return cam.Index
 
@@ -77,8 +86,20 @@ Public Class CameraManager
     End Sub
 
     Public Shared Function GetCachedCameras() As List(Of CameraInfo)
+
+        If _cameraCache Is Nothing Then
+            Return New List(Of CameraInfo)
+        End If
+
         Return _cameraCache
+
     End Function
 
+    Public Shared Sub Refresh()
 
+        _cameraCache = GetCameras()
+
+        NotifyCameraChanged()
+
+    End Sub
 End Class
