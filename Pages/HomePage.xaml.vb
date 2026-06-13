@@ -11,6 +11,11 @@ Class HomePage
     Private _initialized As Boolean = False
 
     Private _currentMat As Mat
+
+    Private _isAlive As Boolean = True
+    Private _isActive As Boolean = False
+    Private _isStreaming As Boolean = False
+
     ' =========================================
     ' Page Loaded
     ' =========================================
@@ -18,7 +23,14 @@ Class HomePage
         sender As Object,
         e As RoutedEventArgs) Handles Me.Loaded
 
-        If _initialized Then Return
+        If _initialized Then
+            ' ⭐ 回來時補訂閱（關鍵）
+            If _isStreaming Then
+                AddHandler CameraService.Instance.FrameArrived, AddressOf OnFrameArrived
+            End If
+
+            Return
+        End If
 
         _initialized = True
 
@@ -40,11 +52,7 @@ Class HomePage
         'Logger.Info(
         '    "Live2D SubSysPath: " & live2dPath)
 
-        AddHandler CameraManager.CameraChanged, AddressOf OnCameraChanged
-
-        AddHandler CameraService.Instance.FrameArrived,
-           AddressOf OnFrameArrived
-
+        _isStreaming = False
     End Sub
 
     ' =========================================
@@ -177,61 +185,61 @@ Class HomePage
 
     Private Sub OnFrameArrived(bitmap As BitmapSource)
 
-        Dispatcher.BeginInvoke(Sub()
+        If RenderImage Is Nothing Then Return
 
-                                   RenderImage.Source = bitmap
-
-                               End Sub)
+        RenderImage.Dispatcher.BeginInvoke(Sub()
+                                               If RenderImage Is Nothing Then Return
+                                               RenderImage.Source = bitmap
+                                           End Sub)
 
     End Sub
-
     Private Sub Page_Unloaded(sender As Object, e As RoutedEventArgs) Handles Me.Unloaded
-
-        RemoveHandler CameraManager.CameraChanged, AddressOf OnCameraChanged
         RemoveHandler CameraService.Instance.FrameArrived, AddressOf OnFrameArrived
 
-        CameraService.Instance.Stop()   ' ⭐⭐⭐ 必加
-
         RenderImage.Source = Nothing
-
     End Sub
 
-    Private Sub BtnStart_Click(
-    sender As Object,
-    e As RoutedEventArgs)
+    Private Sub BtnStart_Click(sender As Object, e As RoutedEventArgs)
 
         Try
 
+            If _isStreaming Then Return
+
+            AddHandler CameraService.Instance.FrameArrived, AddressOf OnFrameArrived
+
             CameraService.Instance.Start()
+
+            _isStreaming = True
 
             Logger.Info("相機已啟動")
 
         Catch ex As Exception
-
             MessageBox.Show(ex.Message)
-
         End Try
 
     End Sub
 
-    Private Sub BtnStop_Click(
-    sender As Object,
-    e As RoutedEventArgs)
+    Private Sub BtnStop_Click(sender As Object, e As RoutedEventArgs)
 
         Try
 
+            If Not _isStreaming Then Return
+
+            RemoveHandler CameraService.Instance.FrameArrived, AddressOf OnFrameArrived
+
             CameraService.Instance.Stop()
+
+            RenderImage.Source = Nothing
+
+            _isStreaming = False
 
             Logger.Info("相機已停止")
 
         Catch ex As Exception
-
             MessageBox.Show(ex.Message)
-
         End Try
 
     End Sub
-
     Private Sub OnCameraChanged()
 
         Task.Run(Sub()

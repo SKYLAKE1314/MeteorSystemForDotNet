@@ -68,7 +68,7 @@ Class Application
         AppProgress.Report(70, "初始化相機")
 
         CameraManager.Initialize()
-
+        CameraService.Instance.Start()
         AppProgress.Report(80, "初始化OCR")
 
         AppRuntime.OCR = New PaddleOcrService()

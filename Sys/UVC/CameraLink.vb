@@ -4,63 +4,58 @@ Imports OpenCvSharp.WpfExtensions
 
 Public Class CameraLink
 
-    Public Event FrameArrived(bitmap As System.Windows.Media.Imaging.BitmapSource)
+    Public Event FrameArrived As Action(Of BitmapSource)
 
     Private _capture As VideoCapture
-    Private _cameraThread As Thread
-    Private _running As Boolean = False
+    Private _thread As Thread
+    Private _running As Boolean
 
     Public Sub StartCamera()
+
         If _running Then Return
 
-        Dim index As Integer =
-        CameraManager.FindIndexByDeviceId(
-            My.Settings.CameraDeviceId)
+        Dim index As Integer = CameraManager.FindIndexByDeviceId(My.Settings.CameraDeviceId)
 
         If index < 0 Then
-
-            Throw New Exception(
-            "找不到已設定的相機")
-
+            Throw New Exception("Camera not found")
         End If
 
         _capture = New VideoCapture(index)
 
+        If Not _capture.IsOpened() Then
+            Throw New Exception("Camera open failed")
+        End If
+
         _running = True
 
-        _cameraThread =
-        New Thread(AddressOf CaptureLoop)
-
-        _cameraThread.IsBackground = True
-        _cameraThread.Start()
+        _thread = New Thread(AddressOf LoopCapture)
+        _thread.IsBackground = True
+        _thread.Start()
 
     End Sub
 
-    Private Sub CaptureLoop()
+    Private Sub LoopCapture()
 
-        Dim frame As New Mat()
+        Dim mat As New Mat()
 
         While _running
 
             Try
 
-                If _capture Is Nothing OrElse
-               _capture.IsDisposed Then Exit While
+                _capture.Read(mat)
 
-                _capture.Read(frame)
+                If mat Is Nothing OrElse mat.Empty() Then Continue While
 
-                If frame Is Nothing OrElse frame.Empty() Then Continue While
+                Dim bmp = BitmapSourceConverter.ToBitmapSource(mat)
+                bmp.Freeze()
 
-                Dim bitmap = BitmapSourceConverter.ToBitmapSource(frame)
+                RaiseEvent FrameArrived(bmp)
 
-                bitmap.Freeze() ' ⭐⭐⭐ 在產生 thread 直接 freeze
-
-                RaiseEvent FrameArrived(bitmap)
-            Catch ex As Exception
-                Exit While ' 退出循環
+            Catch
+                Exit While
             End Try
 
-            Thread.Sleep(33)
+            Thread.Sleep(30)
 
         End While
 
@@ -70,15 +65,14 @@ Public Class CameraLink
 
         _running = False
 
-        If _cameraThread IsNot Nothing Then
-            _cameraThread.Join(500)
-        End If
+        Try
+            _thread?.Join(500)
+        Catch
+        End Try
 
-        If _capture IsNot Nothing Then
-            _capture.Release()
-            _capture.Dispose()
-            _capture = Nothing
-        End If
+        _capture?.Release()
+        _capture?.Dispose()
+        _capture = Nothing
 
     End Sub
 
