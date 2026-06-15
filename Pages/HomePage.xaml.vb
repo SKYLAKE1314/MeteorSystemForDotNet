@@ -86,6 +86,36 @@ Class HomePage
         End Try
 
     End Sub
+#Region "相機觸發"
+    Private Sub BtnGetImg_Click(
+    sender As Object,
+    e As RoutedEventArgs)
+
+        Try
+            '獲取最後一幀
+            Dim frame = CameraService.Instance.LatestFrame
+
+            If frame Is Nothing Then
+                MessageBox.Show("沒有影像")
+                Return
+            End If
+            ' 轉bitmap
+            Dim mat = BitmapSourceToMat(frame)
+
+            _currentMat = mat
+            ShowRender(_currentMat)
+
+            Logger.Info("幀取流-匹配")
+
+        Catch ex As Exception
+
+            MessageBox.Show("例外的錯誤: " + ex.Message)
+
+        End Try
+
+    End Sub
+
+#End Region
 
     ' =========================================
     ' Clear
@@ -133,10 +163,7 @@ Class HomePage
             Return
 
         End If
-
-        ' =========================
-        ' Load Template
-        ' =========================
+        ' 載入模板
         Dim data =
         TemplateManager.LoadTemplate(lastTemplatePath)
 
@@ -148,10 +175,7 @@ Class HomePage
             Return
 
         End If
-
-        ' =========================
-        ' Match
-        ' =========================
+        ' 匹配
         Dim result =
         TemplateMatcher.Match(
             mat,
@@ -160,9 +184,6 @@ Class HomePage
             data.Config.MatchMethod
         )
 
-        ' =========================
-        ' Render
-        ' =========================
         RenderImage.Source =
         result.ResultImage.ToWriteableBitmap()
 

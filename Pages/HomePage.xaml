@@ -59,6 +59,11 @@
                         Height="32"
                         Click="BtnStop_Click"/>
 
+                <Button x:Name="BtnGetImg"
+                        Content="實時檢測"
+                        Width="100"
+                        Height="32"
+                        Click="BtnGetImg_Click"/>
             </StackPanel>
 
         </Border>
