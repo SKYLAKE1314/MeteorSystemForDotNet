@@ -33,7 +33,10 @@ Public Class AlgorithmPage
     Private _roiCtrl As RoiController
     Private _roi As CvRect
 
-
+    ' 視窗
+    Private templateZoom As Double = 1.0
+    Private templateIsPanning As Boolean = False
+    Private templateLastPanPoint As WpfPoint
     ' =========================
     ' Loaded
     ' =========================
@@ -97,42 +100,61 @@ Public Class AlgorithmPage
     Private lastPanPoint As WpfPoint
     Private Sub Viewer_MouseWheel(sender As Object, e As MouseWheelEventArgs)
 
-        Dim oldZoom = zoom
+        Dim scale As ScaleTransform = Nothing
 
-        If e.Delta > 0 Then
-            zoom *= 1.1
-        Else
-            zoom *= 0.9
+        If sender Is ViewerBorder Then
+            scale = ImageScale
+
+        ElseIf sender Is TemplateBorder Then
+            scale = TemplateScale
+
+        ElseIf sender Is ResultBorder Then
+            scale = ResultScale
         End If
 
-        zoom = Math.Max(0.5, Math.Min(3.0, zoom))
+        If scale Is Nothing Then Return
 
-        ImageScale.ScaleX = zoom
-        ImageScale.ScaleY = zoom
+        Dim zoomFactor As Double =
+        If(e.Delta > 0, 1.1, 0.9)
+
+        scale.ScaleX *= zoomFactor
+        scale.ScaleY *= zoomFactor
 
     End Sub
 
     Private Sub Viewer_MouseDown(sender As Object, e As MouseButtonEventArgs)
 
-        If e.MiddleButton = MouseButtonState.Pressed Then
-            isPanning = True
-            lastPanPoint = e.GetPosition(ViewerBorder)
-            ViewerBorder.Cursor = Cursors.Hand
+        If e.MiddleButton <> MouseButtonState.Pressed Then Return
+
+        isPanning = True
+
+        currentBorder = CType(sender, Border)
+
+        If sender Is ViewerBorder Then
+            currentTranslate = ImageTranslate
+        ElseIf sender Is TemplateBorder Then
+            currentTranslate = TemplateTranslate
+        ElseIf sender Is ResultBorder Then
+            currentTranslate = ResultTranslate
         End If
+
+        lastPanPoint = e.GetPosition(currentBorder)
 
     End Sub
 
+    Private currentTranslate As TranslateTransform
+    Private currentBorder As Border
     Private Sub Viewer_MouseMove(sender As Object, e As MouseEventArgs)
 
         If Not isPanning Then Return
 
-        Dim pos = e.GetPosition(ViewerBorder)
+        Dim pos = e.GetPosition(currentBorder)
 
         Dim dx = pos.X - lastPanPoint.X
         Dim dy = pos.Y - lastPanPoint.Y
 
-        ImageTranslate.X += dx
-        ImageTranslate.Y += dy
+        currentTranslate.X += dx
+        currentTranslate.Y += dy
 
         lastPanPoint = pos
 
@@ -140,10 +162,7 @@ Public Class AlgorithmPage
 
     Private Sub Viewer_MouseUp(sender As Object, e As MouseButtonEventArgs)
 
-        If e.MiddleButton = MouseButtonState.Released Then
-            isPanning = False
-            ViewerBorder.Cursor = Cursors.Arrow
-        End If
+        isPanning = False
 
     End Sub
     '觸控調優
