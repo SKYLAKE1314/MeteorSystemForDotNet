@@ -5,7 +5,7 @@ Imports MetroSystemForDotNet
 Imports Microsoft.Web.WebView2.Core
 Imports OpenCvSharp
 Imports OpenCvSharp.WpfExtensions
-
+Imports Cv = OpenCvSharp
 Class HomePage
 
     Private _initialized As Boolean = False
@@ -58,65 +58,69 @@ Class HomePage
     ' =========================================
     ' Load Image
     ' =========================================
-    Private Sub BtnLoadImage_Click(
-        sender As Object,
-        e As RoutedEventArgs)
-
-        Try
-
-            Dim path =
-                DialogHelper.OpenImage()
-
-            If String.IsNullOrWhiteSpace(path) Then
-                Return
-            End If
-
-            _currentMat =
-                Cv2.ImRead(path)
-
-            ShowRender(_currentMat)
-
-            Logger.Info(
-                $"載入圖像：{System.IO.Path.GetFileName(path)}")
-
-        Catch ex As Exception
-
-            MessageBox.Show(ex.Message)
-
-        End Try
-
-    End Sub
-#Region "相機觸發"
-    Private Sub BtnGetImg_Click(
+    Private Async Sub BtnLoadImage_Click(
     sender As Object,
     e As RoutedEventArgs)
 
         Try
-            '獲取最後一幀
-            Dim frame = CameraService.Instance.LatestFrame
 
+            Dim path = DialogHelper.OpenImage()
+            If String.IsNullOrWhiteSpace(path) Then Return
+
+            Dim mat = Cv.Cv2.ImRead(path)
+            _currentMat = mat
+
+            Dim templatePath = LastTemplateStore.Load()
+            If String.IsNullOrWhiteSpace(templatePath) Then Return
+
+            Dim templateName = IO.Path.GetFileName(templatePath)
+
+            Dim result = Await Draw_opencv.ProcessAsync(mat, templateName)
+
+            RenderImage.Source =
+            result.Mat.ToWriteableBitmap()
+
+            Logger.Info($"Score={result.Score:F3}, OK={result.IsOk}")
+
+        Catch ex As Exception
+            MessageBox.Show(ex.Message)
+        End Try
+
+    End Sub
+#Region "相機觸發"
+    Private Async Sub BtnGetImg_Click(
+    sender As Object,
+    e As RoutedEventArgs)
+
+        Try
+
+            Dim frame = CameraService.Instance.LatestFrame
             If frame Is Nothing Then
                 MessageBox.Show("沒有影像")
                 Return
             End If
-            ' 轉bitmap
+
             Dim mat = BitmapSourceToMat(frame)
-
             _currentMat = mat
-            ShowRender(_currentMat)
 
-            Logger.Info("幀取流-匹配")
+            Dim templatePath = LastTemplateStore.Load()
+            If String.IsNullOrWhiteSpace(templatePath) Then Return
+
+            Dim templateName = IO.Path.GetFileName(templatePath)
+
+            Dim result = Await Draw_opencv.ProcessAsync(mat, templateName)
+
+            RenderImage.Source =
+            result.Mat.ToWriteableBitmap()
+
+            Logger.Info($"Score={result.Score:F3}, OK={result.IsOk}")
 
         Catch ex As Exception
-
-            MessageBox.Show("例外的錯誤: " + ex.Message)
-
+            MessageBox.Show(ex.Message)
         End Try
 
     End Sub
-
 #End Region
-
     ' =========================================
     ' Clear
     ' =========================================
@@ -145,47 +149,84 @@ Class HomePage
     ' =========================================
     ' Show Render
     ' =========================================
-    Public Sub ShowRender(mat As Mat)
+    Public Async Sub ShowRender(mat As Mat)
 
         If mat Is Nothing Then Return
 
-        ' =========================
-        ' Load Last Template
-        ' =========================
-        Dim lastTemplatePath =
-        LastTemplateStore.Load()
+        Try
 
-        If String.IsNullOrWhiteSpace(lastTemplatePath) Then
+            ' =========================
+            ' Template Name
+            ' =========================
+            Dim templatePath = LastTemplateStore.Load()
 
-            RenderImage.Source =
-            mat.ToWriteableBitmap()
+            If String.IsNullOrWhiteSpace(templatePath) Then
+                RenderImage.Source = mat.ToWriteableBitmap()
+                Return
+            End If
 
-            Return
+            Dim templateName = IO.Path.GetFileName(templatePath)
 
-        End If
-        ' 載入模板
-        Dim data =
-        TemplateManager.LoadTemplate(lastTemplatePath)
+            ' =========================
+            ' Get Template From Cache
+            ' =========================
+            Dim data = TemplateCache.GetTemplate(templateName)
 
-        If data Is Nothing Then
+            If data Is Nothing Then
+                Logger.Warn($"模板不存在: {templateName}")
+                RenderImage.Source = mat.ToWriteableBitmap()
+                Return
+            End If
 
-            RenderImage.Source =
-            mat.ToWriteableBitmap()
-
-            Return
-
-        End If
-        ' 匹配
-        Dim result =
-        TemplateMatcher.Match(
+            ' =========================
+            ' Match (Async)
+            ' =========================
+            Dim result = Await TemplateMatcher.MatchAsync(
             mat,
             data.Template,
             data.Config.Threshold,
-            data.Config.MatchMethod
-        )
+            data.Config.MatchMethod)
 
-        RenderImage.Source =
-        result.ResultImage.ToWriteableBitmap()
+            If result Is Nothing Then Return
+
+            ' =========================
+            ' Render Overlay (畫框 + 分數)
+            ' =========================
+            Dim display = result.ResultImage.Clone()
+
+            ' --- score text ---
+            Dim text As String =
+            $"Score: {result.Score:F3}"
+
+            Dim org As New OpenCvSharp.Point(20, 40)
+
+            Cv2.PutText(
+            display,
+            text,
+            org,
+            HersheyFonts.HersheySimplex,
+            1.0,
+            Scalar.Yellow,
+            2)
+
+            ' =========================
+            ' UI Update
+            ' =========================
+            RenderImage.Source =
+            display.ToWriteableBitmap()
+
+            ' =========================
+            ' Log
+            ' =========================
+            Logger.Info(
+            $"Match OK={result.IsOk}, Score={result.Score:F3}")
+
+        Catch ex As Exception
+
+            Logger.Error($"ShowRender error: {ex.Message}")
+            RenderImage.Source = mat.ToWriteableBitmap()
+
+        End Try
 
     End Sub
 

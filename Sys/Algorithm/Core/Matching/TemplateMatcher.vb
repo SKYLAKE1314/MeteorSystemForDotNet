@@ -60,7 +60,6 @@ Public Class TemplateMatcher
         template As Mat,
         threshold As Double,
         methodIndex As Integer) As MatchResult
-
         Return MatchCore(
             source,
             template,
