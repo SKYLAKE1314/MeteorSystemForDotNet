@@ -57,13 +57,22 @@
                         Content="停止"
                         Width="100"
                         Height="32"
+                        Margin="0,0,10,0"
                         Click="BtnStop_Click"/>
 
                 <Button x:Name="BtnGetImg"
-                        Content="實時檢測"
+                        Content="即時檢測"
                         Width="100"
                         Height="32"
+                        Margin="0,0,10,0"
                         Click="BtnGetImg_Click"/>
+
+                <Button x:Name="BtnSave"
+                        Content="圖像儲存"
+                        Width="100"
+                        Height="32"
+                        Margin="0,0,10,0"
+                        Click="BtnSave_Click"/>
             </StackPanel>
 
         </Border>

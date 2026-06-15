@@ -3,6 +3,7 @@ Imports System.Windows
 Imports System.Windows.Threading
 Imports MetroSystemForDotNet
 Imports Microsoft.Web.WebView2.Core
+Imports Microsoft.Win32
 Imports OpenCvSharp
 Imports OpenCvSharp.WpfExtensions
 Imports Cv = OpenCvSharp
@@ -88,20 +89,13 @@ Class HomePage
 
     End Sub
 #Region "相機觸發"
-    Private Async Sub BtnGetImg_Click(
-    sender As Object,
-    e As RoutedEventArgs)
+    Private Async Sub BtnGetImg_Click(sender As Object, e As RoutedEventArgs)
 
         Try
-
             Dim frame = CameraService.Instance.LatestFrame
-            If frame Is Nothing Then
-                MessageBox.Show("沒有影像")
-                Return
-            End If
+            If frame Is Nothing Then Return
 
             Dim mat = BitmapSourceToMat(frame)
-            _currentMat = mat
 
             Dim templatePath = LastTemplateStore.Load()
             If String.IsNullOrWhiteSpace(templatePath) Then Return
@@ -111,12 +105,12 @@ Class HomePage
             Dim result = Await Draw_opencv.ProcessAsync(mat, templateName)
 
             RenderImage.Source =
-            result.Mat.ToWriteableBitmap()
+                result.Mat.ToWriteableBitmap()
 
             Logger.Info($"Score={result.Score:F3}, OK={result.IsOk}")
 
         Catch ex As Exception
-            MessageBox.Show(ex.Message)
+            MessageBox.Show("ROI錯誤" + ex.Message)
         End Try
 
     End Sub
@@ -244,21 +238,27 @@ Class HomePage
                           End Sub)
 
     End Sub
-
+    Private _lastFrameMat As Mat
+    Private _lastFrameBitmap As BitmapSource
     Private Sub OnFrameArrived(bitmap As BitmapSource)
 
         If RenderImage Is Nothing Then Return
 
         RenderImage.Dispatcher.BeginInvoke(Sub()
+
                                                If RenderImage Is Nothing Then Return
+
                                                RenderImage.Source = bitmap
+
+                                               ' ⭐ 保存最後一幀（UI層）
+                                               _lastFrameBitmap = bitmap
+
                                            End Sub)
 
     End Sub
     Private Sub Page_Unloaded(sender As Object, e As RoutedEventArgs) Handles Me.Unloaded
         RemoveHandler CameraService.Instance.FrameArrived, AddressOf OnFrameArrived
 
-        RenderImage.Source = Nothing
     End Sub
 
     Private Sub BtnStart_Click(sender As Object, e As RoutedEventArgs)
@@ -291,11 +291,47 @@ Class HomePage
 
             CameraService.Instance.Stop()
 
-            RenderImage.Source = Nothing
-
             _isStreaming = False
 
-            Logger.Info("相機已停止")
+            Logger.Info("相機已停止（畫面已凍結）")
+
+        Catch ex As Exception
+            MessageBox.Show(ex.Message)
+        End Try
+
+    End Sub
+    Private Sub BtnSave_Click(sender As Object, e As RoutedEventArgs)
+
+        Try
+            If _lastFrameBitmap Is Nothing Then
+                MessageBox.Show("沒有可保存的畫面")
+                Return
+            End If
+
+            Dim dlg As New SaveFileDialog With {
+            .Filter = "PNG Image|*.png|JPG Image|*.jpg",
+            .FileName = $"capture_{DateTime.Now:yyyyMMdd_HHmmss}.png"
+        }
+
+            If dlg.ShowDialog() <> True Then Return
+
+            Dim encoder As BitmapEncoder
+
+            Dim ext = Path.GetExtension(dlg.FileName).ToLower()
+
+            If ext = ".jpg" OrElse ext = ".jpeg" Then
+                encoder = New JpegBitmapEncoder()
+            Else
+                encoder = New PngBitmapEncoder()
+            End If
+
+            encoder.Frames.Add(BitmapFrame.Create(_lastFrameBitmap))
+
+            Using fs As New FileStream(dlg.FileName, FileMode.Create)
+                encoder.Save(fs)
+            End Using
+
+            Logger.Info($"畫面已保存: {dlg.FileName}")
 
         Catch ex As Exception
             MessageBox.Show(ex.Message)
