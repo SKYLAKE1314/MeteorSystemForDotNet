@@ -194,11 +194,7 @@ Public Class WebSocketManager
                 If c.Socket Is Nothing Then Continue For
                 If c.Socket.State <> WebSocketState.Open Then Continue For
 
-                Await c.Socket.SendAsync(
-                New ArraySegment(Of Byte)(bytes),
-                WebSocketMessageType.Text,
-                True,
-                CancellationToken.None)
+                c.Socket?.Dispose()
 
             Catch
                 ' 忽略壞掉 client
