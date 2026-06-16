@@ -41,11 +41,11 @@
 
             <!-- DLBoost -->
             <TextBlock
-    Text="GPU硬件加速計劃"
-    FontSize="16"
-    FontWeight="SemiBold"
-    Foreground="White"
-    Margin="0,20,0,0"/>
+                Text="GPU硬件加速計劃"
+                FontSize="16"
+                FontWeight="SemiBold"
+                Foreground="White"
+                Margin="0,20,0,0"/>
 
             <ComboBox x:Name="GpuBoostComboBox"
        Width="200"

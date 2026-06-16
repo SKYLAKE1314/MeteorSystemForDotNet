@@ -10,11 +10,11 @@ Public Class PaddleOcrService
 
     Public Sub New()
 
-        Dim model As FullOcrModel = LocalFullModels.ChineseV3
+        Dim model As FullOcrModel = LocalFullModels.ChineseV5
 
         _ocr = New PaddleOcrAll(model, PaddleDevice.Mkldnn()) With {
-            .AllowRotateDetection = True,
-            .Enable180Classification = True
+            .AllowRotateDetection = False,
+            .Enable180Classification = False
         }
 
     End Sub
@@ -24,17 +24,28 @@ Public Class PaddleOcrService
         If src Is Nothing Then Return ""
         If roi.Width <= 0 OrElse roi.Height <= 0 Then Return ""
 
-        Using crop As New Mat(src, roi)
+        Dim paddedRoi As New Rect(
+        Math.Max(roi.X - 2, 0),
+        Math.Max(roi.Y - 2, 0),
+        Math.Min(roi.Width + 4, src.Width - roi.X),
+        Math.Min(roi.Height + 4, src.Height - roi.Y)
+    )
 
-            Using gray As New Mat()
-                Cv2.CvtColor(crop, gray, ColorConversionCodes.BGR2GRAY)
+        Using crop As New Mat(src, paddedRoi)
 
-                Dim result = _ocr.Run(gray)
+            Dim result = _ocr.Run(crop)
 
-                If result Is Nothing Then Return ""
+            If result Is Nothing Then Return ""
 
-                Return result.Text
-            End Using
+            Dim msg As String = ""
+
+            For Each r In result.Regions
+                msg &= $"文字: {r.Text}  |  置信度: {r.Score:F3}" & vbCrLf
+            Next
+
+            MessageBox.Show(msg, "OCR結果")
+
+            Return result.Text
 
         End Using
 
