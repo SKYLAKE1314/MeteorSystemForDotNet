@@ -1,7 +1,7 @@
 # MetroSystemForDotNet
 本專案基於 **Apache License 2.0** 授權條款釋出。
 
-您在遵循 Apache-2.0 License 條款的前提下，可使用、修改與再發行本專案。
+您在遵循 Apache-2.0 License 條款的前提下，才可使用、修訂與再發行本專案。
 
 ---
 
