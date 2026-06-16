@@ -3,7 +3,9 @@
 Partial Public Class ProcessPage
 
     Private ReadOnly _ws As New WebSocketManager()
+    Private ReadOnly _server As New WebSocketServer()
 
+    Private ReadOnly _client As New WebSocketClient()
     Public Sub New()
 
         InitializeComponent()
@@ -35,21 +37,19 @@ Partial Public Class ProcessPage
                 Return
             End If
 
-            Dim port As Integer = Integer.Parse(PortBox.Text)
+            _serverStarted = True
 
-            Dim ip As String = IpBox.Text
+            Dim port As Integer =
+            Integer.Parse(PortBox.Text)
+
+            AddLog($"Server Started : 0.0.0.0:{port}")
 
             Task.Run(
             Async Function()
-                Await _ws.StartServer(ip, port)
-            End Function)
 
-            Task.Run(Async Function()
-                         Await _ws.StartServer(ip, port)
-                         Dispatcher.Invoke(Sub()
-                                               AddLog("Server Actually Started")
-                                           End Sub)
-                     End Function)
+                Await _ws.StartServer(port)
+
+            End Function)
 
         Catch ex As Exception
 

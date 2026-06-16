@@ -25,18 +25,24 @@ Public Class WebSocketManager
 
 #Region "Server"
 
-    Public Async Function StartServer(ip As String, port As Integer) As Task
+    Public Async Function StartServer(port As Integer) As Task
 
         If _serverStarted Then Return
         _serverStarted = True
 
         _listener = New HttpListener()
 
-        Dim prefix = $"http://{ip}:{port}/ws/"
+        Dim prefix = $"http://+:{port}/ws/"
 
         _listener.Prefixes.Add(prefix)
 
         _listener.Start()
+
+        RaiseEvent MessageReceived(
+        Me,
+        New WebSocketMessageEventArgs(
+            "System",
+            $"Listening: {prefix}"))
 
         Try
 
@@ -45,37 +51,44 @@ Public Class WebSocketManager
                 Dim context = Await _listener.GetContextAsync()
 
                 If Not context.Request.IsWebSocketRequest Then
+
                     context.Response.StatusCode = 400
                     context.Response.Close()
+
                     Continue While
+
                 End If
 
                 Dim wsContext = Await context.AcceptWebSocketAsync(Nothing)
                 Dim socket = wsContext.WebSocket
 
                 Dim client As New ClientItem With {
-    .Id = Guid.NewGuid().ToString(),
-    .Socket = socket
-}
+                .Id = Guid.NewGuid().ToString(),
+                .Socket = socket
+            }
 
                 SyncLock _clients
                     _clients.Add(client)
                 End SyncLock
 
-                RaiseEvent MessageReceived(Me,
-    New WebSocketMessageEventArgs("System", $"Client Connected: {client.Id}"))
+                RaiseEvent MessageReceived(
+                Me,
+                New WebSocketMessageEventArgs(
+                    "System",
+                    $"Client Connected: {client.Id}"))
 
-                Task.Run(Async Function()
-                             Await ReceiveServer(client)
-                         End Function)
+                Task.Run(
+                Async Function()
+
+                    Await ReceiveServer(client)
+
+                End Function)
 
             End While
 
         Catch ex As HttpListenerException
-            ' StopServer 正常觸發
 
         Catch ex As ObjectDisposedException
-            ' 正常關閉
 
         Finally
             _serverStarted = False
@@ -85,43 +98,44 @@ Public Class WebSocketManager
 
     Public Sub StopServer()
 
+        _serverStarted = False
+
         Try
 
-            _serverStarted = False
-
             If _listener IsNot Nothing Then
+
                 _listener.Stop()
                 _listener.Close()
+
                 _listener = Nothing
+
             End If
 
-            Dim clientsCopy As ClientItem()
-
-            SyncLock _clients
-                clientsCopy = _clients.ToArray()
-                _clients.Clear()
-            End SyncLock
-
-            For Each c In clientsCopy
-
-                Try
-                    If c.Socket IsNot Nothing AndAlso
-                   c.Socket.State = WebSocketState.Open Then
-
-                        c.Socket.CloseAsync(
-                        WebSocketCloseStatus.NormalClosure,
-                        "Server Stop",
-                        CancellationToken.None)
-                    End If
-
-                Catch
-                End Try
-
-            Next
-
         Catch
-
         End Try
+
+        Dim clientsCopy As ClientItem()
+
+        SyncLock _clients
+
+            clientsCopy = _clients.ToArray()
+
+            _clients.Clear()
+
+        End SyncLock
+
+        For Each c In clientsCopy
+
+            Try
+
+                c.Socket?.Abort()
+
+                c.Socket?.Dispose()
+
+            Catch
+            End Try
+
+        Next
 
     End Sub
 
@@ -176,15 +190,14 @@ Public Class WebSocketManager
 
         For Each c In clients
 
-            If c.Socket.State = WebSocketState.Open Then
+            Try
 
-                Await c.Socket.SendAsync(
-                New ArraySegment(Of Byte)(bytes),
-                WebSocketMessageType.Text,
-                True,
-                CancellationToken.None)
+                c.Socket?.Abort()
 
-            End If
+                c.Socket?.Dispose()
+
+            Catch
+            End Try
 
         Next
 
