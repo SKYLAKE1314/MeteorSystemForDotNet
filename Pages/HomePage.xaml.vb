@@ -24,6 +24,7 @@ Class HomePage
     Private Async Sub Page_Loaded(
         sender As Object,
         e As RoutedEventArgs) Handles Me.Loaded
+        AddHandler LanguageManager.LanguageChanged, AddressOf RefreshLanguageUI
 
         If _initialized Then
             ' ⭐ 回來時補訂閱（關鍵）
@@ -389,9 +390,9 @@ Class HomePage
 
             End While
 
-            Logger.Info("===== Laplacian Result =====")
-            Logger.Info(sb.ToString())
-            Logger.Info($"Best Score={bestScore:F2}")
+            Logger.Debug("===== Laplacian Result =====")
+            Logger.Debug(sb.ToString())
+            Logger.Debug($"Best Score={bestScore:F2}")
 
             If bestFrame IsNot Nothing Then
 
@@ -429,5 +430,15 @@ Class HomePage
         RenderImage.Source = frame
 
     End Sub
+    Public Sub RefreshLanguageUI()
 
+        BtnLoadImage.Content = LanguageManager.T("Nav_Run")
+        BtnClear.Content = LanguageManager.T("Clear")
+        BtnStart.Content = LanguageManager.T("Start")
+        BtnStop.Content = LanguageManager.T("Stop")
+        BtnGetImg.Content = LanguageManager.T("LiveDetect")
+        BtnSave.Content = LanguageManager.T("SaveImage")
+        BtnLaplacian.Content = LanguageManager.T("Laplacian")
+
+    End Sub
 End Class

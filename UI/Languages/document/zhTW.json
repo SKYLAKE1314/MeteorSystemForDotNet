@@ -8,6 +8,14 @@
   "Main_Title": "MeteorSystem by SKYLAKE",
   "Side_Title": "METEOR SYSTEM",
 
+  "Home_BtnLoadImage": "載入圖像",
+  "Home_BtnClear": "清空",
+  "Home_BtnStart": "開始取像",
+  "Home_BtnStop": "暫止取像",
+  "Home_BtnGetImg": "即時檢測",
+  "Home_BtnSave": "儲存圖像",
+  "Home_BtnLaplacian": "Laplacian評級",
+
   "Algo_Title": "目標檢測工具",
   "Algo_LoadSource": "載入原圖",
   "Algo_CreateTemplate": "生成模板",
