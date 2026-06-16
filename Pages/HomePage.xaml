@@ -10,7 +10,7 @@
         <Grid.RowDefinitions>
 
             <!-- Toolbar -->
-            <RowDefinition Height="50"/>
+            <RowDefinition Height="60"/>
 
             <!-- Main -->
             <RowDefinition Height="*"/>
@@ -21,59 +21,71 @@
         <!-- Toolbar -->
         <!-- ========================= -->
         <Border Grid.Row="0"
-                Background="#252526"
-                BorderBrush="#3C3C3C"
-                BorderThickness="1"
-                CornerRadius="6"
-                Padding="8"
-                Margin="0,0,0,10">
+        Background="#252526"
+        BorderBrush="#3C3C3C"
+        BorderThickness="1"
+        CornerRadius="6"
+        Padding="8"
+        Margin="0,0,0,0">
 
-            <StackPanel Orientation="Horizontal">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                  VerticalScrollBarVisibility="Disabled"
+                  PanningMode="HorizontalOnly">
 
-                <!-- 選擇圖像 -->
-                <Button x:Name="BtnLoadImage"
-                        Content="選擇圖像"
-                        Width="120"
-                        Height="32"
-                        Margin="0,0,10,0"
-                        Click="BtnLoadImage_Click"/>
+                <StackPanel Orientation="Horizontal">
 
-                <!-- 清空 -->
-                <Button x:Name="BtnClear"
-                        Content="清空"
-                        Width="100"
-                        Height="32"
-                        Margin="0,0,10,0"
-                        Click="BtnClear_Click"/>
+                    <Button x:Name="BtnLoadImage"
+                    Content="選擇圖像"
+                    Width="120"
+                    Height="32"
+                    Margin="0,0,10,0"
+                    Click="BtnLoadImage_Click"/>
 
-                <Button x:Name="BtnStart"
-                        Content="開始"
-                        Width="100"
-                        Height="32"
-                        Margin="0,0,10,0"
-                        Click="BtnStart_Click"/>
+                    <Button x:Name="BtnClear"
+                    Content="清空"
+                    Width="100"
+                    Height="32"
+                    Margin="0,0,10,0"
+                    Click="BtnClear_Click"/>
 
-                <Button x:Name="BtnStop"
-                        Content="停止"
-                        Width="100"
-                        Height="32"
-                        Margin="0,0,10,0"
-                        Click="BtnStop_Click"/>
+                    <Button x:Name="BtnStart"
+                    Content="開始"
+                    Width="100"
+                    Height="32"
+                    Margin="0,0,10,0"
+                    Click="BtnStart_Click"/>
 
-                <Button x:Name="BtnGetImg"
-                        Content="即時檢測"
-                        Width="100"
-                        Height="32"
-                        Margin="0,0,10,0"
-                        Click="BtnGetImg_Click"/>
+                    <Button x:Name="BtnStop"
+                    Content="停止"
+                    Width="100"
+                    Height="32"
+                    Margin="0,0,10,0"
+                    Click="BtnStop_Click"/>
 
-                <Button x:Name="BtnSave"
-                        Content="圖像儲存"
-                        Width="100"
-                        Height="32"
-                        Margin="0,0,10,0"
-                        Click="BtnSave_Click"/>
-            </StackPanel>
+                    <Button x:Name="BtnGetImg"
+                    Content="即時檢測"
+                    Width="100"
+                    Height="32"
+                    Margin="0,0,10,0"
+                    Click="BtnGetImg_Click"/>
+
+                    <Button x:Name="BtnSave"
+                    Content="圖像儲存"
+                    Width="100"
+                    Height="32"
+                    Margin="0,0,10,0"
+                    Click="BtnSave_Click"/>
+
+                    <Button x:Name="BtnLaplacian"
+                    Content="Laplacian運算"
+                    Width="120"
+                    Height="32"
+                    Margin="0,0,10,0"
+                    Click="BtnLaplacian_Click"/>
+
+                </StackPanel>
+
+            </ScrollViewer>
 
         </Border>
 

@@ -1,4 +1,5 @@
 ﻿Imports System.IO
+Imports System.Text
 Imports System.Windows
 Imports System.Windows.Threading
 Imports MetroSystemForDotNet
@@ -338,6 +339,77 @@ Class HomePage
         End Try
 
     End Sub
+#Region "清晰度評估"
+
+    Private Async Sub BtnLaplacian_Click(
+    sender As Object,
+    e As RoutedEventArgs)
+
+        Try
+
+            Dim bestFrame As BitmapSource = Nothing
+            Dim bestScore As Double = Double.MinValue
+
+            Dim sb As New StringBuilder()
+
+            Dim sw As New Stopwatch()
+
+            sw.Start()
+
+            Dim index As Integer = 0
+
+            While sw.ElapsedMilliseconds < 2000
+
+                Dim frame =
+                CameraService.Instance.LatestFrame
+
+                If frame IsNot Nothing Then
+
+                    Dim currentFrame =
+                    frame.Clone()
+
+                    Dim score =
+                    Laplacian.GetScore(currentFrame)
+
+                    index += 1
+
+                    sb.AppendLine(
+                    $"Frame {index:D3} Score={score:F2}")
+
+                    If score > bestScore Then
+
+                        bestScore = score
+                        bestFrame = currentFrame
+
+                    End If
+
+                End If
+
+                Await Task.Delay(33)
+
+            End While
+
+            Logger.Info("===== Laplacian Result =====")
+            Logger.Info(sb.ToString())
+            Logger.Info($"Best Score={bestScore:F2}")
+
+            If bestFrame IsNot Nothing Then
+
+                RenderImage.Source = bestFrame
+
+            End If
+
+        Catch ex As Exception
+
+            MessageBox.Show(
+            "清晰度評估失敗：" &
+            ex.Message)
+
+        End Try
+
+    End Sub
+
+#End Region
     Private Sub OnCameraChanged()
 
         Task.Run(Sub()
