@@ -14,6 +14,7 @@ Public Class CameraService
 
     Public Event FrameArrived As Action(Of BitmapSource)
     Public Property LatestFrame As BitmapSource
+    Public Property LastFrameTime As DateTime
 
     Private Sub New()
         AddHandler _camera.FrameArrived, AddressOf OnFrame
@@ -22,6 +23,7 @@ Public Class CameraService
     Private Sub OnFrame(img As BitmapSource)
 
         LatestFrame = img
+        LastFrameTime = DateTime.Now
 
         RaiseEvent FrameArrived(img)
 

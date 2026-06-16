@@ -20,7 +20,16 @@ Public Class CameraLink
             Throw New Exception("Camera not found")
         End If
 
-        _capture = New VideoCapture(index)
+        _capture = New VideoCapture(index, VideoCaptureAPIs.DSHOW)
+        _capture.Set(VideoCaptureProperties.FrameWidth, 3840)
+        _capture.Set(VideoCaptureProperties.FrameHeight, 2880)
+        _capture.Set(VideoCaptureProperties.FourCC, VideoWriter.FourCC("M", "J", "P", "G"))
+        '_capture.Set(VideoCaptureProperties.Fps, 30)
+
+        Dim w = _capture.Get(VideoCaptureProperties.FrameWidth)
+        Dim h = _capture.Get(VideoCaptureProperties.FrameHeight)
+
+        Logger.Debug($"Actual resolution: {w} x {h}")
 
         If Not _capture.IsOpened() Then
             Throw New Exception("Camera open failed")
@@ -41,6 +50,12 @@ Public Class CameraLink
         While _running
 
             Try
+                Dim ok = _capture.Read(mat)
+
+                If Not ok OrElse mat Is Nothing OrElse mat.Empty() Then
+                    Logger.Debug("Frame lost")
+                    Continue While
+                End If
 
                 _capture.Read(mat)
 
