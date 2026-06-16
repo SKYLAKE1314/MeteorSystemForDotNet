@@ -36,10 +36,10 @@
                 <TextBlock Text="IP:"
                            VerticalAlignment="Center"/>
 
-                <TextBox x:Name="IpBox"
+                <!--<TextBox x:Name="IpBox"
                          Grid.Column="1"
                          Text="127.0.0.1"
-                         Margin="5,0,15,0"/>
+                         Margin="5,0,15,0"/>-->
 
                 <!-- PORT -->
                 <TextBlock Grid.Column="2"
