@@ -117,4 +117,7 @@ Public Class SettingPage
 
     End Sub
 
+    Private Sub GpuBoostComboBox_SelectionChanged(sender As Object, e As SelectionChangedEventArgs)
+
+    End Sub
 End Class

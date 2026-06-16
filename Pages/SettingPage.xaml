@@ -38,6 +38,24 @@
             <ComboBox x:Name="CameraComboBox"
               Width="200"
               SelectionChanged="CameraComboBox_SelectionChanged"/>
+
+            <!-- DLBoost -->
+            <TextBlock
+    Text="GPU硬件加速計劃"
+    FontSize="16"
+    FontWeight="SemiBold"
+    Foreground="White"
+    Margin="0,20,0,0"/>
+
+            <ComboBox x:Name="GpuBoostComboBox"
+       Width="200"
+       SelectionChanged="GpuBoostComboBox_SelectionChanged">
+
+                <ComboBoxItem Content="CPU"/>
+                <ComboBoxItem Content="CUDA"/>
+                <ComboBoxItem Content="OpenVino"/>
+                <ComboBoxItem Content="DML"/>
+            </ComboBox>
         </StackPanel>
         
         
