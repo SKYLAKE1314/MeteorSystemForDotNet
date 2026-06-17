@@ -494,6 +494,105 @@ Class HomePage
 
     End Function
 #End Region
+
+    Private Async Sub BtnOcrTest_Click(sender As Object, e As RoutedEventArgs)
+
+        Try
+
+            Dim timeoutMs As Integer = 5000
+            Dim sw As New Stopwatch()
+            sw.Start()
+
+            Dim bestText As String = ""
+            Dim bestScore As Double = 0
+            Dim bestAngle As Double = 0
+
+            Dim angles() As Double = {-135， -90, -45, -15, 0, 15, 45, 90, 135}
+
+            While sw.ElapsedMilliseconds < timeoutMs
+
+                Dim frame As BitmapSource = CameraService.Instance.LatestFrame
+
+                If frame IsNot Nothing Then
+
+                    RenderImage.Dispatcher.Invoke(Sub()
+                                                      RenderImage.Source = frame
+                                                  End Sub)
+
+                    Dim mat = BitmapSourceConverter.ToMat(frame)
+                    Dim roi As New OpenCvSharp.Rect(0, 0, mat.Width, mat.Height)
+
+                    Dim result = Await Task.Run(Function()
+
+                                                    Dim localBestText As String = ""
+                                                    Dim localBestScore As Double = 0
+                                                    Dim localBestAngle As Double = 0
+
+                                                    For Each angle In angles
+
+                                                        Using rotated = RotateMat(mat, angle)
+
+                                                            Dim ocr = _ocr.RunRoi(rotated, roi)
+
+                                                            If ocr IsNot Nothing Then
+
+                                                                Logger.Debug(
+                                                                 $"Angle={angle} Text={ocr.Text} Score={ocr.Score:F3}")
+
+                                                                If ocr.Score > localBestScore Then
+                                                                    localBestScore = ocr.Score
+                                                                    localBestText = ocr.Text
+                                                                    localBestAngle = angle
+                                                                End If
+
+                                                                If ocr.Score >= 0.8 Then
+                                                                    Exit For
+                                                                End If
+
+                                                            End If
+
+                                                        End Using
+
+                                                    Next
+
+                                                    Return New With {
+                                                     .Text = localBestText,
+                                                     .Score = localBestScore,
+                                                     .Angle = localBestAngle
+                                                 }
+
+                                                End Function)
+
+                    If result.Score > bestScore Then
+                        bestScore = result.Score
+                        bestText = result.Text
+                        bestAngle = result.Angle
+                    End If
+
+                    If bestScore >= 0.9 Then Exit While
+
+                End If
+
+                Await Task.Delay(30)
+
+            End While
+
+            Logger.Debug("===== FINAL =====")
+            Logger.Debug($"Text={bestText}")
+            Logger.Debug($"Score={bestScore:F3}")
+            Logger.Debug($"Angle={bestAngle}")
+
+            MessageBox.Show(
+            $"OCR結果：{bestText}" & vbCrLf &
+            $"置信度：{bestScore:F3}" & vbCrLf &
+            $"角度：{bestAngle}")
+
+        Catch ex As Exception
+            MessageBox.Show("OCR失敗：" & ex.Message)
+        End Try
+
+    End Sub
+
     Private Sub OnCameraChanged()
 
         Task.Run(Sub()

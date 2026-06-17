@@ -83,6 +83,13 @@
                     Margin="0,0,10,0"
                     Click="BtnLaplacian_Click"/>
 
+                    <Button x:Name="BtnOcrTest"
+                    Content="OCR測試"
+                    Width="120"
+                    Height="32"
+                    Margin="0,0,10,0"
+                    Click="BtnOcrTest_Click"/>
+
                 </StackPanel>
 
             </ScrollViewer>

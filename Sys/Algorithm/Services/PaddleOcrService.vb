@@ -17,7 +17,7 @@ Public Class PaddleOcrService
             Function()
                 Return New PaddleOcrAll(
                     LocalFullModels.EnglishV4,
-                    PaddleDevice.Mkldnn()) With {
+                    PaddleDevice.Gpu()) With {
                         .AllowRotateDetection = True,
                         .Enable180Classification = True
                     }
