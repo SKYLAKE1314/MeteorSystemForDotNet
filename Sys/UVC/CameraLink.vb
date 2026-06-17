@@ -17,7 +17,9 @@ Public Class CameraLink
         Dim index As Integer = CameraManager.FindIndexByDeviceId(My.Settings.CameraDeviceId)
 
         If index < 0 Then
-            Throw New Exception("Camera not found")
+            MessageBox.Show("Camera not found")
+
+            Return
         End If
 
         _capture = New VideoCapture(index, VideoCaptureAPIs.DSHOW)

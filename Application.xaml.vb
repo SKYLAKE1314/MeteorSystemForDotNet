@@ -43,23 +43,14 @@ Class Application
 
     End Sub
 
-    ' =====================================================
-    ' CORE INITIALIZATION 
-    ' =====================================================
     Private Sub InitializeCore()
 
         AppProgress.Report(10, "載入設定")
 
-        ' =========================
-        ' Session（記憶）
-        ' =========================
         TemplateSnapshotStore.Load()
 
         AppProgress.Report(40, "載入模板")
 
-        ' =========================
-        ' Template Cache
-        ' =========================
         TemplateSnapshotStore.Load()
 
         TemplateCache.LoadAll()
