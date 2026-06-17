@@ -507,7 +507,8 @@ Class HomePage
             Dim bestScore As Double = 0
             Dim bestAngle As Double = 0
 
-            Dim angles() As Double = {-135， -90, -45, -15, 0, 15, 45, 90, 135}
+            'Dim angles() As Double = {-135， -90, -45, -15, 0, 15, 45, 90, 135}
+            Dim angles() As Double = {-45, 0, 15, 45}
 
             While sw.ElapsedMilliseconds < timeoutMs
 
@@ -569,11 +570,11 @@ Class HomePage
                         bestAngle = result.Angle
                     End If
 
-                    If bestScore >= 0.9 Then Exit While
+                    If bestScore >= 0.8 Then Exit While
 
                 End If
 
-                Await Task.Delay(30)
+                Await Task.Delay(300)
 
             End While
 
