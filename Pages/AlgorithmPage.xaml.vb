@@ -395,7 +395,12 @@ Public Class AlgorithmPage
             ' =========================
             ' OCR
             ' =========================
-            Dim text As String = _ocr.RunRoi(_srcMat, _roi)
+            Dim result = _ocr.RunRoi(_srcMat, _roi)
+
+            If result Is Nothing Then Return
+
+            Dim text As String = result.Text
+            Dim score As Double = result.Score
 
             ' =========================
             ' =========================
@@ -404,9 +409,12 @@ Public Class AlgorithmPage
             End If
 
             RoiText.Text = text
-            ScoreText.Text = "OCR Done"
+            ScoreText.Text = score.ToString("F3")
 
-            MessageBox.Show("OCR結果：" & text)
+            MessageBox.Show(
+    $"OCR結果：{text}" &
+    vbCrLf &
+    $"置信度：{score:F3}")
 
         Catch ex As Exception
             MessageBox.Show(ex.Message)

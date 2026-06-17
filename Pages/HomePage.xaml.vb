@@ -340,8 +340,9 @@ Class HomePage
         End Try
 
     End Sub
-#Region "清晰度評估"
-
+#Region "清晰度評估暨OCR"
+    Private ReadOnly _ocr As PaddleOcrService =
+    AppRuntime.OCR
     Private Async Sub BtnLaplacian_Click(
     sender As Object,
     e As RoutedEventArgs)
@@ -352,36 +353,23 @@ Class HomePage
             Dim bestScore As Double = Double.MinValue
 
             Dim sb As New StringBuilder()
-
             Dim sw As New Stopwatch()
-
             sw.Start()
 
-            Dim index As Integer = 0
+            ' 1. Laplacian 選最佳幀
+            While sw.ElapsedMilliseconds < 3000
 
-            While sw.ElapsedMilliseconds < 2000
-
-                Dim frame =
-                CameraService.Instance.LatestFrame
+                Dim frame = CameraService.Instance.LatestFrame
 
                 If frame IsNot Nothing Then
 
-                    Dim currentFrame =
-                    frame.Clone()
+                    Dim score = Laplacian.GetScore(frame)
 
-                    Dim score =
-                    Laplacian.GetScore(currentFrame)
-
-                    index += 1
-
-                    sb.AppendLine(
-                    $"Frame {index:D3} Score={score:F2}")
+                    sb.AppendLine($"Score={score:F2}")
 
                     If score > bestScore Then
-
                         bestScore = score
-                        bestFrame = currentFrame
-
+                        bestFrame = frame.Clone()
                     End If
 
                 End If
@@ -392,24 +380,119 @@ Class HomePage
 
             Logger.Debug("===== Laplacian Result =====")
             Logger.Debug(sb.ToString())
-            Logger.Debug($"Best Score={bestScore:F2}")
+            Logger.Debug($"Best laplacian Score={bestScore:F2}")
 
-            If bestFrame IsNot Nothing Then
+            If bestFrame Is Nothing Then Return
 
-                RenderImage.Source = bestFrame
+            RenderImage.Source = bestFrame
 
-            End If
+            Dim bestMat =
+            BitmapSourceConverter.ToMat(bestFrame)
+
+            Dim roi As New OpenCvSharp.Rect(
+            0,
+            0,
+            bestMat.Width,
+            bestMat.Height)
+
+            Dim ocrResult = Await Task.Run(Function()
+
+                                               Dim angles() As Double =
+    {
+        -15, -10, -5,
+        0,
+        5, 10, 15
+    }
+
+                                               Dim bestText As String = ""
+                                               Dim bestOcrScore As Double = 0
+                                               Dim bestAngle As Double = 0
+
+                                               For Each angle In angles
+
+                                                   Using rotated = RotateMat(bestMat, angle)
+
+                                                       Dim result = _ocr.RunRoi(rotated, roi)
+
+                                                       If result IsNot Nothing Then
+
+                                                           Logger.Debug(
+                    $"Angle={angle} Text={result.Text} Score={result.Score:F3}")
+
+                                                           If result.Score > bestOcrScore Then
+
+                                                               bestOcrScore = result.Score
+                                                               bestText = result.Text
+                                                               bestAngle = angle
+
+                                                           End If
+
+                                                           If result.Score >= 0.9 Then
+                                                               Exit For
+                                                           End If
+
+                                                       End If
+
+                                                   End Using
+
+                                               Next
+
+                                               ' 沒有 0.9 就用最高分
+                                               Return New With {
+        .Text = bestText,
+        .Score = bestOcrScore,
+        .Angle = bestAngle
+    }
+
+                                           End Function)
+
+            Logger.Debug("===== OCR Result =====")
+            Logger.Debug($"Text={ocrResult.Text}")
+            Logger.Debug($"Score={ocrResult.Score:F3}")
+            Logger.Debug($"Angle={ocrResult.Angle}")
+
+            MessageBox.Show(
+            $"OCR結果：{ocrResult.Text}" &
+            vbCrLf &
+            $"置信度：{ocrResult.Score:F3}" &
+            vbCrLf &
+            $"最佳角度：{ocrResult.Angle}")
 
         Catch ex As Exception
 
-            MessageBox.Show(
-            "清晰度評估失敗：" &
-            ex.Message)
+            MessageBox.Show("清晰度評估失敗：" & ex.Message)
 
         End Try
 
     End Sub
+    Private Function RotateMat(
+    src As Mat,
+    angle As Double) As Mat
 
+        Dim center As New Point2f(
+        src.Width / 2.0F,
+        src.Height / 2.0F)
+
+        Dim matrix =
+        Cv2.GetRotationMatrix2D(
+            center,
+            angle,
+            1.0)
+
+        Dim dst As New Mat()
+
+        Cv2.WarpAffine(
+        src,
+        dst,
+        matrix,
+        src.Size(),
+        InterpolationFlags.Linear,
+        BorderTypes.Constant,
+        Scalar.White)
+
+        Return dst
+
+    End Function
 #End Region
     Private Sub OnCameraChanged()
 
