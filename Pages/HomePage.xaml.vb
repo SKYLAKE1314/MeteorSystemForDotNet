@@ -615,13 +615,13 @@ Class HomePage
     End Sub
     Public Sub RefreshLanguageUI()
 
-        BtnLoadImage.Content = LanguageManager.T("Nav_Run")
-        BtnClear.Content = LanguageManager.T("Clear")
-        BtnStart.Content = LanguageManager.T("Start")
-        BtnStop.Content = LanguageManager.T("Stop")
-        BtnGetImg.Content = LanguageManager.T("LiveDetect")
-        BtnSave.Content = LanguageManager.T("SaveImage")
-        BtnLaplacian.Content = LanguageManager.T("Laplacian")
+        BtnLoadImage.Content = LanguageManager.T("Home_BtnLoadImage")
+        BtnClear.Content = LanguageManager.T("Home_BtnClear")
+        BtnStart.Content = LanguageManager.T("Home_BtnStart")
+        BtnStop.Content = LanguageManager.T("Home_BtnStop")
+        BtnGetImg.Content = LanguageManager.T("Home_BtnGetImg")
+        BtnSave.Content = LanguageManager.T("Home_BtnSave")
+        BtnLaplacian.Content = LanguageManager.T("Home_BtnLaplacian")
 
     End Sub
 End Class
