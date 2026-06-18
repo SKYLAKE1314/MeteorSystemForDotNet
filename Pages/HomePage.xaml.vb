@@ -460,10 +460,11 @@ Class HomePage
 
         Catch ex As Exception
 
-            MessageBox.Show("清晰度評估失敗：" & ex.Message)
-
+            ErrorDialogHelper.ShowError(
+                "清晰度評估失敗：" &
+                vbCrLf &
+                ex.Message)
         End Try
-
     End Sub
     Private Function RotateMat(
     src As Mat,
@@ -589,7 +590,7 @@ Class HomePage
             $"角度：{bestAngle}")
 
         Catch ex As Exception
-            MessageBox.Show("OCR失敗：" & ex.Message)
+            ErrorDialogHelper.ShowError("OCR失敗：" & ex.Message)
         End Try
 
     End Sub

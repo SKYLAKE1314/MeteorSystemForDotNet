@@ -17,8 +17,7 @@ Public Class CameraLink
         Dim index As Integer = CameraManager.FindIndexByDeviceId(My.Settings.CameraDeviceId)
 
         If index < 0 Then
-            MessageBox.Show("Camera not found")
-
+            ErrorDialogHelper.ShowError("Camera not found")
             Return
         End If
 
@@ -34,7 +33,8 @@ Public Class CameraLink
         Logger.Debug($"Actual resolution: {w} x {h}")
 
         If Not _capture.IsOpened() Then
-            Throw New Exception("Camera open failed")
+            ErrorDialogHelper.ShowError("Camera open failed")
+            Return
         End If
 
         _running = True
