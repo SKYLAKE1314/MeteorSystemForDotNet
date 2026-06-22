@@ -10,7 +10,7 @@ Public Class Yolo26Detector
 
     Private ReadOnly _inputHeight As Integer = 640
 
-    Public Property ScoreThreshold As Single = 0.25F
+    Public Property ScoreThreshold As Single = 0.6F
 
     Public Sub New(modelPath As String)
 

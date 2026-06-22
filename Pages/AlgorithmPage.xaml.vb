@@ -239,8 +239,18 @@ Public Class AlgorithmPage
 
                     Dim preview As Mat = Nothing
 
+                    Dim options As New TemplateMatchOptions With {
+    .CannyLow = CannyLowSlider.Value,
+    .CannyHigh = CannyHighSlider.Value,
+    .MinContourArea = MinAreaSlider.Value
+}
+
                     _templateMat =
-                        TemplateMatcher.CreateTemplate(_srcMat, _roi, preview)
+    TemplateMatcher.CreateTemplate(
+        _srcMat,
+        _roi,
+        options,
+        preview)
 
                     TemplateImage.Source =
                         ImageConvertHelper.ToBitmap(preview)
