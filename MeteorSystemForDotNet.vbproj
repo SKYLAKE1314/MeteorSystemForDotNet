@@ -41,6 +41,7 @@
     <PackageReference Include="Sdcb.PaddleInference.runtime.win64.mkl" Version="3.3.1.70" />
     <PackageReference Include="Sdcb.PaddleOCR" Version="3.3.1" />
     <PackageReference Include="Sdcb.PaddleOCR.Models.Local" Version="3.3.1" />
+    <PackageReference Include="Sdcb.PaddleOCR.Models.LocalV4" Version="2.7.0.1" />
     <PackageReference Include="System.Management" Version="11.0.0-preview.5.26302.115" />
     <PackageReference Include="WPF-UI" Version="4.3.0" />
     <PackageReference Include="ZXing.Net" Version="0.16.11" />

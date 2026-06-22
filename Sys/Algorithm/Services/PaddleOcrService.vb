@@ -15,13 +15,20 @@ Public Class PaddleOcrService
 
         _ocr = New ThreadLocal(Of PaddleOcrAll)(
             Function()
-                Return New PaddleOcrAll(
-                    LocalFullModels.ChineseV5,
-                    PaddleDevice.OneDnn()) With {
-                        .AllowRotateDetection = True,
-                        .Enable180Classification = True
-                    }
-            End Function)
+
+                Dim ocr = New PaddleOcrAll(
+                    model,
+                    PaddleDevice.OneDnn()   '  CPU + MKLDNN(如果是Intel晶片)
+                )
+
+                ocr.AllowRotateDetection = False
+                ocr.Enable180Classification = False
+
+                Return ocr
+
+            End Function
+        )
+
     End Sub
 
     Public Function RunRoi(

@@ -7,9 +7,10 @@ Public Class TemplateMatcher
     ' 生成模板
     ' =========================================
     Public Shared Function CreateTemplate(
-        source As Mat,
-        roi As Rect,
-        ByRef preview As Mat) As Mat
+    source As Mat,
+    roi As Rect,
+    options As TemplateMatchOptions,
+    ByRef preview As Mat) As Mat
 
         Dim roiMat As New Mat(source, roi)
 
@@ -23,10 +24,10 @@ Public Class TemplateMatcher
         Dim edges As New Mat()
 
         Cv2.Canny(
-            gray,
-            edges,
-            80,
-            160)
+    gray,
+    edges,
+    options.CannyLow,
+    options.CannyHigh)
 
         ' 避免 Nothing
         Dim contours As Point()() = {}
@@ -40,13 +41,24 @@ Public Class TemplateMatcher
             ContourApproximationModes.ApproxSimple)
 
         preview = roiMat.Clone()
+        ' 過濾 小；輪廓
+        For Each contour In contours
 
-        Cv2.DrawContours(
-            preview,
-            contours,
-            -1,
-            Scalar.Lime,
-            2)
+            Dim area =
+        Cv2.ContourArea(contour)
+
+            If area < options.MinContourArea Then
+                Continue For
+            End If
+
+            Cv2.DrawContours(
+        preview,
+        {contour},
+        -1,
+        Scalar.Lime,
+        2)
+
+        Next
 
         Return roiMat.Clone()
 
@@ -56,10 +68,10 @@ Public Class TemplateMatcher
     ' 同步匹配
     ' =========================================
     Public Shared Function Match(
-        source As Mat,
-        template As Mat,
-        threshold As Double,
-        methodIndex As Integer) As MatchResult
+    source As Mat,
+    template As Mat,
+    threshold As Double,
+    methodIndex As Integer) As MatchResult
         Return MatchCore(
             source,
             template,
@@ -72,10 +84,10 @@ Public Class TemplateMatcher
     ' 異步匹配
     ' =========================================
     Public Shared Async Function MatchAsync(
-        source As Mat,
-        template As Mat,
-        threshold As Double,
-        methodIndex As Integer) As Task(Of MatchResult)
+    source As Mat,
+    template As Mat,
+    threshold As Double,
+    methodIndex As Integer) As Task(Of MatchResult)
 
         Return Await Task.Run(
             Function()
@@ -100,10 +112,13 @@ Public Class TemplateMatcher
     ' Match Core
     ' =========================================
     Private Shared Function MatchCore(
-        source As Mat,
-        template As Mat,
-        threshold As Double,
-        methodIndex As Integer) As MatchResult
+    source As Mat,
+    template As Mat,
+    threshold As Double,
+    methodIndex As Integer) As MatchResult
+
+        Dim srcWork = source.Clone()
+        Dim tplWork = template.Clone()
 
         Dim result As New Mat()
 
@@ -124,10 +139,10 @@ Public Class TemplateMatcher
         End Select
 
         Cv2.MatchTemplate(
-            source,
-            template,
-            result,
-            mode)
+    srcWork,
+    tplWork,
+    result,
+    mode)
 
         Dim minVal As Double
         Dim maxVal As Double
