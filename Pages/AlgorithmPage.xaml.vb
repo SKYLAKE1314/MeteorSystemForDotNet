@@ -77,7 +77,7 @@ Public Class AlgorithmPage
                     Dim frame = CameraService.Instance.LatestFrame
 
                     If frame Is Nothing Then
-                        Throw New Exception("尚未取得相機影像")
+                        ErrorDialogHelper.ShowError("尚未取得相機影像")
                     End If
 
                     _srcMat?.Dispose()
