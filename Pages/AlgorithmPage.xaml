@@ -91,7 +91,7 @@
                             </UniformGrid.Resources>
                             <Button x:Name="BtnGetSource"
                                     Content="獲取圖像"
-                                    Background="#AA4E20D0"
+                                    Background="#AA4A20D0"
                                     Click="GetSource_Click"/>
                             
                             <Button x:Name="BtnLoadSource"
@@ -148,7 +148,56 @@
                                        Foreground="LightGreen"
                                        HorizontalAlignment="Right"
                                        Margin="0,5,0,0"/>
+                            <TextBlock Text="金字塔層數"
+           Foreground="White"/>
 
+                            <Slider x:Name="PyramidSlider"
+        Minimum="0"
+        Maximum="4"
+        Value="2"
+        TickFrequency="1"/>
+
+                            <TextBlock Text="最小輪廓面積"
+           Foreground="White"/>
+
+                            <Slider x:Name="MinAreaSlider"
+        Minimum="0"
+        Maximum="5000"
+        Value="50"/>
+
+                            <TextBlock Text="Canny Low"
+                                       Foreground="White"/>
+
+                            <Slider x:Name="CannyLowSlider"
+        Minimum="0"
+        Maximum="255"
+        Value="80"/>
+
+                            <TextBlock Text="Canny High"
+                                       Foreground="White"/>
+
+                            <Slider x:Name="CannyHighSlider"
+        Minimum="0"
+        Maximum="255"
+        Value="160"/>
+
+                            <TextBlock Text="角度範圍"
+                                       Foreground="White"/>
+
+                            <Slider x:Name="AngleMinSlider"
+        Minimum="-180"
+        Maximum="180"
+        Value="-20"/>
+
+                            <Slider x:Name="AngleMaxSlider"
+        Minimum="-180"
+        Maximum="180"
+        Value="20"/>
+
+                            <Slider x:Name="AngleStepSlider"
+        Minimum="1"
+        Maximum="30"
+        Value="5"/>
                         </StackPanel>
 
                         <!-- 匹配方法 -->
