@@ -11,13 +11,13 @@ Public Class PaddleOcrService
 
     Public Sub New()
 
-        Dim model As FullOcrModel = LocalFullModels.EnglishV4
+        Dim model As FullOcrModel = LocalFullModels.ChineseV5
 
         _ocr = New ThreadLocal(Of PaddleOcrAll)(
             Function()
                 Return New PaddleOcrAll(
-                    LocalFullModels.EnglishV4,
-                    PaddleDevice.Gpu()) With {
+                    LocalFullModels.ChineseV5,
+                    PaddleDevice.OneDnn()) With {
                         .AllowRotateDetection = True,
                         .Enable180Classification = True
                     }

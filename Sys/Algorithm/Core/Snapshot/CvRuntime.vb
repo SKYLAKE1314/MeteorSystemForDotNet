@@ -2,7 +2,7 @@
 
     Public Property CurrentTemplateName As String
 
-    Public Sub ApplyTemplate(templatePath As String)
+    Public Sub LoadTemplate(templatePath As String)
 
         If String.IsNullOrWhiteSpace(templatePath) Then Return
 

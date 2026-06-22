@@ -1,13 +1,74 @@
 ﻿<Page x:Class="DetectionPage"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
-      xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
-      xmlns:local="clr-namespace:MetroSystemForDotNet"
-      mc:Ignorable="d" 
-      d:DesignHeight="450" d:DesignWidth="800"
-      Title="DetectionPage">
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
     <Grid>
-        
+
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="3*" />
+            <ColumnDefinition Width="320" />
+        </Grid.ColumnDefinitions>
+
+        <Border Grid.Column="0"
+                Margin="10"
+                BorderBrush="#505050"
+                BorderThickness="1">
+
+            <Image x:Name="ImgResult"
+                   Stretch="Uniform"/>
+
+        </Border>
+
+        <StackPanel Grid.Column="1"
+                    Margin="10">
+
+            <TextBlock Text="YOLO26檢測"
+                       FontSize="20"
+                       FontWeight="Bold"
+                       Margin="0,0,0,15"/>
+
+            <Button x:Name="BtnLoadModel"
+                    Height="35"
+                    Content="載入模型"
+                    Click="BtnLoadModel_Click"/>
+
+            <TextBox x:Name="TxtModel"
+                     Margin="0,5,0,15"
+                     IsReadOnly="True"/>
+
+            <Button x:Name="BtnLoadImage"
+                    Height="35"
+                    Content="選擇圖片"
+                    Click="BtnLoadImage_Click"/>
+
+            <TextBlock Text="Confidence"
+                       Margin="0,15,0,5"/>
+
+            <Slider x:Name="SliderScore"
+                    Minimum="0"
+                    Maximum="1"
+                    Value="0.25"/>
+
+            <TextBlock x:Name="TxtScore"
+                       Text="0.25"
+                       Margin="0,5,0,15"/>
+
+            <Button x:Name="BtnInfer"
+                    Height="40"
+                    Content="開始推理"
+                    Click="BtnInfer_Click"/>
+
+            <TextBlock Text="Log"
+                       Margin="0,20,0,5"/>
+
+            <TextBox x:Name="TxtLog"
+                     Height="250"
+                     AcceptsReturn="True"
+                     TextWrapping="Wrap"
+                     IsReadOnly="True"
+                     VerticalScrollBarVisibility="Auto"/>
+
+        </StackPanel>
+
     </Grid>
 </Page>
