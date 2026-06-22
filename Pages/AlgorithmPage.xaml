@@ -89,6 +89,11 @@
                                 </Style>
 
                             </UniformGrid.Resources>
+                            <Button x:Name="BtnGetSource"
+                                    Content="獲取圖像"
+                                    Background="#AA4E20D0"
+                                    Click="GetSource_Click"/>
+                            
                             <Button x:Name="BtnLoadSource"
                                     Content="載入原圖"
                                     Background="#AA4A90E2"

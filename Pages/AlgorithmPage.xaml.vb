@@ -69,7 +69,34 @@ Public Class AlgorithmPage
         End If
 
     End Sub
+#Region "獲取圖像"
+    Private Sub GetSource_Click(sender As Object, e As RoutedEventArgs)
 
+        SafeRun(Sub()
+
+                    Dim frame = CameraService.Instance.LatestFrame
+
+                    If frame Is Nothing Then
+                        Throw New Exception("尚未取得相機影像")
+                    End If
+
+                    _srcMat?.Dispose()
+
+                    _srcMat = BitmapSourceToMat(frame)
+
+                    SrcImage.Source = ImageConvertHelper.ToBitmap(_srcMat)
+
+                    _roiCtrl = New RoiController(
+                    RoiCanvas,
+                    SrcImage,
+                    _srcMat)
+
+                    ResetUI()
+
+                End Sub)
+
+    End Sub
+#End Region
     ' =========================
     ' Load Image
     ' =========================
