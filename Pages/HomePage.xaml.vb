@@ -91,6 +91,7 @@ Class HomePage
 
     End Sub
 #Region "相機觸發"
+    Private _io As IOController
     Private Async Sub BtnGetImg_Click(sender As Object, e As RoutedEventArgs)
 
         Try
@@ -106,16 +107,21 @@ Class HomePage
 
             Dim result = Await Draw_opencv.ProcessAsync(mat, templateName)
 
-            RenderImage.Source =
-                result.Mat.ToWriteableBitmap()
+            RenderImage.Source = result.Mat.ToWriteableBitmap()
 
             Logger.Info($"Score={result.Score:F3}, OK={result.IsOk}")
 
+            ' ⭐ 核心：觸發 IO 控制
+            If _io IsNot Nothing Then
+                _io.Trigger(If(result.IsOk, "OK", "NG"))
+            End If
+
         Catch ex As Exception
-            MessageBox.Show("ROI錯誤" + ex.Message)
+            MessageBox.Show("ROI錯誤: " & ex.Message)
         End Try
 
     End Sub
+
 #End Region
     ' =========================================
     ' Clear
