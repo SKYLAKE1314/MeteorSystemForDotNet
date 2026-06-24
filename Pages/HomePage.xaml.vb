@@ -86,7 +86,7 @@ Class HomePage
             Logger.Info($"Score={result.Score:F3}, OK={result.IsOk}")
 
         Catch ex As Exception
-            MessageBox.Show(ex.Message)
+            ErrorDialogHelper.ShowError("ROI錯誤: " & ex.Message)
         End Try
 
     End Sub
@@ -119,7 +119,7 @@ Class HomePage
             End If
 
         Catch ex As Exception
-            MessageBox.Show("ROI錯誤: " & ex.Message)
+            ErrorDialogHelper.ShowError("ROI錯誤: " & ex.Message)
         End Try
 
     End Sub
