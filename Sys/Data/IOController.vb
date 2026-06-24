@@ -20,7 +20,6 @@ Public Class IOController
     Private ReadOnly _port As Integer
     Private ReadOnly _unitId As Byte
     Private ReadOnly _coilBase As UShort
-
 #End Region
 
 #Region "Ctor"
@@ -82,6 +81,18 @@ Public Class IOController
         End If
     End Sub
 
+    Public Sub TriggerByScore(score As Double, threshold As Double)
+
+        _log($"Score={score:F3}, Threshold={threshold:F3}")
+
+        If score >= threshold Then
+            HandleOK()
+        Else
+            HandleNG()
+        End If
+
+    End Sub
+
 #End Region
 
 #Region "OK / NG"
@@ -106,22 +117,19 @@ Public Class IOController
 
         SetTowerLight(True, False, False)
 
-        Task.Run(Async Function()
+        Try
+            PlayVoice("Error.wav")
 
-                     Try
-                         PlayVoice("Error.wav")
+            _buzzer?.SetCoil(3, True)
+            Thread.Sleep(2000)
+            _buzzer?.SetCoil(3, False)
 
-                         _buzzer?.SetCoil(3, True)
-                         Await Task.Delay(2000)
+            _buzzer?.SetCoil(0, False)
+            _buzzer?.SetCoil(1, True)
 
-                         _buzzer?.SetCoil(3, False)
-                         _buzzer?.SetCoil(0, False)
-                         _buzzer?.SetCoil(1, True)
-
-                     Catch
-                     End Try
-
-                 End Function)
+        Catch ex As Exception
+            _log("NG处理失败: " & ex.Message)
+        End Try
 
         _log("收到NG")
 

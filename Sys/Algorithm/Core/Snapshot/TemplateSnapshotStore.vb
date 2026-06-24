@@ -9,19 +9,41 @@ Public Module TemplateSnapshotStore
     Public Sub Save(snapshot As TemplateSnapshot)
 
         Dim json = JsonSerializer.Serialize(snapshot, New JsonSerializerOptions With {
-            .WriteIndented = True
-        })
+        .WriteIndented = True
+    })
 
-        File.WriteAllText(FilePath, json)
+        Dim tmpPath = FilePath & ".tmp"
+
+        File.WriteAllText(tmpPath, json)
+
+        If File.Exists(FilePath) Then
+            File.Delete(FilePath)
+        End If
+
+        File.Move(tmpPath, FilePath)
 
     End Sub
 
     Public Function Load() As TemplateSnapshot
 
-        If Not File.Exists(FilePath) Then Return Nothing
+        Try
+            If Not File.Exists(FilePath) Then
+                Return New TemplateSnapshot()
+            End If
 
-        Dim json = File.ReadAllText(FilePath)
-        Return JsonSerializer.Deserialize(Of TemplateSnapshot)(json)
+            Dim json = File.ReadAllText(FilePath)
+
+            Dim obj = JsonSerializer.Deserialize(Of TemplateSnapshot)(json)
+
+            If obj Is Nothing Then
+                Return New TemplateSnapshot()
+            End If
+
+            Return obj
+
+        Catch ex As Exception
+            Return New TemplateSnapshot()
+        End Try
 
     End Function
 

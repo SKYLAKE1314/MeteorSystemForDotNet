@@ -113,7 +113,9 @@ Class HomePage
 
             ' ⭐ 核心：觸發 IO 控制
             If _io IsNot Nothing Then
-                _io.Trigger(If(result.IsOk, "OK", "NG"))
+                Dim snapshot = TemplateSnapshotStore.Load()
+
+                _io.TriggerByScore(result.Score, snapshot.Threshold)
             End If
 
         Catch ex As Exception

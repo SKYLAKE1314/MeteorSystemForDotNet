@@ -33,12 +33,14 @@
                           Margin="0,15,0,15">
 
                 <TextBox
-                    x:Name="TxtMessage"
-                    IsReadOnly="True"
-                    BorderThickness="0"
-                    Background="Transparent"
-                    Foreground="White"
-                    TextWrapping="Wrap"/>
+    x:Name="TxtMessage"
+    IsReadOnly="True"
+    BorderThickness="0"
+    Background="Transparent"
+    Foreground="White"
+    TextWrapping="Wrap"
+    VerticalScrollBarVisibility="Auto"
+    HorizontalScrollBarVisibility="Disabled"/>
 
             </ScrollViewer>
 

@@ -1,36 +1,36 @@
-﻿Public Class ErrorDialog
+﻿Partial Public Class ErrorDialog
 
-    Public Sub New(message As String)
-
+    Public Sub New()
         InitializeComponent()
-
-        TxtMessage.Text = message
-
     End Sub
 
-    Private Sub BtnOk_Click(
-        sender As Object,
-        e As RoutedEventArgs)
+    Public Sub New(message As String)
+        InitializeComponent()
+        TxtMessage.Text = message
+    End Sub
 
-        DialogResult = True
-
+    Private Sub BtnOk_Click(sender As Object, e As RoutedEventArgs)
+        Close()
     End Sub
 
 End Class
+
 
 Public NotInheritable Class ErrorDialogHelper
 
     Public Shared Sub ShowError(message As String)
 
-        Dim dlg As New ErrorDialog(message)
+        Dim action = Sub()
+                         Dim dlg As New ErrorDialog(message)
+                         dlg.Owner = Application.Current.MainWindow
+                         dlg.ShowDialog()
+                     End Sub
 
-        Dim owner = Window.GetWindow(Application.Current.MainWindow)
-
-        If owner IsNot Nothing Then
-            dlg.Owner = owner
+        If Application.Current.Dispatcher.CheckAccess() Then
+            action()
+        Else
+            Application.Current.Dispatcher.BeginInvoke(action)
         End If
-
-        dlg.ShowDialog()
 
     End Sub
 

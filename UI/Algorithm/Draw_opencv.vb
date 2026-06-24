@@ -98,10 +98,10 @@ Public Class Draw_opencv
             2)
 
         Return New ResultPack With {
-            .Mat = display,
-            .Score = result.Score,
-            .IsOk = result.IsOk
-        }
+    .Mat = display,
+    .Score = result.Score,
+    .IsOk = (result.Score >= data.Config.Threshold)
+}
 
     End Function
 
