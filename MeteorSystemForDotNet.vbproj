@@ -32,6 +32,7 @@
     <PackageReference Include="Intel.ML.OnnxRuntime.OpenVino" Version="1.24.1" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4071-prerelease" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.5-beta1" />
+    <PackageReference Include="NModbus" Version="4.0.0-alpha010" />
     <PackageReference Include="NModbus4" Version="3.0.0-alpha2" />
     <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260602" />
     <PackageReference Include="OpenCvSharp4.Extensions" Version="4.13.0.20260602" />
