@@ -39,6 +39,19 @@ Class HomePage
 
         Logger.SetWpfRichTextBox(rtbLog)
 
+        _io = New IOController(
+        "192.168.0.10",
+        502,
+        1,
+        0,
+        Sub(msg) Logger.Info(msg)
+    )
+
+        Await _io.InitializeAsync()
+
+        Logger.Info("IO 初始化完成")
+
+
         AddHandler Logger.LogReceived, AddressOf GlobalLogReceived
 
         Logger.Info("HomePage 已載入")
@@ -85,6 +98,13 @@ Class HomePage
 
             Logger.Info($"Score={result.Score:F3}, OK={result.IsOk}")
 
+            If _io IsNot Nothing Then
+                Dim snapshot = TemplateSnapshotStore.Load()
+                If snapshot IsNot Nothing Then
+                    _io.TriggerByScore(result.Score, snapshot.Threshold)
+                End If
+            End If
+
         Catch ex As Exception
             ErrorDialogHelper.ShowError("ROI錯誤: " & ex.Message)
         End Try
@@ -114,8 +134,11 @@ Class HomePage
             ' ⭐ 核心：觸發 IO 控制
             If _io IsNot Nothing Then
                 Dim snapshot = TemplateSnapshotStore.Load()
-
-                _io.TriggerByScore(result.Score, snapshot.Threshold)
+                If snapshot IsNot Nothing Then
+                    Logger.Info("IO CALL START")
+                    _io.TriggerByScore(result.Score, snapshot.Threshold)
+                    Logger.Info("IO CALL END")
+                End If
             End If
 
         Catch ex As Exception
