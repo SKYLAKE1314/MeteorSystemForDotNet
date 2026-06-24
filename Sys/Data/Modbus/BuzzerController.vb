@@ -1,7 +1,6 @@
 ﻿Imports System
 Imports System.Threading
 Imports System.Threading.Tasks
-Imports IoBoard
 Imports MetroSystemForDotNet.IoBoard
 
 Namespace MetroClient.Services

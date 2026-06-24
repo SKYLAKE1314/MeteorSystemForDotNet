@@ -28,16 +28,48 @@
             </ComboBox>
 
             <!-- Camera -->
-            <TextBlock
-                Text="相機"
-                FontSize="16"
-                FontWeight="SemiBold"
-                Foreground="White"
-                Margin="0,0,0,0"/>
+            <TextBlock Text="相機"
+               FontSize="16"
+               FontWeight="SemiBold"
+               Foreground="White"
+               Margin="0,0,0,8"/>
 
-            <ComboBox x:Name="CameraComboBox"
-              Width="200"
-              SelectionChanged="CameraComboBox_SelectionChanged"/>
+            <ItemsControl ItemsSource="{Binding CameraRows}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Orientation="Horizontal" Margin="0,4">
+
+                            <!-- 標題 -->
+                            <TextBlock Text="{Binding Title}"
+                               Width="60"
+                               Foreground="White"
+                               VerticalAlignment="Center"/>
+
+                            <!-- 相機選擇 -->
+                            <ComboBox Width="200"
+                              ItemsSource="{Binding CameraList}"
+                              DisplayMemberPath="Name"
+                              SelectedItem="{Binding SelectedCamera}"
+                              SelectionChanged="Camera_SelectionChanged"/>
+
+                            <!-- + 按鈕（只最後一列顯示） -->
+                            <Button Content="+"
+                            Width="40"
+                            Margin="10,0,0,0"
+                            Click="AddCamera_Click"
+                            Visibility="{Binding AddVisible}"/>
+
+                            <!-- - 按鈕（第二列開始才顯示） -->
+                            <Button Content="-"
+                            Width="40"
+                            Margin="10,0,0,0"
+                            Click="RemoveCamera_Click"
+                            Visibility="{Binding RemoveVisible}"/>
+
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
 
             <!-- DLBoost -->
             <TextBlock
