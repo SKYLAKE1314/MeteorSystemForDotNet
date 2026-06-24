@@ -20,20 +20,24 @@ Public Class IOController
     Private ReadOnly _port As Integer
     Private ReadOnly _unitId As Byte
     Private ReadOnly _coilBase As UShort
+    Private ReadOnly _mode As IoBoardMode
 #End Region
 
 #Region "Ctor"
 
     Public Sub New(ip As String,
-                   port As Integer,
-                   unitId As Byte,
-                   coilBase As UShort,
-                   log As Action(Of String))
+               port As Integer,
+               unitId As Byte,
+               coilBase As UShort,
+               mode As IoBoardMode,
+               log As Action(Of String))
 
         _ip = ip
         _port = port
         _unitId = unitId
         _coilBase = coilBase
+        _mode = mode
+
         If log Is Nothing Then
             _log = Sub(x As String)
                    End Sub
@@ -48,6 +52,12 @@ Public Class IOController
 #Region "Init"
 
     Public Async Function InitializeAsync() As Task
+
+        If _mode = IoBoardMode.NONE Then
+            _log("IO Mode = NONE")
+            Return
+        End If
+
         Try
             _buzzer = New ModbusBuzzer(_ip, _port, _unitId, _coilBase)
 
@@ -63,8 +73,8 @@ Public Class IOController
             _log("IO初始化失敗: " & ex.Message)
             SafeDispose()
         End Try
-    End Function
 
+    End Function
 #End Region
 
 #Region "Public API"
@@ -140,7 +150,7 @@ Public Class IOController
 #Region "Tower Light"
 
     Public Sub SetTowerLight(red As Boolean, yellow As Boolean, green As Boolean)
-
+        If _mode = IoBoardMode.NONE Then Return
         Try
             If _buzzer Is Nothing Then Return
 

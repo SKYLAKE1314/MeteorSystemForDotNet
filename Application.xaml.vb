@@ -15,6 +15,14 @@ Class Application
         End If
 
         LanguageManager.Load(lang)
+        '' 讀取上次儲存的io
+        'Dim io As String = My.Settings.IoMode
+
+        'If String.IsNullOrWhiteSpace(io) Then
+        '    io = "null"
+        'End If
+
+        'IoBoardMode.Load(io)
         ' =========================
         ' Startup UI
         ' =========================

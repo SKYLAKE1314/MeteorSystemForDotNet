@@ -27,6 +27,23 @@
 
             </ComboBox>
 
+            <TextBlock
+                Text="IO板卡"
+                FontSize="16"
+                FontWeight="SemiBold"
+                Foreground="White"
+                Margin="0,0,0,0"/>
+            <ComboBox x:Name="IoBoardComboBox"
+                  Width="200"
+                  Margin="20"
+                  SelectionChanged="IoBoardComboBox_SelectionChanged">
+
+                <ComboBoxItem Content="IO"/>
+                <ComboBoxItem Content="PLC"/>
+                <ComboBoxItem Content="NONE"/>
+
+            </ComboBox>
+
             <!-- Camera -->
             <TextBlock Text="相機"
                FontSize="16"

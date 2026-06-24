@@ -17,8 +17,9 @@ Namespace IoBoard
 
         Private ReadOnly _sync As New Object()
         Private _disposed As Boolean = False
-
+        Private ReadOnly _mode As IoBoardMode
         Public Property Logger As Action(Of String)
+
 
         ''' <summary>
         ''' 建構
@@ -26,7 +27,8 @@ Namespace IoBoard
         Public Sub New(ip As String,
                        Optional port As Integer = 502,
                        Optional unitId As Byte = 1,
-                       Optional coilBaseAddress As UShort = 0)
+                       Optional coilBaseAddress As UShort = 0,
+                         Optional mode As IoBoardMode = IoBoardMode.IO)
 
             If ip Is Nothing Then
                 Throw New ArgumentNullException(NameOf(ip))
@@ -36,12 +38,18 @@ Namespace IoBoard
             _port = port
             _unitId = unitId
             _coilBaseAddress = coilBaseAddress
+            _mode = mode
         End Sub
 
         ''' <summary>
         ''' 建立連線
         ''' </summary>
-        Public Sub Connect(Optional connectTimeoutMs As Integer = 13000)
+        Public Sub Connect(Optional connectTimeoutMs As Integer = 3000)
+
+            If _mode = IoBoardMode.NONE Then
+                Logger?.Invoke("MODE=NONE，跳过 Connect")
+                Return
+            End If
 
             SyncLock _sync
 
@@ -64,13 +72,18 @@ Namespace IoBoard
 
                 If Not ok OrElse Not _client.Connected Then
 
-                    _client.Close()
+                    Try
+                        _client.Close()
+                    Catch
+                    End Try
+
                     _client = Nothing
 
                     ErrorDialogHelper.ShowError(
-                        $"無法連線到 {_ip}:{_port}（timeout {connectTimeoutMs} ms）")
-                End If
+                $"無法連線到 {_ip}:{_port}（timeout {connectTimeoutMs} ms）")
 
+                    Return   ' ⭐⭐⭐ 关键修复点
+                End If
 
                 _client.EndConnect(ar)
 
@@ -79,8 +92,7 @@ Namespace IoBoard
                 _master.Transport.ReadTimeout = 2000
                 _master.Transport.WriteTimeout = 2000
 
-                Logger?.Invoke(
-                    $"已連線 {_ip}:{_port}，UnitId={_unitId}")
+                Logger?.Invoke($"已連線 {_ip}:{_port}，UnitId={_unitId}")
 
             End SyncLock
 
@@ -119,7 +131,9 @@ Namespace IoBoard
         ''' 設定 DO
         ''' </summary>
         Public Sub SetDO(channelOneBased As Integer, onState As Boolean)
-
+            If _mode = IoBoardMode.NONE Then
+                Return
+            End If
             If channelOneBased <= 0 Then
                 Throw New ArgumentOutOfRangeException(NameOf(channelOneBased))
             End If
@@ -135,7 +149,9 @@ Namespace IoBoard
         ''' 直接寫 Coil
         ''' </summary>
         Public Sub SetCoil(coilAddress As UShort, onState As Boolean)
-
+            If _mode = IoBoardMode.NONE Then
+                Return
+            End If
             SyncLock _sync
 
                 EnsureNotDisposed()
@@ -172,7 +188,9 @@ Namespace IoBoard
         Public Sub BeepOnce(Optional channelOneBased As Integer = 1,
                             Optional durationMs As Integer = 2000,
                             Optional retryTimes As Integer = 1)
-
+            If _mode = IoBoardMode.NONE Then
+                Return
+            End If
             If durationMs <= 0 Then
                 Throw New ArgumentOutOfRangeException(NameOf(durationMs))
             End If

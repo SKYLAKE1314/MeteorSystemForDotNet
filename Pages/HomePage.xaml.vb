@@ -44,6 +44,7 @@ Class HomePage
         502,
         1,
         0,
+        IoBoardMode.IO,
         Sub(msg) Logger.Info(msg)
     )
 

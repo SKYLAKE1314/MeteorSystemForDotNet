@@ -6,6 +6,8 @@ Imports System.Collections.ObjectModel
 Public Class SettingPage
 
     Private _isLoaded As Boolean = False
+
+    Private _ioMode As IoBoardMode = IoBoardMode.IO
     Private _cameraList As New List(Of CameraInfo)
 
     Public Property CameraRows As New ObservableCollection(Of CameraRow)
@@ -18,6 +20,12 @@ Public Class SettingPage
         Me.DataContext = Me   ' ⭐ 讀settings
 
         _isLoaded = True
+        ' IO卡
+        Dim modeStr = My.Settings.IoMode
+
+        If Not [Enum].TryParse(modeStr, _ioMode) Then
+            _ioMode = IoBoardMode.IO
+        End If
 
         LoadCameraRows()
 
@@ -68,6 +76,30 @@ Public Class SettingPage
         If main IsNot Nothing Then
             main.RefreshLanguageUI()
         End If
+
+
+    End Sub
+    ' 板卡
+
+    Private Sub IoBoardComboBox_SelectionChanged(sender As Object, e As SelectionChangedEventArgs)
+
+        If IoBoardComboBox.SelectedItem Is Nothing Then Return
+
+        Dim text = TryCast(CType(IoBoardComboBox.SelectedItem, ComboBoxItem).Content, String)
+
+        Select Case text
+            Case "IO"
+                _ioMode = IoBoardMode.IO
+
+            Case "PLC"
+                _ioMode = IoBoardMode.PLC
+
+            Case "NONE"
+                _ioMode = IoBoardMode.NONE
+        End Select
+
+        My.Settings.IoMode = _ioMode.ToString()
+        My.Settings.Save()
 
     End Sub
 
