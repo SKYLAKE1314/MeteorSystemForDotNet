@@ -67,9 +67,10 @@ Namespace IoBoard
                     _client.Close()
                     _client = Nothing
 
-                    Throw New InvalidOperationException(
+                    ErrorDialogHelper.ShowError(
                         $"無法連線到 {_ip}:{_port}（timeout {connectTimeoutMs} ms）")
                 End If
+
 
                 _client.EndConnect(ar)
 
