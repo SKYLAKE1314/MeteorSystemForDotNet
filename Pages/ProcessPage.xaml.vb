@@ -1,5 +1,6 @@
 ﻿Imports System.Reflection.Metadata
 Imports System.Windows
+Imports Newtonsoft.Json
 Imports VAT.Common
 Imports VAT.Common.VATJsonObject
 
@@ -15,6 +16,12 @@ Partial Public Class ProcessPage
 
     Private _enableDataReturn As Boolean = False
     Private _enableRealtime As Boolean = False
+
+    Private _endTaskRunning As Boolean = False
+    Private _realtimeTimer As System.Timers.Timer
+
+    Public Shared Event OnRealtimeTrigger As Action
+    Private _isOnline As Boolean = False
 
     Public Sub New()
 
@@ -150,7 +157,7 @@ Partial Public Class ProcessPage
 
         AddLog($"Part={t.PartCode}, Supplier={t.SupplierCode}, Count={t.PartCount}")
 
-        AddLog($"Station={t.StationId}")
+        AddLog($"BatchNo={t.BatchNo}")
 
     End Sub
 
@@ -158,7 +165,7 @@ Partial Public Class ProcessPage
 
         AddLog($"START {t.RequestId}")
         AddLog($"Part={t.PartCode}, Supplier={t.SupplierCode}, Count={t.PartCount}")
-        AddLog($"Station={t.StationId}")
+        AddLog($"BatchNo={t.BatchNo}")
 
     End Sub
 
@@ -173,26 +180,60 @@ Partial Public Class ProcessPage
 
         AddLog("END: " & t.RequestId)
 
-        '如果有勾選「數據返回」
-        If _enableDataReturn Then
-
-            Dim result As New VATJsonObject()
-
-            result("requestId") = t.RequestId
-            result("taskStatus") = 3
-            result("partCode") = t.PartCode
-            result("supplierCode") = t.SupplierCode
-            result("partCount") = t.PartCount
-            result("stationId") = t.StationId
-
-            result("resultTime") = DateTime.Now.ToString("HH:mm:ss")
-
-            Await _ws.SendToServer(result.ToString())
-
-            AddLog("RESULT RETURNED")
-
+        If _endTaskRunning Then
+            AddLog("SKIP DUPLICATE END TASK")
+            Return
         End If
 
+        _endTaskRunning = True
+
+        Dim result As New Dictionary(Of String, Object)
+        result("requestId") = t.RequestId
+        result("batchNo") = t.BatchNo
+
+        Dim list As New List(Of Dictionary(Of String, Object))
+
+            For i As Integer = 1 To t.PartCount
+
+                Dim item As New Dictionary(Of String, Object)
+
+                item("detectionNo") = $"DET-{t.RequestId}-{i:000}"
+                item("taskPartName") = t.PartCode
+                item("recognizedPartName") = t.PartCode
+                item("collectImageUrl") = $"http://edge-server/images/{t.RequestId}_{i:000}.jpg"
+                item("recognizedPartCode") = t.PartCode
+
+                Dim confidence As Double = 0.8 + (i * 0.01)
+                item("confidence") = Math.Round(confidence, 3)
+
+                If i Mod 3 = 0 Then
+                    item("resultType") = "MISMATCH"
+                Else
+                    item("resultType") = "MATCH"
+                End If
+
+                list.Add(item)
+
+            Next
+        result("partInspectList") = list
+
+        result("totalInspectedCount") = t.PartCount
+
+            Dim matchCount As Integer = 0
+
+            For Each x In list
+                If x("resultType").ToString() = "MATCH" Then
+                    matchCount += 1
+                End If
+            Next
+
+            result("totalMatchCount") = matchCount
+
+        Await _ws.Broadcast(JsonConvert.SerializeObject(result))
+
+        AddLog("RESULT RETURNED")
+
+        _endTaskRunning = False
     End Sub
 
     Private Sub HandleLog(msg As VATJsonObject)
@@ -208,15 +249,26 @@ Partial Public Class ProcessPage
 
     End Sub
 
-    Private Sub HandleStatus(msg As VATJsonObject)
+    Public Sub HandleStatus(msg As VATJsonObject)
 
         Dim device = msg("device")
         Dim online = Boolean.Parse(msg("online"))
 
+        _isOnline = online   ' ⭐存起來
+
         AddLog($"{device} Online={online}")
 
     End Sub
+    Private Sub TriggerRealtime()
 
+        Dispatcher.Invoke(Sub()
+
+                              Dim home = TryCast(Application.Current.MainWindow.Content, HomePage)
+                              home?.RunDetection()
+
+                          End Sub)
+
+    End Sub
     ' 數據交互
 
     Private Sub DataReturn_Checked(sender As Object, e As RoutedEventArgs)
@@ -228,7 +280,22 @@ Partial Public Class ProcessPage
     End Sub
 
     Private Sub Realtime_Checked(sender As Object, e As RoutedEventArgs)
+        If _enableRealtime AndAlso Not _isOnline Then
+
+            Task.Run(Async Sub()
+
+                         Await Task.Delay(10000)
+
+                         RaiseEvent OnRealtimeTrigger()
+
+                     End Sub)
+
+        End If
         _enableRealtime = True
+    End Sub
+
+    Private Sub Realtime_Unchecked(sender As Object, e As RoutedEventArgs)
+        _enableRealtime = False
     End Sub
 
     Private Async Sub Connect_Click(

@@ -17,7 +17,11 @@ Class HomePage
     Private _isAlive As Boolean = True
     Private _isActive As Boolean = False
     Private _isStreaming As Boolean = False
+    Public Sub RunDetection()
 
+        BtnGetImg_Click(Nothing, Nothing)
+
+    End Sub
     ' =========================================
     ' Page Loaded
     ' =========================================
@@ -51,7 +55,9 @@ Class HomePage
         Await _io.InitializeAsync()
 
         Logger.Info("IO 初始化完成")
+        ' 數據交互訂閲
 
+        AddHandler ProcessPage.OnRealtimeTrigger, AddressOf RunDetection
 
         AddHandler Logger.LogReceived, AddressOf GlobalLogReceived
 

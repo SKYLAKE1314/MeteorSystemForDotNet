@@ -70,10 +70,14 @@
                     Orientation="Horizontal"
                     Margin="0,8,0,0">
 
-                    <CheckBox Content="數據返回"
-                      Margin="0,0,15,0"/>
+                    <CheckBox x:Name="DataReturn"
+          Content="數據返回"
+          Checked="DataReturn_Checked"
+          Unchecked="DataReturn_Unchecked"/>
 
-                    <CheckBox Content="即時結果"/>
+                    <CheckBox Content="即時結果"
+          Checked="Realtime_Checked"
+          Unchecked="Realtime_Unchecked"/>
                 </StackPanel>
 
             </Grid>

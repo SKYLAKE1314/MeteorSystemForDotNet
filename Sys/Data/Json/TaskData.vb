@@ -5,6 +5,6 @@
     Public Property PartCode As String
     Public Property SupplierCode As String
     Public Property PartCount As Integer
-    Public Property StationId As String
+    Public Property BatchNo As String
 
 End Class

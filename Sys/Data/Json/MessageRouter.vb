@@ -46,7 +46,7 @@ Public Class TaskRouter
             t.SupplierCode = Safe(msg, "supplierCode")
 
             t.PartCount = ToInt(msg, "partCount")
-            t.StationId = Safe(msg, "stationId")
+            t.BatchNo = Safe(msg, "batchNo")
 
             ' 如果不是 task message，直接忽略
             If t.RequestId = "" Then Return Nothing
