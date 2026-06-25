@@ -1,4 +1,6 @@
-﻿Imports System.Windows
+﻿Imports System.Reflection.Metadata
+Imports System.Windows
+Imports VAT.Common
 Imports VAT.Common.VATJsonObject
 
 Partial Public Class ProcessPage
@@ -7,6 +9,13 @@ Partial Public Class ProcessPage
     Private ReadOnly _server As New WebSocketServer()
 
     Private ReadOnly _client As New WebSocketClient()
+    Private ReadOnly _router As New TaskRouter()
+
+    Private _taskMap As New Dictionary(Of String, VATJsonObject)
+
+    Private _enableDataReturn As Boolean = False
+    Private _enableRealtime As Boolean = False
+
     Public Sub New()
 
         InitializeComponent()
@@ -22,6 +31,11 @@ Partial Public Class ProcessPage
 
         AddHandler _ws.MessageReceived,
         AddressOf OnMessageReceived
+        _router.OnStart = AddressOf StartTask
+        _router.OnPause = AddressOf PauseTask
+        _router.OnResume = AddressOf ResumeTask
+        _router.OnEnd = AddressOf EndTask
+
 
     End Sub
 
@@ -38,8 +52,6 @@ Partial Public Class ProcessPage
                 Return
             End If
 
-            _serverStarted = True
-
             Dim port As Integer =
             Integer.Parse(PortBox.Text)
 
@@ -51,6 +63,8 @@ Partial Public Class ProcessPage
                 Await _ws.StartServer(port)
 
             End Function)
+
+            _serverStarted = True
 
         Catch ex As Exception
 
@@ -108,20 +122,113 @@ Partial Public Class ProcessPage
         LogBox.Items.Clear()
 
     End Sub
+    Private Sub OnMessageReceived(sender As Object, e As WebSocketMessageEventArgs)
 
+        Dispatcher.Invoke(Sub()
 
-    Private Sub OnMessageReceived(
-        sender As Object,
-        e As WebSocketMessageEventArgs)
+                              Try
+                                  Dim msg As New VATJsonObject(e.Message)
 
-        Dispatcher.Invoke(
-            Sub()
+                                  Try
+                                      If msg Is Nothing Then Exit Sub
+                                      _router.Route(msg)
+                                  Catch ex As Exception
+                                      ErrorDialogHelper.ShowError("Router Error: " & ex.Message)
+                                  End Try
 
-                AddLog(
-                    $"[{e.Source}] {e.Message}")
+                              Catch ex As Exception
+                                  ErrorDialogHelper.ShowError($"Parse Error [{e.Source}] {ex.Message}")
+                              End Try
 
-            End Sub)
+                          End Sub)
 
+    End Sub
+
+    Private Sub StartTask(t As TaskData)
+
+        AddLog($"START {t.RequestId}")
+
+        AddLog($"Part={t.PartCode}, Supplier={t.SupplierCode}, Count={t.PartCount}")
+
+        AddLog($"Station={t.StationId}")
+
+    End Sub
+
+    Private Sub LogTaskStart(t As TaskData)
+
+        AddLog($"START {t.RequestId}")
+        AddLog($"Part={t.PartCode}, Supplier={t.SupplierCode}, Count={t.PartCount}")
+        AddLog($"Station={t.StationId}")
+
+    End Sub
+
+    Private Sub PauseTask(t As TaskData)
+        AddLog("PAUSE: " & t.RequestId)
+    End Sub
+
+    Private Sub ResumeTask(t As TaskData)
+        AddLog("RESUME: " & t.RequestId)
+    End Sub
+    Private Async Sub EndTask(t As TaskData)
+
+        AddLog("END: " & t.RequestId)
+
+        '如果有勾選「數據返回」
+        If _enableDataReturn Then
+
+            Dim result As New VATJsonObject()
+
+            result("requestId") = t.RequestId
+            result("taskStatus") = 3
+            result("partCode") = t.PartCode
+            result("supplierCode") = t.SupplierCode
+            result("partCount") = t.PartCount
+            result("stationId") = t.StationId
+
+            result("resultTime") = DateTime.Now.ToString("HH:mm:ss")
+
+            Await _ws.SendToServer(result.ToString())
+
+            AddLog("RESULT RETURNED")
+
+        End If
+
+    End Sub
+
+    Private Sub HandleLog(msg As VATJsonObject)
+        AddLog("[LOG] " & msg("msg").ToString())
+    End Sub
+
+    Private Sub HandleData(msg As VATJsonObject)
+
+        Dim cam As String = msg("camera")
+        Dim score As Double = Double.Parse(msg("score"))
+
+        AddLog($"Camera={cam}, Score={score}")
+
+    End Sub
+
+    Private Sub HandleStatus(msg As VATJsonObject)
+
+        Dim device = msg("device")
+        Dim online = Boolean.Parse(msg("online"))
+
+        AddLog($"{device} Online={online}")
+
+    End Sub
+
+    ' 數據交互
+
+    Private Sub DataReturn_Checked(sender As Object, e As RoutedEventArgs)
+        _enableDataReturn = True
+    End Sub
+
+    Private Sub DataReturn_Unchecked(sender As Object, e As RoutedEventArgs)
+        _enableDataReturn = False
+    End Sub
+
+    Private Sub Realtime_Checked(sender As Object, e As RoutedEventArgs)
+        _enableRealtime = True
     End Sub
 
     Private Async Sub Connect_Click(

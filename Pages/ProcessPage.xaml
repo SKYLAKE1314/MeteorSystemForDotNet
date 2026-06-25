@@ -16,12 +16,17 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- ================= SERVER ================= -->
         <GroupBox Header="WebSocket Server"
-                  Grid.Row="0"
-                  Margin="0,0,0,10">
+          Foreground="White"
+          Grid.Row="0"
+          Margin="0,0,0,10">
 
             <Grid Margin="10">
+
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
 
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -34,44 +39,50 @@
 
                 <!-- IP -->
                 <TextBlock Text="IP:"
-                           VerticalAlignment="Center"/>
-
-                <!--<TextBox x:Name="IpBox"
-                         Grid.Column="1"
-                         Text="127.0.0.1"
-                         Margin="5,0,15,0"/>-->
+                   VerticalAlignment="Center"/>
 
                 <!-- PORT -->
                 <TextBlock Grid.Column="2"
-                           Text="Port:"
-                           VerticalAlignment="Center"/>
+                   Text="Port:"
+                   VerticalAlignment="Center"/>
 
                 <TextBox x:Name="PortBox"
-                         Grid.Column="3"
-                         Text="5000"
-                         Margin="5,0,15,0"/>
+                 Grid.Column="3"
+                 Text="5000"
+                 Margin="5,0,15,0"/>
 
                 <Button x:Name="BtnStartServer"
-                        Grid.Column="4"
-                        Content="Start"
-                        Width="100"
-                        Margin="0,0,5,0"
-                        Click="StartServer_Click"/>
+                Grid.Column="4"
+                Content="Start"
+                Width="100"
+                Margin="0,0,5,0"
+                Click="StartServer_Click"/>
 
                 <Button x:Name="BtnStopServer"
-                        Grid.Column="5"
-                        Content="Stop"
-                        Width="100"
-                        Click="StopServer_Click"/>
+                Grid.Column="5"
+                Content="Stop"
+                Width="100"
+                Click="StopServer_Click"/>
+
+                <!-- Options row -->
+                <StackPanel Grid.Row="1"
+                    Grid.ColumnSpan="6"
+                    Orientation="Horizontal"
+                    Margin="0,8,0,0">
+
+                    <CheckBox Content="數據返回"
+                      Margin="0,0,15,0"/>
+
+                    <CheckBox Content="即時結果"/>
+                </StackPanel>
 
             </Grid>
-
         </GroupBox>
-
         <!-- ================= CLIENT ================= -->
         <GroupBox Header="WebSocket Client"
                   Grid.Row="1"
-                  Margin="0,0,0,10">
+                  Margin="0,0,0,10"
+                  Foreground="White">
 
             <Grid Margin="10">
 
@@ -110,6 +121,7 @@
         <!-- ================= MESSAGE ================= -->
         <GroupBox Header="Message Sender"
                   Grid.Row="2"
+                  Foreground="White"
                   Margin="0,0,0,10">
 
             <Grid Margin="10">
@@ -143,7 +155,8 @@
         </GroupBox>
 
         <!-- ================= LOG ================= -->
-        <GroupBox Header="Log Console"
+        <GroupBox Header="Log Console Area"
+                  Foreground="White"
                   Grid.Row="3">
 
             <DockPanel>

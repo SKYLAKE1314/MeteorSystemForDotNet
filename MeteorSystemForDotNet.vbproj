@@ -7,6 +7,7 @@
     <UseWPF>true</UseWPF>
     <Platforms>AnyCPU;x64</Platforms>
     <UseWindowsForms>False</UseWindowsForms>
+    <AppDesignerFolder>Meteor Project</AppDesignerFolder>
   </PropertyGroup>
 
   <ItemGroup>
@@ -59,7 +60,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Update="My Project\Settings.Designer.vb">
+    <Compile Update="Meteor Project\configuration.Designer.vb">
+      <DesignTimeSharedInput>True</DesignTimeSharedInput>
+      <AutoGen>True</AutoGen>
+      <DependentUpon>configuration.settings</DependentUpon>
+    </Compile>
+    <Compile Update="Meteor Project\Settings.Designer.vb">
       <DesignTimeSharedInput>True</DesignTimeSharedInput>
       <AutoGen>True</AutoGen>
       <DependentUpon>Settings.settings</DependentUpon>
@@ -67,7 +73,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="My Project\Settings.settings">
+    <None Update="Meteor Project\configuration.settings">
+      <Generator>SettingsSingleFileGenerator</Generator>
+      <LastGenOutput>configuration.Designer.vb</LastGenOutput>
+    </None>
+    <None Update="Meteor Project\Settings.settings">
       <CustomToolNamespace>My</CustomToolNamespace>
       <Generator>SettingsSingleFileGenerator</Generator>
       <LastGenOutput>Settings.Designer.vb</LastGenOutput>
@@ -87,6 +97,10 @@
     <None Update="Voice\Error.wav">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="configuration\" />
   </ItemGroup>
 
 </Project>
