@@ -22,8 +22,17 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="..\..\WebSocketTest\WebSocketTest\WebSocketTest\bin\Debug\net10.0\WebSocketTest.dll" Link="libs\WebSocketTest.dll">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
     <Reference Include="MVSDK_Net">
       <HintPath>libs\MVSDKruntime\donet35\MVSDK_Net.dll</HintPath>
+    </Reference>
+    <Reference Include="WebSocketTest">
+      <HintPath>..\..\WebSocketTest\WebSocketTest\WebSocketTest\bin\Debug\net10.0\WebSocketTest.dll</HintPath>
     </Reference>
   </ItemGroup>
 

@@ -295,40 +295,74 @@ Public Class AlgorithmPage
 
     End Sub
 
-    ' =========================
-    ' Save template + session
-    ' =========================
     Private Sub SaveTemplate_Click(sender As Object, e As RoutedEventArgs)
 
         SafeRun(Sub()
 
                     If _templateMat Is Nothing Then Return
 
-                    Dim config As New TemplateConfig With {
-                        .Threshold = ThresholdSlider.Value,
-                        .MatchMethod = MatchMethodBox.SelectedIndex,
-                        .RoiX = _roi.X,
-                        .RoiY = _roi.Y,
-                        .RoiW = _roi.Width,
-                        .RoiH = _roi.Height,
-                        .EnableOcr = True,
-                        .OcrExpectedText = RoiText.Text,
-                        .EnableBarcode = True,
+                    Dim config As New TemplateConfig
+
+                    With config
+                        .Threshold = ThresholdSlider.Value
+                        .MatchMethod = MatchMethodBox.SelectedIndex
+
+                        .RoiX = _roi.X
+                        .RoiY = _roi.Y
+                        .RoiW = _roi.Width
+                        .RoiH = _roi.Height
+
+                        .EnableOcr = True
+                        .OcrExpectedText = RoiText.Text
+
+                        .EnableBarcode = True
                         .BarcodeExpectedText = ResultText.Text
-                    }
+
+                        .PyramidLevel = CInt(PyramidSlider.Value)
+                        .MinArea = CInt(MinAreaSlider.Value)
+
+                        .CannyLow = CInt(CannyLowSlider.Value)
+                        .CannyHigh = CInt(CannyHighSlider.Value)
+
+                        .AngleMin = AngleMinSlider.Value
+                        .AngleMax = AngleMaxSlider.Value
+                        .AngleStep = AngleStepSlider.Value
+                    End With
+
 
                     Dim path = TemplateManager.SaveTemplate(_templateMat, config)
                     If String.IsNullOrWhiteSpace(path) Then Return
 
-                    Dim snapshot As New TemplateSnapshot With {
-            .TemplatePath = path,
-            .Threshold = config.Threshold,
-            .MatchMethod = config.MatchMethod,
-            .RoiX = config.RoiX,
-            .RoiY = config.RoiY,
-            .RoiW = config.RoiW,
-            .RoiH = config.RoiH
-        }
+                    Dim snapshot As New TemplateSnapshot
+
+                    With snapshot
+                        .TemplatePath = path
+
+                        .Threshold = config.Threshold
+                        .MatchMethod = config.MatchMethod
+
+                        .RoiX = config.RoiX
+                        .RoiY = config.RoiY
+                        .RoiW = config.RoiW
+                        .RoiH = config.RoiH
+
+                        .EnableOcr = config.EnableOcr
+                        .OcrExpectedText = config.OcrExpectedText
+
+                        .EnableBarcode = config.EnableBarcode
+                        .BarcodeExpectedText = config.BarcodeExpectedText
+
+                        .PyramidLevel = config.PyramidLevel
+                        .MinArea = config.MinArea
+
+                        .CannyLow = config.CannyLow
+                        .CannyHigh = config.CannyHigh
+
+                        .AngleMin = config.AngleMin
+                        .AngleMax = config.AngleMax
+                        .AngleStep = config.AngleStep
+                    End With
+
 
                     TemplateSnapshotStore.Save(snapshot)
                     LastTemplateStore.Save(path)

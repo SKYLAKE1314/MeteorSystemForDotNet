@@ -14,13 +14,24 @@ Public Module TemplateSnapshotStore
 
         Dim tmpPath = FilePath & ".tmp"
 
-        File.WriteAllText(tmpPath, json)
+        Try
+            File.WriteAllText(tmpPath, json, System.Text.Encoding.UTF8)
 
-        If File.Exists(FilePath) Then
-            File.Delete(FilePath)
-        End If
+            ' 用 Replace 才是真正原子更新
+            If File.Exists(FilePath) Then
+                File.Replace(tmpPath, FilePath, Nothing)
+            Else
+                File.Move(tmpPath, FilePath)
+            End If
 
-        File.Move(tmpPath, FilePath)
+        Catch ex As Exception
+            ' 清理殘檔
+            If File.Exists(tmpPath) Then
+                File.Delete(tmpPath)
+            End If
+
+            Throw
+        End Try
 
     End Sub
 

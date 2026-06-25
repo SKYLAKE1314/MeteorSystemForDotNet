@@ -1,31 +1,27 @@
 ﻿Public Class TemplateConfig
 
-    ' =========================
-    ' Match
-    ' =========================
     Public Property Threshold As Double
     Public Property MatchMethod As Integer
 
-    ' =========================
-    ' ROI
-    ' =========================
     Public Property RoiX As Integer
     Public Property RoiY As Integer
     Public Property RoiW As Integer
     Public Property RoiH As Integer
 
-    ' =========================
-    ' OCR
-    ' =========================
-    Public Property EnableOcr As Boolean = False
+    Public Property EnableOcr As Boolean
+    Public Property OcrExpectedText As String
 
-    Public Property OcrExpectedText As String = ""
+    Public Property EnableBarcode As Boolean
+    Public Property BarcodeExpectedText As String
 
-    ' =========================
-    ' Barcode
-    ' =========================
-    Public Property EnableBarcode As Boolean = False
+    Public Property PyramidLevel As Integer
+    Public Property MinArea As Integer
 
-    Public Property BarcodeExpectedText As String = ""
+    Public Property CannyLow As Integer
+    Public Property CannyHigh As Integer
+
+    Public Property AngleMin As Double
+    Public Property AngleMax As Double
+    Public Property AngleStep As Double
 
 End Class

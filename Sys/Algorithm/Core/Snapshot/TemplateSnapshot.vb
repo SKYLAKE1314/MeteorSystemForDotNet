@@ -1,5 +1,7 @@
 ﻿Public Class TemplateSnapshot
+
     Public Property TemplatePath As String
+
     Public Property Threshold As Double
     Public Property MatchMethod As Integer
 
@@ -7,4 +9,30 @@
     Public Property RoiY As Integer
     Public Property RoiW As Integer
     Public Property RoiH As Integer
+
+    ' =========================
+    ' OCR
+    ' =========================
+    Public Property EnableOcr As Boolean
+    Public Property OcrExpectedText As String
+
+    ' =========================
+    ' Barcode
+    ' =========================
+    Public Property EnableBarcode As Boolean
+    Public Property BarcodeExpectedText As String
+
+    ' =========================
+    ' Vision params
+    ' =========================
+    Public Property PyramidLevel As Integer
+    Public Property MinArea As Integer
+
+    Public Property CannyLow As Integer
+    Public Property CannyHigh As Integer
+
+    Public Property AngleMin As Double
+    Public Property AngleMax As Double
+    Public Property AngleStep As Double
+
 End Class

@@ -1,4 +1,5 @@
 ﻿Imports System.Windows
+Imports VAT.Common.VATJsonObject
 
 Partial Public Class ProcessPage
 
