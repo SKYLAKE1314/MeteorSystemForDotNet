@@ -186,8 +186,8 @@ Partial Public Class ProcessPage
             result("stationId") = t.StationId
 
             result("resultTime") = DateTime.Now.ToString("HH:mm:ss")
-
-            Await _ws.SendToServer(result.ToString())
+            ' 結果廣播給client
+            Await _ws.Broadcast(result.ToString())
 
             AddLog("RESULT RETURNED")
 
