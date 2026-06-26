@@ -88,6 +88,21 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
 
+            <TextBlock
+                Text="自動化執行"
+                FontSize="16"
+                FontWeight="SemiBold"
+                Foreground="White"
+                Margin="0,20,0,0"/>
+
+            <ComboBox x:Name="AutoRun"
+       Width="200"
+       SelectionChanged="AutoRunComboBox_SelectionChanged">
+
+                <ComboBoxItem Content="True"/>
+                <ComboBoxItem Content="False"/>
+            </ComboBox>
+
             <!-- DLBoost -->
             <TextBlock
                 Text="GPU硬件加速計劃"

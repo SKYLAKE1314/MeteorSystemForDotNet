@@ -45,25 +45,16 @@ Class MainWindow
     ' =========================
     Private Sub PreloadPages()
 
-        Dim pageMap As New Dictionary(Of String, Type) From {
-            {"HomePage", GetType(HomePage)},
-            {"DetectionPage", GetType(DetectionPage)},
-            {"AlgorithmPage", GetType(AlgorithmPage)},
-            {"ProcessPage", GetType(ProcessPage)},
-            {"SettingPage", GetType(SettingPage)}
-        }
+        PageCache("HomePage") = New HomePage()
+        PageCache("DetectionPage") = New DetectionPage()
+        PageCache("AlgorithmPage") = New AlgorithmPage()
 
-        For Each kv In pageMap
+        ' 不要 New
+        PageCache("ProcessPage") = AppRuntime.Process
 
-            Dim pageInstance As Page =
-                CType(Activator.CreateInstance(kv.Value), Page)
-
-            PageCache(kv.Key) = pageInstance
-
-        Next
+        PageCache("SettingPage") = New SettingPage()
 
     End Sub
-
     ' =========================
     ' 導航
     ' =========================

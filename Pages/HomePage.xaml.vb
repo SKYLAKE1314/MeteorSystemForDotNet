@@ -59,6 +59,7 @@ Class HomePage
 
         AddHandler Logger.LogReceived, AddressOf GlobalLogReceived
 
+
         Logger.Info("HomePage 已載入")
 
         ' =========================

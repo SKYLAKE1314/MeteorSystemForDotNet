@@ -56,6 +56,16 @@ Class Application
         AppProgress.Report(10, "載入設定")
 
         TemplateSnapshotStore.Load()
+        ' 自動化
+        Application.Current.Dispatcher.Invoke(Sub()
+
+                                                  AppRuntime.Process = New ProcessPage()
+
+                                                  If My.Settings.AutoRun Then
+                                                      AppRuntime.Process.AutoStartServer()
+                                                  End If
+
+                                              End Sub)
 
         AppProgress.Report(40, "載入模板")
 
@@ -88,5 +98,5 @@ Public Class AppRuntime
 
     Public Shared OCR As PaddleOcrService
     Public Shared Barcode As BarcodeDecodeService
-
+    Public Shared Process As ProcessPage
 End Class

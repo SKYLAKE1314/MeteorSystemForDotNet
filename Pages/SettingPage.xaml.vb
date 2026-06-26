@@ -101,6 +101,10 @@ Public Class SettingPage
         My.Settings.IoMode = _ioMode.ToString()
         My.Settings.Save()
 
+        ' 自動化
+        AutoRun.SelectedIndex =
+If(My.Settings.AutoRun, 0, 1)
+
     End Sub
 
     Private Sub Camera_SelectionChanged(sender As Object, e As SelectionChangedEventArgs)
@@ -142,6 +146,13 @@ Public Class SettingPage
         UpdateCameraButtons()
 
         RefreshAllCameraLists()
+
+        ' 自動化
+        If My.Settings.AutoRun Then
+            AutoRun.SelectedIndex = 0      'True
+        Else
+            AutoRun.SelectedIndex = 1      'False
+        End If
 
     End Sub
 
@@ -226,6 +237,21 @@ Public Class SettingPage
         For Each row In CameraRows
             row.CameraList = GetAvailableCameras(row)
         Next
+
+    End Sub
+
+    Private Sub AutoRunComboBox_SelectionChanged(
+    sender As Object,
+    e As SelectionChangedEventArgs)
+
+        If AutoRun.SelectedItem Is Nothing Then Return
+
+        Dim item = CType(AutoRun.SelectedItem, ComboBoxItem)
+
+        My.Settings.AutoRun =
+        Boolean.Parse(item.Content.ToString())
+
+        My.Settings.Save()
 
     End Sub
 

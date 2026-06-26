@@ -27,6 +27,14 @@ Partial Public Class ProcessPage
 
         InitializeComponent()
 
+        AddHandler _ws.MessageReceived,
+        AddressOf OnMessageReceived
+        _router.OnStart = AddressOf StartTask
+        _router.OnPause = AddressOf PauseTask
+        _router.OnResume = AddressOf ResumeTask
+        _router.OnEnd = AddressOf EndTask
+
+
         AddHandler Me.Loaded,
             AddressOf Page_Loaded
 
@@ -35,13 +43,6 @@ Partial Public Class ProcessPage
     Private Sub Page_Loaded(
     sender As Object,
     e As RoutedEventArgs)
-
-        AddHandler _ws.MessageReceived,
-        AddressOf OnMessageReceived
-        _router.OnStart = AddressOf StartTask
-        _router.OnPause = AddressOf PauseTask
-        _router.OnResume = AddressOf ResumeTask
-        _router.OnEnd = AddressOf EndTask
 
 
     End Sub
@@ -81,6 +82,27 @@ Partial Public Class ProcessPage
 
     End Sub
 
+    Public Async Sub AutoStartServer()
+
+        If _serverStarted Then Return
+
+        Try
+
+            Dim port As Integer = Integer.Parse(PortBox.Text)
+
+            Await _ws.StartServer(port)
+
+            _serverStarted = True
+
+            AddLog("Auto Server Started")
+
+        Catch ex As Exception
+
+            AddLog(ex.Message)
+
+        End Try
+
+    End Sub
     Private Sub StopServer_Click(
     sender As Object,
     e As RoutedEventArgs)
@@ -148,7 +170,7 @@ Partial Public Class ProcessPage
                               End Try
 
                           End Sub)
-
+        Logger.Info("Receive : " & Me.GetHashCode())
     End Sub
 
     Private Sub StartTask(t As TaskData)
@@ -381,11 +403,15 @@ Partial Public Class ProcessPage
 
     End Sub
 
-    Private Sub AddLog(
-        msg As String)
+    Private Sub AddLog(msg As String)
 
-        LogBox.Items.Add(
-            $"{DateTime.Now:HH:mm:ss} {msg}")
+        Dim text = $"{DateTime.Now:HH:mm:ss} {msg}"
+
+        Dispatcher.Invoke(Sub()
+                              LogBox.Items.Add(text)
+                          End Sub)
+
+        Logger.Info(text)
 
     End Sub
 
