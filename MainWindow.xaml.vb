@@ -18,6 +18,7 @@ Class MainWindow
         _windowdesigner.SetButtonActions(MinButton, MaxButton, CloseButton)
 
         AddHandler Me.Loaded, AddressOf MainWindow_Loaded
+        AddHandler Me.Loaded, AddressOf MainWindow_Loaded
         ' 相機訂閲
         CameraService.Instance.Start()
     End Sub
@@ -44,16 +45,13 @@ Class MainWindow
     ' 預載頁面
     ' =========================
     Private Sub PreloadPages()
+        AppRuntime.Home = New HomePage()
 
-        PageCache("HomePage") = New HomePage()
+        PageCache("HomePage") = AppRuntime.Home
         PageCache("DetectionPage") = New DetectionPage()
         PageCache("AlgorithmPage") = New AlgorithmPage()
-
-        ' 不要 New
         PageCache("ProcessPage") = AppRuntime.Process
-
         PageCache("SettingPage") = New SettingPage()
-
     End Sub
     ' =========================
     ' 導航

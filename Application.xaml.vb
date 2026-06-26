@@ -99,4 +99,5 @@ Public Class AppRuntime
     Public Shared OCR As PaddleOcrService
     Public Shared Barcode As BarcodeDecodeService
     Public Shared Process As ProcessPage
+    Public Shared Home As HomePage
 End Class

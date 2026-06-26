@@ -1,10 +1,12 @@
-﻿Public Class ImageToBase64
-    Private Function ImageToBase64(path As String) As String
+﻿Imports OpenCvSharp
+Imports OpenCvSharp.WpfExtensions
+Imports System.Windows.Media.Imaging
 
-        If Not IO.File.Exists(path) Then Return ""
+Public Module ImageToBase64
 
-        Dim bytes = IO.File.ReadAllBytes(path)
-        Return Convert.ToBase64String(bytes)
-
+    Public Function MatToBitmapSource(mat As Mat) As BitmapSource
+        If mat Is Nothing Then Return Nothing
+        Return BitmapSourceConverter.ToBitmapSource(mat)
     End Function
-End Class
+
+End Module

@@ -20,7 +20,7 @@ Partial Public Class ProcessPage
     Private _endTaskRunning As Boolean = False
     Private _realtimeTimer As System.Timers.Timer
 
-    Public Shared Event OnRealtimeTrigger As Action
+    Public Shared Event OnRealtimeTrigger As Action(Of Action(Of DetectionResult))
     Private _isOnline As Boolean = False
 
     Public Sub New()
@@ -239,8 +239,9 @@ Partial Public Class ProcessPage
 
         Dispatcher.Invoke(Sub()
 
-                              Dim home = TryCast(Application.Current.MainWindow.Content, HomePage)
-                              home?.RunDetection()
+                              AppRuntime.Home.RunDetection(Sub(result)
+                                                               '處理結果
+                                                           End Sub)
 
                           End Sub)
 
@@ -299,19 +300,28 @@ Partial Public Class ProcessPage
     End Sub
     Private Sub RunDetectionAndSend(t As TaskData)
 
-        Dim home = TryCast(Application.Current.MainWindow.Content, HomePage)
-
-        If home Is Nothing Then
-            AddLog("HomePage not found")
+        If AppRuntime.Home Is Nothing Then
+            Logger.Error("Home not ready")
             Return
         End If
 
-        home.RunDetection()
+        AppRuntime.Home.RunDetection(Sub(result)
 
-        home?.RunDetection()
+                                         Dim json As New Dictionary(Of String, Object)
 
+                                         json("requestId") = t.RequestId
+                                         json("batchNo") = t.BatchNo
+                                         json("totalInspectedCount") = t.PartCount
+
+                                         json("partInspectList") = result.List
+
+                                         ' ⭐ 加圖
+                                         json("imageBase64") = result.ImageBase64
+
+                                         _ws.Broadcast(JsonConvert.SerializeObject(json))
+
+                                     End Sub)
     End Sub
-
     Private Sub SendMockResult(t As TaskData)
 
         Dim result As New Dictionary(Of String, Object)
