@@ -1,5 +1,6 @@
 ﻿Imports System.Reflection.Metadata
 Imports System.Windows
+Imports MetroSystemForDotNet.HomePage
 Imports Newtonsoft.Json
 Imports VAT.Common
 Imports VAT.Common.VATJsonObject
@@ -22,6 +23,8 @@ Partial Public Class ProcessPage
 
     Public Shared Event OnRealtimeTrigger As Action(Of Action(Of DetectionResult))
     Private _isOnline As Boolean = False
+
+    Private _currentTask As TaskData
 
     Public Sub New()
 
@@ -201,11 +204,14 @@ Partial Public Class ProcessPage
     Private Async Sub EndTask(t As TaskData)
 
         If _endTaskRunning Then Return
+
         _endTaskRunning = True
 
-        ExecuteTask(t)
-
-        _endTaskRunning = False
+        Try
+            Await ExecuteTask(t)
+        Finally
+            _endTaskRunning = False
+        End Try
 
     End Sub
 
@@ -237,10 +243,19 @@ Partial Public Class ProcessPage
     End Sub
     Private Sub TriggerRealtime()
 
+        If Realtime.IsChecked <> True Then Return
+
         Dispatcher.Invoke(Sub()
 
                               AppRuntime.Home.RunDetection(Sub(result)
-                                                               '處理結果
+
+                                                               Dim json As New Dictionary(Of String, Object)
+
+                                                               json("partInspectList") = result.List
+                                                               json("imageBase64") = result.ImageBase64
+
+                                                               _ws.Broadcast(JsonConvert.SerializeObject(json))
+
                                                            End Sub)
 
                           End Sub)
@@ -258,6 +273,11 @@ Partial Public Class ProcessPage
 
     Private Sub Realtime_Checked(sender As Object, e As RoutedEventArgs)
         _mode = RunMode.Realtime
+        TryStartRealtime()
+    End Sub
+
+    Private Sub Realtime_Unchecked(sender As Object, e As RoutedEventArgs)
+        If _mode = RunMode.Realtime Then _mode = RunMode.None
     End Sub
 
     Private Sub TryStartRealtime()
@@ -267,61 +287,71 @@ Partial Public Class ProcessPage
 
         Task.Run(Async Sub()
 
-                     While _enableRealtime AndAlso Not _isOnline
+                     Await Task.Delay(10000)
 
-                         Await Task.Delay(10000)
+                     If Not _enableRealtime OrElse _isOnline Then Return
 
-                         If Not _enableRealtime OrElse _isOnline Then Exit While
-
-                         TriggerRealtime()
-
-                     End While
+                     TriggerRealtime()
 
                  End Sub)
 
     End Sub
-    Private Sub Realtime_Unchecked(sender As Object, e As RoutedEventArgs)
-        If _mode = RunMode.Realtime Then _mode = RunMode.None
-    End Sub
 
     ' 逻辑处理入口
-    Private Sub ExecuteTask(t As TaskData)
+    Private Async Function ExecuteTask(t As TaskData) As Task
 
         Select Case _mode
 
             Case RunMode.Mock
+                ' 數據返回
                 SendMockResult(t)
 
             Case RunMode.Realtime
+                ' 即時結果
                 RunDetectionAndSend(t)
+
+            Case RunMode.Mock
+                SendMockResult(t)
 
         End Select
 
-    End Sub
-    Private Sub RunDetectionAndSend(t As TaskData)
+    End Function
+    Private Async Function RunDetectionAndSend(t As TaskData) As Task
+
+        AddLog($"[DETECT] Start RequestId={t.RequestId}")
 
         If AppRuntime.Home Is Nothing Then
-            Logger.Error("Home not ready")
+            AddLog("[DETECT] Home not ready")
             Return
         End If
 
-        AppRuntime.Home.RunDetection(Sub(result)
+        Await AppRuntime.Home.RunDetection(
+    Sub(result)
 
-                                         Dim json As New Dictionary(Of String, Object)
+        If result Is Nothing Then
+            AddLog("[DETECT] Failed")
+            Return
+        End If
 
-                                         json("requestId") = t.RequestId
-                                         json("batchNo") = t.BatchNo
-                                         json("totalInspectedCount") = t.PartCount
+        For Each item As DetectionItem In result.List
+            AddLog($"No={item.detectionNo}, Result={item.resultType}, Score={item.confidence:F3}")
+        Next
 
-                                         json("partInspectList") = result.List
+        Dim json As New Dictionary(Of String, Object)
 
-                                         ' ⭐ 加圖
-                                         json("imageBase64") = result.ImageBase64
+        json("requestId") = t.RequestId
+        json("batchNo") = t.BatchNo
+        json("totalInspectedCount") = t.PartCount
+        json("partInspectList") = result.List
+        json("imageBase64") = result.ImageBase64
 
-                                         _ws.Broadcast(JsonConvert.SerializeObject(json))
+        _ws.Broadcast(JsonConvert.SerializeObject(json))
 
-                                     End Sub)
-    End Sub
+        AddLog($"[WS] Sent RequestId={t.RequestId}")
+
+    End Sub)
+
+    End Function
     Private Sub SendMockResult(t As TaskData)
 
         Dim result As New Dictionary(Of String, Object)

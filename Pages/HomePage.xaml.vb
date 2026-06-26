@@ -17,49 +17,21 @@ Class HomePage
     Private _isAlive As Boolean = True
     Private _isActive As Boolean = False
     Private _isStreaming As Boolean = False
-    Public Sub RunDetection(callback As Action(Of DetectionResult))
+    Public Async Function RunDetection(callback As Action(Of DetectionResult)) As Task
 
         Try
-            Dim frame = CameraService.Instance.LatestFrame
-            If frame Is Nothing Then Return
 
-            Dim mat = BitmapSourceToMat(frame)
+            Dim result As DetectionResult = Await BtnGetImg_Click()
 
-            ' ⭐ 1. 做檢測（等同 BtnGetImg_Click 核心）
-            Dim result As New DetectionResult()
-            result.List = New List(Of DetectionItem)
+            If result Is Nothing Then Return
 
-            For i As Integer = 1 To 12
-
-                result.List.Add(New DetectionItem With {
-                .detectionNo = $"DET-{i:000}",
-                .resultType = If(i Mod 3 = 0, "MISMATCH", "MATCH"),
-                .confidence = 0.9 + (i * 0.005)
-            })
-
-            Next
-
-            ' ⭐ 2. 轉圖（關鍵）
-            Dim bmp = MatToBitmapSource(mat)
-
-            Dim encoder As New PngBitmapEncoder()
-            encoder.Frames.Add(BitmapFrame.Create(bmp))
-
-            Using ms As New IO.MemoryStream()
-                encoder.Save(ms)
-                result.ImageBase64 = Convert.ToBase64String(ms.ToArray())
-            End Using
-
-            result.Mat = mat
-
-            ' ⭐ 3. 回傳
             callback?.Invoke(result)
 
         Catch ex As Exception
             Logger.Error("RunDetection error: " & ex.Message)
         End Try
 
-    End Sub
+    End Function
     ' Page Loaded
     ' =========================================
     Private Async Sub Page_Loaded(
