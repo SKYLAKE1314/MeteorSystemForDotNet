@@ -75,7 +75,8 @@
           Checked="DataReturn_Checked"
           Unchecked="DataReturn_Unchecked"/>
 
-                    <CheckBox Content="即時結果"
+                    <CheckBox x:Name="Realtime"
+          Content="即時結果"
           Checked="Realtime_Checked"
           Unchecked="Realtime_Unchecked"/>
                 </StackPanel>

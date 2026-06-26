@@ -18,9 +18,7 @@ Class HomePage
     Private _isActive As Boolean = False
     Private _isStreaming As Boolean = False
     Public Sub RunDetection()
-
         BtnGetImg_Click(Nothing, Nothing)
-
     End Sub
     ' =========================================
     ' Page Loaded
@@ -643,6 +641,8 @@ Class HomePage
                  End Sub)
 
     End Sub
+
+
     Private Sub UpdateFrame(sender As Object, e As EventArgs)
 
         Dim frame = CameraService.Instance.LatestFrame
