@@ -203,6 +203,9 @@ Class HomePage
 
             RenderImage.Source = result.Mat.ToWriteableBitmap()
 
+            ' ⭐⭐⭐ 強制統一生成 ImageBase64（關鍵修復）
+            Dim bmp = MatToBitmapSource(result.Mat)
+
             Logger.Info($"Score={result.Score:F3}, OK={result.IsOk}")
 
             ' 轉 DetectionResult

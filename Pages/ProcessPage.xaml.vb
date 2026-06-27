@@ -31,6 +31,9 @@ Partial Public Class ProcessPage
     Private _lastDetectionResult As DetectionResult = Nothing
 
     Private _realtimeRunning As Boolean = False
+
+    Private _isInitializing As Boolean = False
+    Private _isRealtime As Boolean
     Public Sub New()
 
         InitializeComponent()
@@ -248,12 +251,16 @@ Partial Public Class ProcessPage
     End Sub
     Private Sub TriggerRealtime()
 
-        If Realtime.IsChecked <> True Then Return
+        If Not _isRealtime Then Return
+        If _mode <> RunMode.Realtime Then Return
+        If AppRuntime.Home Is Nothing Then Return
 
         Dispatcher.Invoke(Sub()
-                              If _mode <> RunMode.Realtime Then Return
+
                               AppRuntime.Home.RunDetection(Sub(result)
+
                                                                _lastDetectionResult = result
+
                                                                Dim json As New Dictionary(Of String, Object)
 
                                                                json("partInspectList") = result.List
@@ -277,12 +284,26 @@ Partial Public Class ProcessPage
     End Sub
 
     Private Sub Realtime_Checked(sender As Object, e As RoutedEventArgs)
+
+        If _isInitializing Then Return
+
         _mode = RunMode.Realtime
+        _enableRealtime = True
+
         TryStartRealtime()
+
     End Sub
 
     Private Sub Realtime_Unchecked(sender As Object, e As RoutedEventArgs)
-        If _mode = RunMode.Realtime Then _mode = RunMode.None
+
+        If _isInitializing Then Return
+
+        If _mode = RunMode.Realtime Then
+            _mode = RunMode.None
+        End If
+
+        _enableRealtime = False
+
     End Sub
 
     Private Sub TryStartRealtime()
@@ -558,6 +579,26 @@ Partial Public Class ProcessPage
                           End Sub)
 
         Logger.Info(text)
+
+    End Sub
+
+    Public Sub InitializeFromSettings(realtimeEnabled As Boolean)
+
+        _isInitializing = True
+
+        _enableRealtime = realtimeEnabled
+        _mode = If(realtimeEnabled, RunMode.Realtime, RunMode.None)
+
+        _isRealtime = realtimeEnabled   ' UI only
+
+        AddLog($"[INIT] Realtime={realtimeEnabled}")
+
+        _isInitializing = False
+
+        ' 初始化完才允許啟動
+        If realtimeEnabled Then
+            TryStartRealtime()
+        End If
 
     End Sub
 

@@ -61,6 +61,9 @@ Class Application
 
                                                   AppRuntime.Process = New ProcessPage()
 
+                                                  ' 把設定丟進去
+                                                  AppRuntime.Process.InitializeFromSettings(realtimeEnabled:=My.Settings.RealtimeEnabled)
+
                                                   If My.Settings.AutoRun Then
                                                       AppRuntime.Process.AutoStartServer()
                                                   End If

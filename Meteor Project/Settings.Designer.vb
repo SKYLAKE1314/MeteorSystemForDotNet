@@ -113,6 +113,18 @@ Namespace My
                 Me("AutoRun") = value
             End Set
         End Property
+        
+        <Global.System.Configuration.UserScopedSettingAttribute(),  _
+         Global.System.Diagnostics.DebuggerNonUserCodeAttribute(),  _
+         Global.System.Configuration.DefaultSettingValueAttribute("True")>  _
+        Public Property RealtimeEnabled() As Boolean
+            Get
+                Return CType(Me("RealtimeEnabled"),Boolean)
+            End Get
+            Set
+                Me("RealtimeEnabled") = value
+            End Set
+        End Property
     End Class
 End Namespace
 
