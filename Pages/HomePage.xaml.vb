@@ -201,7 +201,9 @@ Class HomePage
 
             Dim result = Await Draw_opencv.ProcessAsync(mat, templateName)
 
-            RenderImage.Source = result.Mat.ToWriteableBitmap()
+            Dispatcher.Invoke(Sub()
+                                  RenderImage.Source = result.Mat.ToWriteableBitmap()
+                              End Sub)
 
             ' ⭐⭐⭐ 強制統一生成 ImageBase64（關鍵修復）
             Dim bmp = MatToBitmapSource(result.Mat)
