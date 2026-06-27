@@ -1,4 +1,4 @@
-﻿Public Class DetectionResult
+﻿Public Class DetectionBox
 
     Public Property ClassId As Integer
 

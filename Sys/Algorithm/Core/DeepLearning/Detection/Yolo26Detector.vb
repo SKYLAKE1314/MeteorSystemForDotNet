@@ -30,7 +30,7 @@ Public Class Yolo26Detector
 
     Public Function Detect(
         src As Mat
-    ) As List(Of DetectionResult)
+    ) As List(Of DetectionBox)
 
         Dim scale As Double
 
@@ -163,9 +163,9 @@ Public Class Yolo26Detector
         scale As Double,
         padX As Integer,
         padY As Integer
-    ) As List(Of DetectionResult)
+    ) As List(Of DetectionBox)
 
-        Dim list As New List(Of DetectionResult)
+        Dim list As New List(Of DetectionBox)
 
         Dim dims = output.Dimensions.ToArray()
         Dim count = dims(1)
@@ -222,9 +222,9 @@ Public Class Yolo26Detector
                 Math.Min(imageH - 1, y2)
 
             list.Add(
-                New DetectionResult With {
+                New DetectionBox With {
                     .ClassId = cls,
-                    .score = score,
+                    .Score = score,
                     .X = x1,
                     .Y = y1,
                     .Width = x2 - x1,

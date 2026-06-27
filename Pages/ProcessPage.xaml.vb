@@ -2,6 +2,7 @@
 Imports System.Windows
 Imports MetroSystemForDotNet.HomePage
 Imports Newtonsoft.Json
+Imports System.Linq
 Imports VAT.Common
 Imports VAT.Common.VATJsonObject
 
@@ -26,6 +27,10 @@ Partial Public Class ProcessPage
 
     Private _currentTask As TaskData
 
+    Private _allowDetection As Boolean = False
+    Private _lastDetectionResult As DetectionResult = Nothing
+
+    Private _realtimeRunning As Boolean = False
     Public Sub New()
 
         InitializeComponent()
@@ -246,9 +251,9 @@ Partial Public Class ProcessPage
         If Realtime.IsChecked <> True Then Return
 
         Dispatcher.Invoke(Sub()
-
+                              If _mode <> RunMode.Realtime Then Return
                               AppRuntime.Home.RunDetection(Sub(result)
-
+                                                               _lastDetectionResult = result
                                                                Dim json As New Dictionary(Of String, Object)
 
                                                                json("partInspectList") = result.List
@@ -284,72 +289,173 @@ Partial Public Class ProcessPage
 
         If Not _enableRealtime Then Return
         If _isOnline Then Return
+        If _realtimeRunning Then Return   ' ⭐ 防重复
+
+        _realtimeRunning = True
 
         Task.Run(Async Sub()
 
                      Await Task.Delay(10000)
 
-                     If Not _enableRealtime OrElse _isOnline Then Return
+                     If Not _enableRealtime OrElse _isOnline Then
+                         _realtimeRunning = False
+                         Return
+                     End If
 
                      TriggerRealtime()
+
+                     _realtimeRunning = False
 
                  End Sub)
 
     End Sub
-
     ' 逻辑处理入口
     Private Async Function ExecuteTask(t As TaskData) As Task
 
-        Select Case _mode
+        Select Case t.TaskStatus
 
-            Case RunMode.Mock
-                ' 數據返回
-                SendMockResult(t)
+            Case 0
 
-            Case RunMode.Realtime
-                ' 即時結果
-                RunDetectionAndSend(t)
+                _allowDetection = True
+                _lastDetectionResult = Nothing
 
-            Case RunMode.Mock
-                SendMockResult(t)
+                AddLog("[TASK] 0 -> ARM")
+
+                Await RunDetectionAndSend(t)
+
+            Case 3
+
+                AddLog("[TASK] 3 -> END")
+
+                If Not _allowDetection Then
+
+                    Await Task.Run(Sub() SendNullResult(t))
+                    Return
+
+                End If
+
+                If _lastDetectionResult Is Nothing Then
+
+                    Await Task.Run(Sub() SendNullResult(t))
+
+                Else
+
+                    Await Task.Run(Sub() SendDetectionResult(t, _lastDetectionResult))
+
+                End If
+
+                _allowDetection = False
+                _lastDetectionResult = Nothing
 
         End Select
 
     End Function
+    ' 收到3結束 但沒有結果
+    Private Async Sub SendNullResult(t As TaskData)
+
+        Dim json As New Dictionary(Of String, Object)
+
+        json("requestId") = t.RequestId
+        json("stationId") = t.StationId
+        json("inspectTime") =
+        DateTimeOffset.Now.ToUnixTimeMilliseconds()
+
+        json("totalInspectedCount") = 0
+        json("totalMatchCount") = 0
+
+        json("batchNo") = t.BatchNo
+
+        json("partInspectList") = Nothing
+
+        json("metadata") = Nothing
+
+        Await _ws.Broadcast(JsonConvert.SerializeObject(json))
+
+        AddLog($"[WS] NULL Sent : {t.RequestId}")
+
+    End Sub
+    ' 收到3結束 但有結果
+
+    Private Async Function SendDetectionResult(t As TaskData,
+                                           result As HomePage.DetectionResult) As Task
+
+        Dim list As New List(Of Object)
+
+        Dim index As Integer = 1
+        Dim matchCount As Integer = 0
+
+        For Each item As HomePage.DetectionItem In result.List
+
+            If item.resultType = "MATCH" Then
+                matchCount += 1
+            End If
+
+            list.Add(New With {
+            .detectionNo = $"DET-{DateTime.Now:yyyyMMdd}-{index:000}",
+            .taskPartName = t.PartCode,
+            .recognizedPartName = t.PartCode,
+ .collectImageUrl = If(
+            String.IsNullOrWhiteSpace(result.ImageBase64),
+            Nothing,
+            "data:image/png;base64," & result.ImageBase64),
+            .recognizedPartCode = t.PartCode,
+            .resultType = item.resultType,
+            .confidence = item.confidence
+        })
+
+            index += 1
+
+        Next
+
+        Dim json As New Dictionary(Of String, Object)
+
+        json("requestId") = t.RequestId
+        json("stationId") = t.StationId
+        json("inspectTime") = DateTimeOffset.Now.ToUnixTimeMilliseconds()
+        json("totalInspectedCount") = result.List.Count
+        json("totalMatchCount") = matchCount
+        json("batchNo") = t.BatchNo
+        json("partInspectList") = list
+
+        json("metadata") = New With {
+        .algorithmVersion = "v2.3.1",
+        .inspectOrder = "按检测顺序排序",
+        .partType = t.PartCode
+    }
+
+        Await _ws.Broadcast(JsonConvert.SerializeObject(json))
+
+        AddLog($"[WS] RESULT Sent : {t.RequestId}")
+
+    End Function
     Private Async Function RunDetectionAndSend(t As TaskData) As Task
 
-        AddLog($"[DETECT] Start RequestId={t.RequestId}")
+        AddLog($"[DETECT] Start {t.RequestId}")
 
         If AppRuntime.Home Is Nothing Then
             AddLog("[DETECT] Home not ready")
             Return
         End If
 
-        Await AppRuntime.Home.RunDetection(
-    Sub(result)
+        Dim result = Await AppRuntime.Home.RunDetectionOnce()
 
         If result Is Nothing Then
             AddLog("[DETECT] Failed")
             Return
         End If
 
-        For Each item As DetectionItem In result.List
-            AddLog($"No={item.detectionNo}, Result={item.resultType}, Score={item.confidence:F3}")
+        _lastDetectionResult = result
+
+        AddLog("[DETECT] Finished")
+
+        For Each item As HomePage.DetectionItem In result.List
+
+            AddLog(
+            $"No={item.detectionNo}, " &
+            $"Result={item.resultType}, " &
+            $"Score={item.confidence:F3}")
+
         Next
-
-        Dim json As New Dictionary(Of String, Object)
-
-        json("requestId") = t.RequestId
-        json("batchNo") = t.BatchNo
-        json("totalInspectedCount") = t.PartCount
-        json("partInspectList") = result.List
-        json("imageBase64") = result.ImageBase64
-
-        _ws.Broadcast(JsonConvert.SerializeObject(json))
-
-        AddLog($"[WS] Sent RequestId={t.RequestId}")
-
-    End Sub)
 
     End Function
     Private Sub SendMockResult(t As TaskData)

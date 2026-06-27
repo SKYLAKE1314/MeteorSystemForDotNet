@@ -17,23 +17,79 @@ Class HomePage
     Private _isAlive As Boolean = True
     Private _isActive As Boolean = False
     Private _isStreaming As Boolean = False
+
+    Private _detectLock As New Object()
+    Private _isDetecting As Boolean = False
     Public Async Function RunDetection(callback As Action(Of DetectionResult)) As Task
 
+        SyncLock _detectLock
+            If _isDetecting Then
+                Logger.Warn("[DETECT] skipped (busy)")
+                Return
+            End If
+            _isDetecting = True
+        End SyncLock
+
         Try
+            Logger.Debug($"[DETECT ENTER] {Guid.NewGuid()}")
 
-            Dim result As DetectionResult = Await BtnGetImg_Click()
-
+            Dim result = Await BtnGetImg_Click()
             If result Is Nothing Then Return
 
-            callback?.Invoke(result)
+            Dim bmp = MatToBitmapSource(result.Mat)
+
+            Dim encoder As New PngBitmapEncoder()
+            encoder.Frames.Add(BitmapFrame.Create(bmp))
+
+            Using ms As New IO.MemoryStream()
+                encoder.Save(ms)
+                result.ImageBase64 = Convert.ToBase64String(ms.ToArray())
+            End Using
+
+            callback(result)
 
         Catch ex As Exception
             Logger.Error("RunDetection error: " & ex.Message)
+
+        Finally
+            _isDetecting = False
+        End Try
+
+    End Function
+
+    Public Async Function RunDetectionOnce() As Task(Of DetectionResult)
+
+        Try
+
+            Dim result = Await BtnGetImg_Click()
+
+            If result Is Nothing Then Return Nothing
+
+            Dim bmp = MatToBitmapSource(result.Mat)
+
+            Dim encoder As New PngBitmapEncoder()
+            encoder.Frames.Add(BitmapFrame.Create(bmp))
+
+            Using ms As New MemoryStream()
+
+                encoder.Save(ms)
+
+                result.ImageBase64 = Convert.ToBase64String(ms.ToArray())
+
+            End Using
+
+            Return result
+
+        Catch ex As Exception
+
+            Logger.Error(ex.Message)
+
+            Return Nothing
+
         End Try
 
     End Function
     ' Page Loaded
-    ' =========================================
     Private Async Sub Page_Loaded(
         sender As Object,
         e As RoutedEventArgs) Handles Me.Loaded
@@ -134,11 +190,12 @@ Class HomePage
         Try
             Dim frame = CameraService.Instance.LatestFrame
             If frame Is Nothing Then Return Nothing
-
+            Logger.Debug($"[DETECT] frame={(frame IsNot Nothing)}")
             Dim mat = BitmapSourceToMat(frame)
 
             Dim templatePath = LastTemplateStore.Load()
             If String.IsNullOrWhiteSpace(templatePath) Then Return Nothing
+            Logger.Debug($"[DETECT] template={templatePath}")
 
             Dim templateName = IO.Path.GetFileName(templatePath)
 
@@ -152,15 +209,22 @@ Class HomePage
             Dim output As New DetectionResult()
             output.List = New List(Of DetectionItem)
 
-            For i As Integer = 1 To 12
+            'For i As Integer = 1 To 12
 
-                output.List.Add(New DetectionItem With {
-                .detectionNo = $"AI-{i:000}",
-                .resultType = If(result.IsOk, "MATCH", "MISMATCH"),
-                .confidence = result.Score
-            })
+            '    output.List.Add(New DetectionItem With {
+            '    .detectionNo = $"AI-{i:000}",
+            '    .resultType = If(result.IsOk, "MATCH", "MISMATCH"),
+            '    .confidence = result.Score
+            '})
 
-            Next
+            'Next
+            ' 全检
+            output.List.Add(New DetectionItem With {
+    .detectionNo = "AI-001",
+    .resultType = If(result.IsOk, "MATCH", "MISMATCH"),
+    .confidence = result.Score
+})
+            output.Mat = result.Mat
 
             Return output
 
@@ -670,11 +734,22 @@ Class HomePage
     End Class
 
     Public Class DetectionItem
-        Public Property detectionNo As String
-        Public Property resultType As String
-        Public Property confidence As Double
-    End Class
 
+        Public Property detectionNo As String
+
+        Public Property taskPartName As String
+
+        Public Property recognizedPartName As String
+
+        Public Property recognizedPartCode As String
+
+        Public Property collectImageUrl As String
+
+        Public Property resultType As String
+
+        Public Property confidence As Double
+
+    End Class
 
     Private Sub UpdateFrame(sender As Object, e As EventArgs)
 

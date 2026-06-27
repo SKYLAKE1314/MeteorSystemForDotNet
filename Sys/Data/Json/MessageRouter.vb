@@ -17,7 +17,7 @@ Public Class TaskRouter
 
             Case 0
                 OnStart?.Invoke(t)
-
+                OnEnd?.Invoke(t)
             Case 1
                 OnPause?.Invoke(t)
 
@@ -31,32 +31,25 @@ Public Class TaskRouter
 
     End Sub
 
-    ' =========================
-    ' SAFE PARSER（核心修復）
-    ' =========================
     Private Function ParseTask(msg As VATJsonObject) As TaskData
 
-        Try
-            Dim t As New TaskData()
+        Dim t As New TaskData
 
-            t.RequestId = Safe(msg, "requestId")
-            t.TaskStatus = ToInt(msg, "taskStatus")
+        t.RequestId = Safe(msg, "requestId")
 
-            t.PartCode = Safe(msg, "partCode")
-            t.SupplierCode = Safe(msg, "supplierCode")
+        t.StationId = Safe(msg, "stationId")
 
-            t.PartCount = ToInt(msg, "partCount")
-            t.BatchNo = Safe(msg, "batchNo")
+        t.TaskStatus = ToInt(msg, "taskStatus")
 
-            ' 如果不是 task message，直接忽略
-            If t.RequestId = "" Then Return Nothing
+        t.PartCode = Safe(msg, "partCode")
 
-            Return t
+        t.SupplierCode = Safe(msg, "supplierCode")
 
-        Catch ex As Exception
-            ' 不要彈窗（避免 server 被 log 打爆）
-            Return Nothing
-        End Try
+        t.PartCount = ToInt(msg, "partCount")
+
+        t.BatchNo = Safe(msg, "batchNo")
+
+        Return t
 
     End Function
 
