@@ -109,7 +109,7 @@ Class HomePage
         Logger.SetWpfRichTextBox(rtbLog)
 
         _io = New IOController(
-        "192.168.0.10",
+        "192.168.1.117",
         502,
         1,
         0,
