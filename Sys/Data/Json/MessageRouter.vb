@@ -33,13 +33,20 @@ Public Class TaskRouter
 
     Private Function ParseTask(msg As VATJsonObject) As TaskData
 
+        Dim taskStatusText = Safe(msg, "taskStatus")
+        Dim taskStatus As Integer
+
+        If Not Integer.TryParse(taskStatusText, taskStatus) Then
+            Return Nothing
+        End If
+
         Dim t As New TaskData
 
         t.RequestId = Safe(msg, "requestId")
 
         t.StationId = Safe(msg, "stationId")
 
-        t.TaskStatus = ToInt(msg, "taskStatus")
+        t.TaskStatus = taskStatus
 
         t.PartCode = Safe(msg, "partCode")
 

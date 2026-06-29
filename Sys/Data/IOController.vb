@@ -1,4 +1,4 @@
-﻿Imports System
+Imports System
 Imports System.IO
 Imports System.Media
 Imports System.Threading
@@ -10,36 +10,43 @@ Public Class IOController
 
 #Region "Fields"
 
-    Private _buzzer As ModbusBuzzer
-    Private ReadOnly _sem As New SemaphoreSlim(1, 1)
-    Private _cts As CancellationTokenSource
-
-    Private ReadOnly _log As Action(Of String)
+    Private Const HardwareCooldownMilliseconds As Integer = 500
+    Private Const OkVoiceFileName As String = "Correct.wav"
+    Private Const NgVoiceFileName As String = "Error.wav"
 
     Private ReadOnly _ip As String
     Private ReadOnly _port As Integer
     Private ReadOnly _unitId As Byte
     Private ReadOnly _coilBase As UShort
     Private ReadOnly _mode As IoBoardMode
+    Private ReadOnly _hardwareEnabled As Boolean
+    Private ReadOnly _actionLock As New SemaphoreSlim(1, 1)
+    Private ReadOnly _stateLock As New Object()
+    Private ReadOnly _log As Action(Of String)
+
+    Private _buzzer As ModbusBuzzer
+    Private _lastHardwareActionUtc As DateTimeOffset = DateTimeOffset.MinValue
+
 #End Region
 
 #Region "Ctor"
 
     Public Sub New(ip As String,
-               port As Integer,
-               unitId As Byte,
-               coilBase As UShort,
-               mode As IoBoardMode,
-               log As Action(Of String))
+                   port As Integer,
+                   unitId As Byte,
+                   coilBase As UShort,
+                   mode As IoBoardMode,
+                   log As Action(Of String))
 
         _ip = ip
         _port = port
         _unitId = unitId
         _coilBase = coilBase
         _mode = mode
+        _hardwareEnabled = IoBoardModeHelper.IsHardwareEnabled(mode)
 
         If log Is Nothing Then
-            _log = Sub(x As String)
+            _log = Sub(message As String)
                    End Sub
         Else
             _log = log
@@ -53,19 +60,19 @@ Public Class IOController
 
     Public Async Function InitializeAsync() As Task
 
-        If _mode = IoBoardMode.NONE Then
-            _log("IO Mode = NONE")
+        If Not _hardwareEnabled Then
+            _log("IO Mode = NONE，僅保留語音播報")
             Return
         End If
 
         Try
-            _buzzer = New ModbusBuzzer(_ip, _port, _unitId, _coilBase)
+            _buzzer = New ModbusBuzzer(_ip, _port, _unitId, _coilBase, _mode)
 
-            _buzzer.Logger = Sub(s)
-                                 _log("[Buzzer] " & s)
+            _buzzer.Logger = Sub(message)
+                                 _log("[Buzzer] " & message)
                              End Sub
 
-            Await Task.Run(Sub() _buzzer.Connect())
+            Await Task.Run(Sub() _buzzer.Connect()).ConfigureAwait(False)
 
             _log("IO卡初始化完成")
 
@@ -75,6 +82,7 @@ Public Class IOController
         End Try
 
     End Function
+
 #End Region
 
 #Region "Public API"
@@ -82,11 +90,11 @@ Public Class IOController
     Public Sub Trigger(label As String)
         If String.IsNullOrWhiteSpace(label) Then Return
 
-        label = label.Trim().ToUpperInvariant()
+        label = label.Trim()
 
-        If label.Contains("OK") Then
+        If label.IndexOf("OK", StringComparison.OrdinalIgnoreCase) >= 0 Then
             HandleOK()
-        ElseIf label.Contains("NG") Then
+        ElseIf label.IndexOf("NG", StringComparison.OrdinalIgnoreCase) >= 0 Then
             HandleNG()
         End If
     End Sub
@@ -107,50 +115,108 @@ Public Class IOController
 
 #Region "OK / NG"
 
-    Private Sub HandleOK()
+    Public Sub HandleOK()
+        QueueResult("OK", OkVoiceFileName, AddressOf ExecuteOkHardwareAsync)
+    End Sub
+
+    Public Sub HandleNG()
+        QueueResult("NG", NgVoiceFileName, AddressOf ExecuteNgHardwareAsync)
+    End Sub
+
+    Private Sub QueueResult(resultName As String,
+                            voiceFileName As String,
+                            hardwareAction As Func(Of Task))
+
+        If Not _hardwareEnabled Then
+            Task.Run(Sub() PlayVoice(voiceFileName))
+            _log($"收到{resultName}（語音播報）")
+            Return
+        End If
+
+        If Not TryReserveHardwareAction() Then Return
+
+        Task.Run(Async Function() As Task
+
+                     Dim lockAcquired As Boolean = False
+
+                     Try
+                         Await _actionLock.WaitAsync().ConfigureAwait(False)
+                         lockAcquired = True
+
+                         PlayVoice(voiceFileName)
+
+                         If hardwareAction IsNot Nothing Then
+                             Await hardwareAction().ConfigureAwait(False)
+                         End If
+
+                     Catch ex As Exception
+                         _log($"{resultName}動作失敗: {ex.Message}")
+
+                     Finally
+                         If lockAcquired Then
+                             _actionLock.Release()
+                         End If
+                     End Try
+
+                 End Function)
+
+    End Sub
+
+    Private Function TryReserveHardwareAction() As Boolean
+
+        SyncLock _stateLock
+
+            Dim nowUtc = DateTimeOffset.UtcNow
+            Dim cooldown = TimeSpan.FromMilliseconds(HardwareCooldownMilliseconds)
+
+            If nowUtc - _lastHardwareActionUtc < cooldown Then
+                Return False
+            End If
+
+            _lastHardwareActionUtc = nowUtc
+            Return True
+
+        End SyncLock
+
+    End Function
+
+    Private Function ExecuteOkHardwareAsync() As Task
 
         SetTowerLight(False, False, True)
-        PlayVoice("Correct.wav")
 
-        Try
-            _buzzer?.SetCoil(0, True)
-            _buzzer?.SetCoil(1, False)
-            _buzzer?.SetCoil(3, False)
-        Catch
-        End Try
+        _buzzer?.SetCoil(0, True)
+        _buzzer?.SetCoil(1, False)
+        _buzzer?.SetCoil(3, False)
 
         _log("收到OK")
 
-    End Sub
+        Return Task.CompletedTask
 
-    Private Sub HandleNG()
+    End Function
+
+    Private Async Function ExecuteNgHardwareAsync() As Task
 
         SetTowerLight(True, False, False)
 
-        Try
-            PlayVoice("Error.wav")
+        _buzzer?.SetCoil(3, True)
 
-            _buzzer?.SetCoil(3, True)
-            Thread.Sleep(2000)
-            _buzzer?.SetCoil(3, False)
+        Await Task.Delay(2000).ConfigureAwait(False)
 
-            _buzzer?.SetCoil(0, False)
-            _buzzer?.SetCoil(1, True)
-
-        Catch ex As Exception
-            _log("NG处理失败: " & ex.Message)
-        End Try
+        _buzzer?.SetCoil(3, False)
+        _buzzer?.SetCoil(0, False)
+        _buzzer?.SetCoil(1, True)
 
         _log("收到NG")
 
-    End Sub
+    End Function
 
 #End Region
 
 #Region "Tower Light"
 
     Public Sub SetTowerLight(red As Boolean, yellow As Boolean, green As Boolean)
-        If _mode = IoBoardMode.NONE Then Return
+        If Not _hardwareEnabled Then Return
+
         Try
             If _buzzer Is Nothing Then Return
 
@@ -173,11 +239,12 @@ Public Class IOController
     Private Sub PlayVoice(fileName As String)
 
         Try
-            Dim filePath = System.IO.Path.Combine(
-    AppDomain.CurrentDomain.BaseDirectory,
-    "Voice",
-    fileName
-)
+            If String.IsNullOrWhiteSpace(fileName) Then Return
+
+            Dim filePath = Path.Combine(
+                AppDomain.CurrentDomain.BaseDirectory,
+                "Voice",
+                fileName)
 
             If Not File.Exists(filePath) Then
                 _log("語音不存在: " & filePath)
@@ -208,18 +275,6 @@ Public Class IOController
             _buzzer?.Dispose()
         Catch
         End Try
-
-        Try
-            _cts?.Cancel()
-        Catch
-        End Try
-
-        Try
-            _cts?.Dispose()
-        Catch
-        End Try
-
-        _sem.Dispose()
 
     End Sub
 

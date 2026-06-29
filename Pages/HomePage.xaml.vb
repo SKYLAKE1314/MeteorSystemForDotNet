@@ -113,13 +113,17 @@ Class HomePage
         502,
         1,
         0,
-        IoBoardMode.IO,
+        AppRuntime.IoMode,
         Sub(msg) Logger.Info(msg)
-    )
+        )
 
         Await _io.InitializeAsync()
 
-        Logger.Info("IO 初始化完成")
+        If AppRuntime.IoMode = IoBoardMode.NONE Then
+            Logger.Info("IO 已停用，保留語音播報")
+        Else
+            Logger.Info("IO 初始化完成")
+        End If
         ' 數據交互訂閲
 
         AddHandler ProcessPage.OnRealtimeTrigger, AddressOf RunDetection
@@ -209,6 +213,13 @@ Class HomePage
             Dim bmp = MatToBitmapSource(result.Mat)
 
             Logger.Info($"Score={result.Score:F3}, OK={result.IsOk}")
+
+            ' IO和音響觸發
+            If result.IsOk Then
+                _io.HandleOK()
+            Else
+                _io.HandleNG()
+            End If
 
             ' 轉 DetectionResult
             Dim output As New DetectionResult()
@@ -729,6 +740,9 @@ Class HomePage
                  End Sub)
 
     End Sub
+
+    ' 結果處理函數
+
 
     Public Class DetectionResult
 

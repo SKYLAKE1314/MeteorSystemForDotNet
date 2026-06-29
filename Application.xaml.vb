@@ -16,13 +16,9 @@ Class Application
 
         LanguageManager.Load(lang)
         '' 讀取上次儲存的io
-        'Dim io As String = My.Settings.IoMode
+        AppRuntime.IoMode = IoBoardModeHelper.Parse(My.Settings.IoMode)
 
-        'If String.IsNullOrWhiteSpace(io) Then
-        '    io = "null"
-        'End If
-
-        'IoBoardMode.Load(io)
+        Logger.Info($"IO Mode = {AppRuntime.IoMode}")
         ' =========================
         ' Startup UI
         ' =========================
@@ -103,4 +99,7 @@ Public Class AppRuntime
     Public Shared Barcode As BarcodeDecodeService
     Public Shared Process As ProcessPage
     Public Shared Home As HomePage
+
+    Public Shared IoMode As IoBoardMode = IoBoardMode.NONE
+
 End Class

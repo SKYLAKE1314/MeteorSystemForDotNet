@@ -33,9 +33,9 @@ Partial Public Class ProcessPage
     Private _realtimeRunning As Boolean = False
 
     Private _isInitializing As Boolean = False
-    Private _isRealtime As Boolean
     Public Sub New()
 
+        _isInitializing = True
         InitializeComponent()
 
         AddHandler _ws.MessageReceived,
@@ -167,10 +167,26 @@ Partial Public Class ProcessPage
         Dispatcher.Invoke(Sub()
 
                               Try
-                                  Dim msg As New VATJsonObject(e.Message)
+                                  Dim rawMessage = If(e.Message, "").Trim()
+
+                                  If String.Equals(e.Source, "System", StringComparison.OrdinalIgnoreCase) Then
+                                      AddLog($"[WS] {rawMessage}")
+                                      Exit Sub
+                                  End If
+
+                                  If String.IsNullOrWhiteSpace(rawMessage) Then Exit Sub
+
+                                  ' 只有 JSON 才進入 router，避免連線/提示訊息被誤判成 taskStatus=0
+                                  If Not rawMessage.StartsWith("{") AndAlso Not rawMessage.StartsWith("[") Then
+                                      AddLog($"[WS:{e.Source}] {rawMessage}")
+                                      Exit Sub
+                                  End If
+
+                                  Dim msg As New VATJsonObject(rawMessage)
+
+                                  If msg Is Nothing Then Exit Sub
 
                                   Try
-                                      If msg Is Nothing Then Exit Sub
                                       _router.Route(msg)
                                   Catch ex As Exception
                                       ErrorDialogHelper.ShowError("Router Error: " & ex.Message)
@@ -241,17 +257,14 @@ Partial Public Class ProcessPage
         Dim device = msg("device")
         Dim online = Boolean.Parse(msg("online"))
 
-        _isOnline = online   ' ⭐存起來
-        If online = False AndAlso _enableRealtime Then
-            TryStartRealtime()
-        End If
+        ' 只記錄在線狀態，不在狀態通知時自動啟動檢測
+        _isOnline = online
 
         AddLog($"{device} Online={online}")
 
     End Sub
     Private Sub TriggerRealtime()
 
-        If Not _isRealtime Then Return
         If _mode <> RunMode.Realtime Then Return
         If AppRuntime.Home Is Nothing Then Return
 
@@ -348,31 +361,24 @@ Partial Public Class ProcessPage
 
                 AddLog("[TASK] 3 -> END")
 
-                If Not _allowDetection Then
+                Try
+                    ' 沒有前序 0 或尚未完成檢測時，直接回傳空結果
+                    If Not _allowDetection OrElse _lastDetectionResult Is Nothing Then
+                        Await SendNullResult(t)
+                        Return
+                    End If
 
-                    Await Task.Run(Sub() SendNullResult(t))
-                    Return
-
-                End If
-
-                If _lastDetectionResult Is Nothing Then
-
-                    Await Task.Run(Sub() SendNullResult(t))
-
-                Else
-
-                    Await Task.Run(Sub() SendDetectionResult(t, _lastDetectionResult))
-
-                End If
-
-                _allowDetection = False
-                _lastDetectionResult = Nothing
+                    Await SendDetectionResult(t, _lastDetectionResult)
+                Finally
+                    _allowDetection = False
+                    _lastDetectionResult = Nothing
+                End Try
 
         End Select
 
     End Function
     ' 收到3結束 但沒有結果
-    Private Async Sub SendNullResult(t As TaskData)
+    Private Async Function SendNullResult(t As TaskData) As Task
 
         Dim json As New Dictionary(Of String, Object)
 
@@ -381,8 +387,8 @@ Partial Public Class ProcessPage
         json("inspectTime") =
         DateTimeOffset.Now.ToUnixTimeMilliseconds()
 
-        json("totalInspectedCount") = 0
-        json("totalMatchCount") = 0
+        json("totalInspectedCount") = Nothing
+        json("totalMatchCount") = Nothing
 
         json("batchNo") = t.BatchNo
 
@@ -394,7 +400,7 @@ Partial Public Class ProcessPage
 
         AddLog($"[WS] NULL Sent : {t.RequestId}")
 
-    End Sub
+    End Function
     ' 收到3結束 但有結果
 
     Private Async Function SendDetectionResult(t As TaskData,
@@ -586,19 +592,14 @@ Partial Public Class ProcessPage
 
         _isInitializing = True
 
+        ' 只同步設定狀態，不在初始化階段自動觸發檢測
+        Realtime.IsChecked = realtimeEnabled
         _enableRealtime = realtimeEnabled
         _mode = If(realtimeEnabled, RunMode.Realtime, RunMode.None)
-
-        _isRealtime = realtimeEnabled   ' UI only
 
         AddLog($"[INIT] Realtime={realtimeEnabled}")
 
         _isInitializing = False
-
-        ' 初始化完才允許啟動
-        If realtimeEnabled Then
-            TryStartRealtime()
-        End If
 
     End Sub
 

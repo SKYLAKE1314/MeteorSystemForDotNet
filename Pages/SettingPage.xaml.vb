@@ -7,7 +7,7 @@ Public Class SettingPage
 
     Private _isLoaded As Boolean = False
 
-    Private _ioMode As IoBoardMode = IoBoardMode.IO
+    Private _ioMode As IoBoardMode = IoBoardMode.NONE
     Private _cameraList As New List(Of CameraInfo)
 
     Public Property CameraRows As New ObservableCollection(Of CameraRow)
@@ -19,15 +19,22 @@ Public Class SettingPage
 
         Me.DataContext = Me   ' ⭐ 讀settings
 
-        _isLoaded = True
-        ' IO卡
-        Dim modeStr = My.Settings.IoMode
-
-        If Not [Enum].TryParse(modeStr, _ioMode) Then
-            _ioMode = IoBoardMode.IO
-        End If
+        _isLoaded = False
+        _ioMode = IoBoardModeHelper.Parse(My.Settings.IoMode)
+        AppRuntime.IoMode = _ioMode
 
         LoadCameraRows()
+
+        Select Case _ioMode
+            Case IoBoardMode.IO
+                IoBoardComboBox.SelectedIndex = 0
+            Case IoBoardMode.PLC
+                IoBoardComboBox.SelectedIndex = 1
+            Case Else
+                IoBoardComboBox.SelectedIndex = 2
+        End Select
+
+        _isLoaded = True
 
         AddHandler Me.Loaded, AddressOf SettingPage_Loaded
     End Sub
@@ -83,23 +90,21 @@ Public Class SettingPage
 
     Private Sub IoBoardComboBox_SelectionChanged(sender As Object, e As SelectionChangedEventArgs)
 
+        If Not _isLoaded Then Return
         If IoBoardComboBox.SelectedItem Is Nothing Then Return
 
-        Dim text = TryCast(CType(IoBoardComboBox.SelectedItem, ComboBoxItem).Content, String)
-
-        Select Case text
-            Case "IO"
+        Select Case IoBoardComboBox.SelectedIndex
+            Case 0
                 _ioMode = IoBoardMode.IO
-
-            Case "PLC"
+            Case 1
                 _ioMode = IoBoardMode.PLC
-
-            Case "NONE"
+            Case Else
                 _ioMode = IoBoardMode.NONE
         End Select
 
         My.Settings.IoMode = _ioMode.ToString()
         My.Settings.Save()
+        AppRuntime.IoMode = _ioMode
 
         ' 自動化
         AutoRun.SelectedIndex =
@@ -244,12 +249,13 @@ If(My.Settings.AutoRun, 0, 1)
     sender As Object,
     e As SelectionChangedEventArgs)
 
-        If AutoRun.SelectedItem Is Nothing Then Return
-
-        Dim item = CType(AutoRun.SelectedItem, ComboBoxItem)
-
-        My.Settings.AutoRun =
-        Boolean.Parse(item.Content.ToString())
+        If Not _isLoaded Then Return
+        Select Case AutoRun.SelectedIndex
+            Case 0
+                My.Settings.AutoRun = True
+            Case Else
+                My.Settings.AutoRun = False
+        End Select
 
         My.Settings.Save()
 

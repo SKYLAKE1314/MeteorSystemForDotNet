@@ -148,7 +148,7 @@
                                        Foreground="LightGreen"
                                        HorizontalAlignment="Right"
                                        Margin="0,5,0,0"/>
-                            <TextBlock Text="金字塔層數"
+                            <TextBlock Text="金字塔層級"
            Foreground="White"/>
 
                             <Slider x:Name="PyramidSlider"

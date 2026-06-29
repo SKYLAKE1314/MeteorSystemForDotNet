@@ -18,8 +18,12 @@ Namespace IoBoard
         Private ReadOnly _sync As New Object()
         Private _disposed As Boolean = False
         Private ReadOnly _mode As IoBoardMode
+        Private ReadOnly Property HasHardware As Boolean
+            Get
+                Return _mode <> IoBoardMode.NONE
+            End Get
+        End Property
         Public Property Logger As Action(Of String)
-
 
         ''' <summary>
         ''' 建構
@@ -46,8 +50,8 @@ Namespace IoBoard
         ''' </summary>
         Public Sub Connect(Optional connectTimeoutMs As Integer = 3000)
 
-            If _mode = IoBoardMode.NONE Then
-                Logger?.Invoke("MODE=NONE，跳过 Connect")
+            If Not HasHardware Then
+                Logger?.Invoke("MODE=NONE，跳過 Connect")
                 Return
             End If
 
@@ -82,7 +86,7 @@ Namespace IoBoard
                     ErrorDialogHelper.ShowError(
                 $"無法連線到 {_ip}:{_port}（timeout {connectTimeoutMs} ms）")
 
-                    Return   ' ⭐⭐⭐ 关键修复点
+                    Return
                 End If
 
                 _client.EndConnect(ar)
@@ -131,15 +135,14 @@ Namespace IoBoard
         ''' 設定 DO
         ''' </summary>
         Public Sub SetDO(channelOneBased As Integer, onState As Boolean)
-            If _mode = IoBoardMode.NONE Then
-                Return
-            End If
+
+            If Not HasHardware Then Return
+
             If channelOneBased <= 0 Then
                 Throw New ArgumentOutOfRangeException(NameOf(channelOneBased))
             End If
 
-            Dim coilAddr As UShort =
-                CUShort(_coilBaseAddress + (channelOneBased - 1))
+            Dim coilAddr As UShort = CUShort(_coilBaseAddress + (channelOneBased - 1))
 
             SetCoil(coilAddr, onState)
 
@@ -149,23 +152,21 @@ Namespace IoBoard
         ''' 直接寫 Coil
         ''' </summary>
         Public Sub SetCoil(coilAddress As UShort, onState As Boolean)
-            If _mode = IoBoardMode.NONE Then
-                Return
-            End If
+
+            If Not HasHardware Then Return
+
             SyncLock _sync
 
                 EnsureNotDisposed()
+
+                If Not HasHardware Then Return
 
                 If _master Is Nothing Then
                     Connect()
                 End If
 
                 Try
-
-                    _master.WriteSingleCoil(
-                        _unitId,
-                        coilAddress,
-                        onState)
+                    _master.WriteSingleCoil(_unitId, coilAddress, onState)
 
                 Catch ex As Exception
 
@@ -175,7 +176,6 @@ Namespace IoBoard
                     End Try
 
                     Throw
-
                 End Try
 
             End SyncLock
@@ -185,14 +185,18 @@ Namespace IoBoard
         ''' <summary>
         ''' 蜂鳴一次
         ''' </summary>
-        Public Sub BeepOnce(Optional channelOneBased As Integer = 1,
-                            Optional durationMs As Integer = 2000,
-                            Optional retryTimes As Integer = 1)
-            If _mode = IoBoardMode.NONE Then
-                Return
-            End If
+        Public Async Function BeepOnceAsync(Optional channelOneBased As Integer = 1,
+                                            Optional durationMs As Integer = 2000,
+                                            Optional retryTimes As Integer = 1) As Task
+
+            If Not HasHardware Then Return
+
             If durationMs <= 0 Then
                 Throw New ArgumentOutOfRangeException(NameOf(durationMs))
+            End If
+
+            If retryTimes < 0 Then
+                Throw New ArgumentOutOfRangeException(NameOf(retryTimes))
             End If
 
             Dim tries As Integer = 0
@@ -204,7 +208,7 @@ Namespace IoBoard
 
                     SetDO(channelOneBased, True)
 
-                    Thread.Sleep(durationMs)
+                    Await Task.Delay(durationMs).ConfigureAwait(False)
 
                     SetDO(channelOneBased, False)
 
@@ -215,20 +219,17 @@ Namespace IoBoard
                     lastEx = ex
                     tries += 1
 
-                    Logger?.Invoke(
-                        $"觸發嘗試失敗，重試 {tries}/{retryTimes}，錯誤：{ex.Message}")
+                    Logger?.Invoke($"蜂鳴失敗 {tries}/{retryTimes}: {ex.Message}")
 
-                    Thread.Sleep(100)
 
                 End Try
+                Await Task.Delay(100).ConfigureAwait(False)
 
             End While
 
-            Throw New InvalidOperationException(
-                "觸發最終失敗",
-                lastEx)
+            Throw New InvalidOperationException("蜂鳴失敗", lastEx)
 
-        End Sub
+        End Function
 
         ''' <summary>
         ''' 讀取 DI
