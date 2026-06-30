@@ -217,19 +217,14 @@ Public Class AlgorithmPage
 
     Private Sub RoiCanvas_MouseLeftButtonUp(sender As Object, e As MouseButtonEventArgs)
 
-        If _roiCtrl Is Nothing Then
-            ErrorDialogHelper.ShowError("ROI非法")
-            Return
-        End If
-
         Try
             _roiCtrl.MouseUp()
 
-            If _roi = Nothing Then
-                ErrorDialogHelper.ShowError("ROI非法")
+            _roi = _roiCtrl.Roi   ' ⭐⭐⭐ 必加
+
+            If _roi.Width <= 0 OrElse _roi.Height <= 0 Then
+                RoiStatusText.Text = "ROI 無效"
                 Return
-            Else
-                _roi = _roiCtrl.Roi
             End If
 
             RoiStatusText.Text = "已選擇"
@@ -244,34 +239,53 @@ Public Class AlgorithmPage
     ' =========================
     ' Create Template
     ' =========================
-    Private Sub CreateTemplate_Click(sender As Object, e As RoutedEventArgs)
+    Private Async Sub CreateTemplate_Click(sender As Object, e As RoutedEventArgs)
 
-        SafeRun(Sub()
+        Try
+            If _srcMat Is Nothing Then
+                MessageBox.Show("No image")
+                Return
+            End If
 
-                    If _srcMat Is Nothing Then Return
-                    If _roi.Width <= 0 OrElse _roi.Height <= 0 Then Return
+            If _roi.Width <= 0 OrElse _roi.Height <= 0 Then
+                MessageBox.Show("ROI empty")
+                Return
+            End If
 
-                    Dim preview As Mat = Nothing
+            TemplateStatusText.Text = "生成中..."
 
-                    Dim options As New TemplateMatchOptions With {
-    .CannyLow = CannyLowSlider.Value,
-    .CannyHigh = CannyHighSlider.Value,
-    .MinContourArea = MinAreaSlider.Value
-}
+            Dim safeRoi = New CvRect(_roi.X, _roi.Y, _roi.Width, _roi.Height)
 
-                    _templateMat =
-    TemplateMatcher.CreateTemplate(
-        _srcMat,
-        _roi,
-        options,
-        preview)
+            Dim options As New TemplateMatchOptions With {
+            .CannyLow = CannyLowSlider.Value,
+            .CannyHigh = CannyHighSlider.Value,
+            .MinContourArea = MinAreaSlider.Value
+        }
 
-                    TemplateImage.Source =
-                        ImageConvertHelper.ToBitmap(preview)
+            Dim result = Await Task.Run(Function()
 
-                    TemplateStatusText.Text = "模板生成"
+                                            Dim preview As Mat = Nothing
 
-                End Sub)
+                                            Dim mat = TemplateMatcher.CreateTemplate(
+                                             _srcMat,
+                                             safeRoi,
+                                             options,
+                                             preview)
+
+                                            Return (mat, preview)
+
+                                        End Function)
+
+            _templateMat = result.Item1
+
+            TemplateImage.Source =
+            ImageConvertHelper.ToBitmap(result.Item2)
+
+            TemplateStatusText.Text = "模板生成完成"
+
+        Catch ex As Exception
+            MessageBox.Show(ex.ToString())
+        End Try
 
     End Sub
 
