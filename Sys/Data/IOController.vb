@@ -182,11 +182,11 @@ Public Class IOController
 
     Private Function ExecuteOkHardwareAsync() As Task
 
-        SetTowerLight(False, False, True)
+        SetTowerLight(False, False, True) ' R=off, Y=off, G=on
 
-        _buzzer?.SetCoil(0, True)
-        _buzzer?.SetCoil(1, False)
-        _buzzer?.SetCoil(3, False)
+        _buzzer?.SetCoil(0, True)   ' 綠燈
+        _buzzer?.SetCoil(1, False)  ' 紅燈
+        _buzzer?.SetCoil(3, False)  ' 黃燈 / buzzer off
 
         _log("收到OK")
 
@@ -196,7 +196,7 @@ Public Class IOController
 
     Private Async Function ExecuteNgHardwareAsync() As Task
 
-        SetTowerLight(True, False, False)
+        SetTowerLight(False, True, False)
 
         _buzzer?.SetCoil(3, True)
 
@@ -204,7 +204,7 @@ Public Class IOController
 
         _buzzer?.SetCoil(3, False)
         _buzzer?.SetCoil(0, False)
-        _buzzer?.SetCoil(1, True)
+        _buzzer?.SetCoil(1, False)
 
         _log("收到NG")
 
