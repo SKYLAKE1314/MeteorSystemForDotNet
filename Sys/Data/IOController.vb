@@ -25,6 +25,8 @@ Public Class IOController
     Private ReadOnly _log As Action(Of String)
 
     Private _buzzer As ModbusBuzzer
+    Private _diScanner As DIScanf
+    Public Event ButtonChanged As Action(Of Boolean)
     Private _lastHardwareActionUtc As DateTimeOffset = DateTimeOffset.MinValue
 
 #End Region
@@ -261,6 +263,59 @@ Public Class IOController
 
     End Sub
 
+    ' -----------------------------
+    ' DI Scanner 控制
+    ' -----------------------------
+    Public Sub StartDIListener(diIndex As Byte)
+
+        If Not _hardwareEnabled Then
+            _log("IO 已停用，無法啟用 DI 監聽")
+            Return
+        End If
+
+        If _buzzer Is Nothing Then
+            _log("IO 卡未就緒，無法啟用 DI 監聽")
+            Return
+        End If
+
+        Try
+            SafeStopDIListener()
+
+            _diScanner = New DIScanf(_buzzer, diIndex)
+
+            AddHandler _diScanner.OnButtonChanged, Sub(state)
+                                                       Try
+                                                           RaiseEvent ButtonChanged(state)
+                                                       Catch ex As Exception
+                                                           _log("DI 事件處理失敗: " & ex.Message)
+                                                       End Try
+                                                   End Sub
+
+            _diScanner.Start()
+
+            _log($"DI 監聽已啟用 (Index={diIndex})")
+
+        Catch ex As Exception
+            _log("啟用 DI 監聽失敗: " & ex.Message)
+        End Try
+
+    End Sub
+
+    Public Sub StopDIListener()
+        SafeStopDIListener()
+    End Sub
+
+    Private Sub SafeStopDIListener()
+        Try
+            If _diScanner IsNot Nothing Then
+                _diScanner.Dispose()
+            End If
+        Catch
+        End Try
+
+        _diScanner = Nothing
+    End Sub
+
 #End Region
 
 #Region "Dispose"
@@ -273,6 +328,11 @@ Public Class IOController
 
         Try
             _buzzer?.Dispose()
+        Catch
+        End Try
+
+        Try
+            _diScanner?.Dispose()
         Catch
         End Try
 

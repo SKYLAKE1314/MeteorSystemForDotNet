@@ -130,6 +130,14 @@ Class HomePage
 
         AddHandler Logger.LogReceived, AddressOf GlobalLogReceived
 
+        ' 啟用並訂閱物理按鈕（單一按鈕）
+        Try
+            _io.StartDIListener(0) ' DI index 可根據硬體配置調整
+            AddHandler _io.ButtonChanged, AddressOf IoButtonChanged
+            Logger.Info("物理按鈕監聽已啟用")
+        Catch ex As Exception
+            Logger.Error("啟用物理按鈕監聽失敗: " & ex.Message)
+        End Try
 
         Logger.Info("HomePage 已載入")
 
@@ -209,7 +217,6 @@ Class HomePage
                                   RenderImage.Source = result.Mat.ToWriteableBitmap()
                               End Sub)
 
-            ' ⭐⭐⭐ 強制統一生成 ImageBase64（關鍵修復）
             Dim bmp = MatToBitmapSource(result.Mat)
 
             Logger.Info($"Score={result.Score:F3}, OK={result.IsOk}")
@@ -287,6 +294,35 @@ Class HomePage
     End Sub
 
 #End Region
+    ' =========================================
+    ' IO 按鈕處理
+    ' =========================================
+
+    Private Async Sub IoButtonChanged(state As Boolean)
+
+        Try
+            If Not state Then Return ' 只在按下時觸發
+
+            Logger.Info("[IO] 物理按鈕按下，觸發即時檢測")
+
+            Dim result = Await RunDetectionOnce()
+
+            If result Is Nothing Then
+                Logger.Error("[IO] 即時檢測失敗或無影像")
+                Return
+            End If
+
+            If AppRuntime.Process IsNot Nothing Then
+                AppRuntime.Process.SetDetectionResult(result)
+                Logger.Info("[IO] 即時檢測結果已發送至 ProcessPage")
+            End If
+
+        Catch ex As Exception
+            Logger.Error("IoButtonChanged error: " & ex.Message)
+        End Try
+
+    End Sub
+
     ' =========================================
     ' Clear
     ' =========================================
