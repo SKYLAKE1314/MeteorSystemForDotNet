@@ -242,6 +242,16 @@ Class HomePage
 })
             output.Mat = result.Mat
 
+            ' 生成圖片 base64，供 ProcessPage 落盤並返回檔案路徑
+            Dim imageBitmap = MatToBitmapSource(result.Mat)
+            Dim imageEncoder As New PngBitmapEncoder()
+            imageEncoder.Frames.Add(BitmapFrame.Create(imageBitmap))
+
+            Using imageStream As New MemoryStream()
+                imageEncoder.Save(imageStream)
+                output.ImageBase64 = Convert.ToBase64String(imageStream.ToArray())
+            End Using
+
             Return output
 
         Catch ex As Exception
@@ -250,6 +260,31 @@ Class HomePage
         End Try
 
     End Function
+
+    ' ⭐ BtnGetImg Click 事件處理器 - "即時檢測"按鈕
+    Private Async Sub BtnGetImg_Click_Handler(sender As Object, e As RoutedEventArgs) Handles BtnGetImg.Click
+
+        Try
+            Logger.Info("[UI] 即時檢測 - 開始")
+
+            Dim result = Await BtnGetImg_Click()
+
+            If result Is Nothing Then
+                Logger.Error("[UI] 即時檢測 - 失敗")
+                Return
+            End If
+
+            ' ⭐ 保存結果到 ProcessPage，供 Client 任務使用
+            If AppRuntime.Process IsNot Nothing Then
+                AppRuntime.Process.SetDetectionResult(result)
+                Logger.Info("[UI] 即時檢測結果已發送至 ProcessPage")
+            End If
+
+        Catch ex As Exception
+            Logger.Error($"[UI] 即時檢測錯誤: {ex.Message}")
+        End Try
+
+    End Sub
 
 #End Region
     ' =========================================

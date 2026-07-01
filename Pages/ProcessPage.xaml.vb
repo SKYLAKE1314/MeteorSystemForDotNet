@@ -1,4 +1,5 @@
 ﻿Imports System.Reflection.Metadata
+Imports System.IO
 Imports System.Windows
 Imports MetroSystemForDotNet.HomePage
 Imports Newtonsoft.Json
@@ -28,7 +29,7 @@ Partial Public Class ProcessPage
     Private _currentTask As TaskData
 
     Private _allowDetection As Boolean = False
-    Private _lastDetectionResult As DetectionResult = Nothing
+    Private _detectionResults As New List(Of HomePage.DetectionResult)()
 
     Private _realtimeRunning As Boolean = False
 
@@ -272,7 +273,7 @@ Partial Public Class ProcessPage
 
                               AppRuntime.Home.RunDetection(Sub(result)
 
-                                                               _lastDetectionResult = result
+                                                               _detectionResults.Add(result)
 
                                                                Dim json As New Dictionary(Of String, Object)
 
@@ -351,11 +352,9 @@ Partial Public Class ProcessPage
             Case 0
 
                 _allowDetection = True
-                _lastDetectionResult = Nothing
+                _detectionResults.Clear()
 
-                AddLog("[TASK] 0 -> ARM")
-
-                Await RunDetectionAndSend(t)
+                AddLog("[TASK] 0 -> ARM (等待物理按鈕或即時檢測)")
 
             Case 3
 
@@ -363,15 +362,15 @@ Partial Public Class ProcessPage
 
                 Try
                     ' 沒有前序 0 或尚未完成檢測時，直接回傳空結果
-                    If Not _allowDetection OrElse _lastDetectionResult Is Nothing Then
+                    If Not _allowDetection OrElse _detectionResults.Count = 0 Then
                         Await SendNullResult(t)
                         Return
                     End If
 
-                    Await SendDetectionResult(t, _lastDetectionResult)
+                    Await SendDetectionResult(t, _detectionResults)
                 Finally
                     _allowDetection = False
-                    _lastDetectionResult = Nothing
+                    _detectionResults.Clear()
                 End Try
 
         End Select
@@ -387,12 +386,12 @@ Partial Public Class ProcessPage
         json("inspectTime") =
         DateTimeOffset.Now.ToUnixTimeMilliseconds()
 
-        json("totalInspectedCount") = Nothing
-        json("totalMatchCount") = Nothing
+        json("totalInspectedCount") = 0
+        json("totalMatchCount") = 0
 
         json("batchNo") = t.BatchNo
 
-        json("partInspectList") = Nothing
+        json("partInspectList") = New List(Of Object)()
 
         json("metadata") = Nothing
 
@@ -404,33 +403,44 @@ Partial Public Class ProcessPage
     ' 收到3結束 但有結果
 
     Private Async Function SendDetectionResult(t As TaskData,
-                                           result As HomePage.DetectionResult) As Task
+                                           results As List(Of HomePage.DetectionResult)) As Task
 
         Dim list As New List(Of Object)
 
-        Dim index As Integer = 1
+        Dim globalIndex As Integer = 1
         Dim matchCount As Integer = 0
+        Dim totalCount As Integer = 0
 
-        For Each item As HomePage.DetectionItem In result.List
+        ' 累積所有檢測結果中的所有零件
+        For Each result As HomePage.DetectionResult In results
 
-            If item.resultType = "MATCH" Then
-                matchCount += 1
-            End If
+            Dim itemIndex As Integer = 1
+            For Each item As HomePage.DetectionItem In result.List
 
-            list.Add(New With {
-            .detectionNo = $"DET-{DateTime.Now:yyyyMMdd}-{index:000}",
-            .taskPartName = t.PartCode,
-            .recognizedPartName = t.PartCode,
- .collectImageUrl = If(
-            String.IsNullOrWhiteSpace(result.ImageBase64),
-            Nothing,
-            "data:image/png;base64," & result.ImageBase64),
-            .recognizedPartCode = t.PartCode,
-            .resultType = item.resultType,
-            .confidence = item.confidence
-        })
+                If item.resultType = "MATCH" Then
+                    matchCount += 1
+                End If
 
-            index += 1
+                Dim imagePath As String = Nothing
+                If Not String.IsNullOrWhiteSpace(result.ImageBase64) Then
+                    imagePath = SaveImageToFile(result.ImageBase64, t.RequestId, t.StationId, globalIndex)
+                End If
+
+                list.Add(New With {
+                .detectionNo = $"DET-{DateTime.Now:yyyyMMdd}-{globalIndex:000}-{t.StationId}-{itemIndex:000}",
+                .taskPartName = t.PartCode,
+                .recognizedPartName = t.PartCode,
+                .collectImageUrl = imagePath,
+                .recognizedPartCode = t.PartCode,
+                .resultType = item.resultType,
+                .confidence = item.confidence
+            })
+
+                globalIndex += 1
+                itemIndex += 1
+                totalCount += 1
+
+            Next
 
         Next
 
@@ -439,7 +449,7 @@ Partial Public Class ProcessPage
         json("requestId") = t.RequestId
         json("stationId") = t.StationId
         json("inspectTime") = DateTimeOffset.Now.ToUnixTimeMilliseconds()
-        json("totalInspectedCount") = result.List.Count
+        json("totalInspectedCount") = totalCount
         json("totalMatchCount") = matchCount
         json("batchNo") = t.BatchNo
         json("partInspectList") = list
@@ -452,9 +462,80 @@ Partial Public Class ProcessPage
 
         Await _ws.Broadcast(JsonConvert.SerializeObject(json))
 
-        AddLog($"[WS] RESULT Sent : {t.RequestId}")
+        AddLog($"[WS] RESULT Sent : {t.RequestId} (总数={totalCount}, 匹配={matchCount}, 检测次数={results.Count})")
 
     End Function
+
+    Private Function SaveImageToFile(base64 As String, requestId As String, stationId As String, index As Integer) As String
+
+        Try
+            Dim normalizedBase64 As String = base64.Trim()
+
+            If normalizedBase64.StartsWith("data:", StringComparison.OrdinalIgnoreCase) Then
+                Dim separatorIndex = normalizedBase64.IndexOf(","c)
+                If separatorIndex >= 0 Then
+                    normalizedBase64 = normalizedBase64.Substring(separatorIndex + 1)
+                End If
+            End If
+
+            Dim imageBytes = Convert.FromBase64String(normalizedBase64)
+            Dim now = DateTime.Now
+            Dim dateFolder = now.ToString("yyyy\MM\dd")
+            Dim folderName = SafeFileName(requestId)
+            Dim folderPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "DetectionImages", dateFolder, folderName)
+
+            Directory.CreateDirectory(folderPath)
+
+            Dim fileName = $"capture_{DateTime.Now:yyyyMMdd_HHmmssfff}_{index:000}.png"
+            Dim filePath = Path.Combine(folderPath, fileName)
+            File.WriteAllBytes(filePath, imageBytes)
+
+            AddLog($"[IMG] 已保存: {filePath}")
+            Return filePath
+
+        Catch ex As Exception
+            AddLog($"[IMG] Save failed: {ex.Message}")
+            Return Nothing
+        End Try
+
+    End Function
+
+    Private Function SafeFileName(value As String) As String
+
+        If String.IsNullOrWhiteSpace(value) Then Return "unknown"
+
+        Dim invalidChars = Path.GetInvalidFileNameChars()
+        Dim builder As New System.Text.StringBuilder(value.Length)
+
+        For Each ch As Char In value
+            If Array.IndexOf(invalidChars, ch) >= 0 Then
+                builder.Append("_")
+            Else
+                builder.Append(ch)
+            End If
+        Next
+
+        Dim safeValue = builder.ToString().Trim()
+        If String.IsNullOrWhiteSpace(safeValue) Then safeValue = "unknown"
+        If safeValue.Length > 80 Then safeValue = safeValue.Substring(0, 80)
+
+        Return safeValue
+
+    End Function
+    ' 公開方法：供外部（如"即時檢測"按鈕）呼叫來設置檢測結果
+    Public Sub SetDetectionResult(result As HomePage.DetectionResult)
+
+        If Not _allowDetection Then
+            AddLog("[DETECT] ARM未啟用，忽略結果")
+            Return
+        End If
+
+        _detectionResults.Add(result)
+
+        AddLog($"[DETECT] 結果已累積 (檢測次數={_detectionResults.Count}, 當前零件數={result.List.Count})")
+
+    End Sub
+
     Private Async Function RunDetectionAndSend(t As TaskData) As Task
 
         AddLog($"[DETECT] Start {t.RequestId}")
@@ -471,7 +552,7 @@ Partial Public Class ProcessPage
             Return
         End If
 
-        _lastDetectionResult = result
+        _detectionResults.Add(result)
 
         AddLog("[DETECT] Finished")
 

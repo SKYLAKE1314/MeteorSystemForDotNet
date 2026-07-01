@@ -66,8 +66,7 @@
                     Content="即時檢測"
                     Width="100"
                     Height="32"
-                    Margin="0,0,10,0"
-                    Click="BtnGetImg_Click"/>
+                    Margin="0,0,10,0"/>
 
                     <Button x:Name="BtnSave"
                     Content="圖像儲存"
