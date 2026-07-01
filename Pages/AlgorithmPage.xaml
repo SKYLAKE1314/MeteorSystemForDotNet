@@ -123,9 +123,17 @@
                                     Background="#AA9B59B6"
                                     Click="SaveTemplate_Click"/>
 
+                            <Button Content="修訂模板"
+                                    Background="#AAE8B923"
+                                    Click="ReviseTemplate_Click"/>
+
                             <Button Content="載入模板"
                                     Background="#AAE74C3C"
                                     Click="LoadTemplate_Click"/>
+
+                            <Button Content="版本歷史"
+                                    Background="#AA66BB6A"
+                                    Click="ShowRevisions_Click"/>
 
                         </UniformGrid>
 

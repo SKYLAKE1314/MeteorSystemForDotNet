@@ -15,12 +15,21 @@
     ' =========================
     Public Property EnableOcr As Boolean
     Public Property OcrExpectedText As String
+    ' OCR engine 原始辨識結果（供回溯與修訂用）
+    Public Property OcrRecognizedText As String
 
     ' =========================
     ' Barcode
     ' =========================
     Public Property EnableBarcode As Boolean
     Public Property BarcodeExpectedText As String
+    ' 條碼/解碼引擎原始結果
+    Public Property BarcodeDecodedText As String
+
+    ' =========================
+    ' Revision history (模板修訂記錄)
+    ' =========================
+    Public Property Revisions As List(Of TemplateRevision)
 
     ' =========================
     ' Vision params

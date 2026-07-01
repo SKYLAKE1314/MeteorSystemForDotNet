@@ -343,7 +343,6 @@ Public Class AlgorithmPage
                         .AngleStep = AngleStepSlider.Value
                     End With
 
-
                     Dim path = TemplateManager.SaveTemplate(_templateMat, config)
                     If String.IsNullOrWhiteSpace(path) Then Return
 
@@ -377,15 +376,25 @@ Public Class AlgorithmPage
                         .AngleStep = config.AngleStep
                     End With
 
+                    ' 彈出編輯對話窗
+                    Dim dlg As New TemplateEditDialog(snapshot, Nothing)
+                    dlg.Owner = Application.Current?.MainWindow
+                    Dim res = dlg.ShowDialog()
+                    
+                    If res <> True Then
+                        MessageBox.Show("已取消保存")
+                        Return
+                    End If
 
                     TemplateSnapshotStore.Save(snapshot)
                     LastTemplateStore.Save(path)
 
-                    MessageBox.Show("模板 + Snapshot 已保存")
+                    MessageBox.Show("模板已保存")
 
                 End Sub)
 
     End Sub
+
 
     ' =========================
     ' Load template manually
@@ -407,10 +416,128 @@ Public Class AlgorithmPage
 
     End Sub
 
+    ' =========================
+    ' Revise loaded template
+    ' =========================
+    Private Sub ReviseTemplate_Click(sender As Object, e As RoutedEventArgs)
+
+        SafeRun(Sub()
+
+                    If _templateMat Is Nothing Then
+                        MessageBox.Show("請先載入或生成模板")
+                        Return
+                    End If
+
+                    Dim snapshot = TemplateSnapshotStore.Load()
+                    If snapshot Is Nothing Then
+                        MessageBox.Show("無法載入模板快照")
+                        Return
+                    End If
+
+                    ' 彈出編輯對話窗
+                    Dim dlg As New TemplateEditDialog(snapshot, TemplateImage.Source)
+                    dlg.Owner = Application.Current?.MainWindow
+                    Dim res = dlg.ShowDialog()
+                    If res <> True Then
+                        MessageBox.Show("已取消修訂")
+                        Return
+                    End If
+
+                    ' 保存修訂後的 snapshot
+                    TemplateSnapshotStore.Save(snapshot)
+                    MessageBox.Show("模板修訂已保存")
+
+                End Sub)
+
+    End Sub
 
     ' =========================
-    ' Core apply function
+    ' Show revision history
     ' =========================
+    Private Sub ShowRevisions_Click(sender As Object, e As RoutedEventArgs)
+
+        SafeRun(Sub()
+
+                    Dim snapshot = TemplateSnapshotStore.Load()
+                    If snapshot Is Nothing OrElse snapshot.Revisions Is Nothing OrElse snapshot.Revisions.Count = 0 Then
+                        MessageBox.Show("無修訂歷史")
+                        Return
+                    End If
+
+                    Dim msg As New System.Text.StringBuilder()
+                    msg.AppendLine("模板修訂歷史：")
+                    msg.AppendLine("")
+
+                    For i = snapshot.Revisions.Count - 1 To 0 Step -1
+                        Dim rev = snapshot.Revisions(i)
+                        Dim dt = New DateTime(DateTimeOffset.FromUnixTimeMilliseconds(rev.Timestamp).Ticks)
+                        msg.AppendLine($"#{i + 1} - {dt:yyyy-MM-dd HH:mm:ss}")
+                        msg.AppendLine($"  作者: {rev.Author}")
+                        msg.AppendLine($"  說明: {rev.Comment}")
+                        msg.AppendLine($"  ROI: ({rev.RoiX}, {rev.RoiY}) {rev.RoiW}x{rev.RoiH}")
+                        msg.AppendLine("")
+                    Next
+
+                    Dim wnd As New System.Windows.Window() With {
+                        .Title = "模板修訂歷史",
+                        .Width = 600,
+                        .Height = 400,
+                        .WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                        .Owner = Application.Current?.MainWindow
+                    }
+
+                    Dim textBox As New TextBox() With {
+                        .Text = msg.ToString(),
+                        .IsReadOnly = True,
+                        .TextWrapping = TextWrapping.Wrap,
+                        .VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                        .Foreground = Brushes.Black,
+                        .Background = Brushes.White,
+                        .Padding = New Thickness(10)
+                    }
+
+                    wnd.Content = textBox
+                    wnd.ShowDialog()
+
+                End Sub)
+
+    End Sub
+
+    ' =========================
+    ' Show or update template edit dialog
+    ' =========================
+    Private Sub ShowTemplateEditDialog(Optional ocrText As String = "", Optional barcodeText As String = "")
+
+        SafeRun(Sub()
+
+                   Try
+                       ' 建立新的 snapshot
+                       Dim snapshot As New TemplateSnapshot
+                       snapshot.OcrRecognizedText = ocrText
+                       snapshot.BarcodeDecodedText = barcodeText
+                       snapshot.OcrExpectedText = RoiText.Text
+                       snapshot.BarcodeExpectedText = ResultText.Text
+
+                       ' 建立對話窗並顯示
+                       Dim dlg As New TemplateEditDialog(snapshot, Nothing)
+                       dlg.Owner = Application.Current?.MainWindow
+                       Dim res = dlg.ShowDialog()
+
+                       If res = True Then
+                           ' 用戶確認了編輯
+                           RoiText.Text = dlg.Snapshot.OcrExpectedText
+                           ResultText.Text = dlg.Snapshot.BarcodeExpectedText
+                       End If
+
+                   Catch ex As Exception
+                       Logger.Error("打開模板編輯窗失敗: " & ex.Message)
+                   End Try
+
+                End Sub)
+
+    End Sub
+
+
     Private Sub ApplyTemplate(mat As Mat, config As TemplateConfig)
 
         _templateMat = mat
@@ -515,6 +642,11 @@ Public Class AlgorithmPage
     vbCrLf &
     $"置信度：{score:F3}")
 
+            ' =========================
+            ' 打開編輯對話窗並預填 OCR 結果
+            ' =========================
+            ShowTemplateEditDialog(ocrText:=text)
+
         Catch ex As Exception
             MessageBox.Show(ex.Message)
         End Try
@@ -546,6 +678,11 @@ Public Class AlgorithmPage
                 ResultText.Text = text
                 MessageBox.Show("讀碼成功：" & text)
             End If
+
+            ' =========================
+            ' 打開編輯對話窗並預填條碼結果
+            ' =========================
+            ShowTemplateEditDialog(barcodeText:=text)
 
         Catch ex As Exception
             MessageBox.Show("錯誤：" & ex.Message)
