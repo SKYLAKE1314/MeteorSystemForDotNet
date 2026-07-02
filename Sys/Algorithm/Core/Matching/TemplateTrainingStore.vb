@@ -4,6 +4,10 @@ Imports System.Linq
 
 Public Class TemplateTrainingStore
 
+    Private Shared ReadOnly _cacheLock As New Object()
+    Private Shared ReadOnly _sampleMetaCache As New Dictionary(Of String, List(Of TrainingSampleMeta))(StringComparer.OrdinalIgnoreCase)
+    Private Shared ReadOnly _sampleBytesCache As New Dictionary(Of String, Byte())(StringComparer.OrdinalIgnoreCase)
+
     Public Class TrainingTemplateParams
         Public Property MasterThreshold As Double = 0.8
         Public Property PyramidLevel As Integer = 2
@@ -185,6 +189,124 @@ Public Class TemplateTrainingStore
         SaveIndex(groupRoot, idx)
     End Sub
 
+    Public Shared Function GetTrainingSamples(groupPath As String) As List(Of TrainingSampleMeta)
+        Dim groupRoot = NormalizeGroupPath(groupPath)
+        If String.IsNullOrWhiteSpace(groupRoot) Then Return New List(Of TrainingSampleMeta)()
+
+        SyncLock _cacheLock
+            If _sampleMetaCache.ContainsKey(groupRoot) Then
+                Return _sampleMetaCache(groupRoot).
+                    Select(Function(x) CloneMeta(x)).
+                    OrderByDescending(Function(x) x.LastMatchedAt).
+                    ThenByDescending(Function(x) x.CreatedAt).
+                    ToList()
+            End If
+        End SyncLock
+
+        Dim idx = LoadIndex(groupRoot)
+        Dim samples = idx.Samples.OrderByDescending(Function(x) x.LastMatchedAt).ThenByDescending(Function(x) x.CreatedAt).ToList()
+
+        SyncLock _cacheLock
+            _sampleMetaCache(groupRoot) = samples.Select(Function(x) CloneMeta(x)).ToList()
+        End SyncLock
+
+        Return samples
+    End Function
+
+    Public Shared Function GetTrainingSampleMeta(groupPath As String, fileName As String) As TrainingSampleMeta
+        If String.IsNullOrWhiteSpace(fileName) Then Return Nothing
+
+        Dim samples = GetTrainingSamples(groupPath)
+        Dim meta = samples.FirstOrDefault(Function(x) String.Equals(x.FileName, fileName, StringComparison.OrdinalIgnoreCase))
+        If meta Is Nothing Then Return Nothing
+        Return CloneMeta(meta)
+    End Function
+
+    Public Shared Function LoadTrainingSampleImage(groupPath As String, fileName As String) As Mat
+        Dim groupRoot = NormalizeGroupPath(groupPath)
+        If String.IsNullOrWhiteSpace(groupRoot) OrElse String.IsNullOrWhiteSpace(fileName) Then Return Nothing
+
+        Dim cacheKey = IO.Path.Combine(groupRoot, "training", "samples", fileName)
+
+        SyncLock _cacheLock
+            If _sampleBytesCache.ContainsKey(cacheKey) Then
+                Return Cv2.ImDecode(_sampleBytesCache(cacheKey), ImreadModes.Color)
+            End If
+        End SyncLock
+
+        If Not IO.File.Exists(cacheKey) Then Return Nothing
+
+        Dim bytes = IO.File.ReadAllBytes(cacheKey)
+        SyncLock _cacheLock
+            _sampleBytesCache(cacheKey) = bytes
+        End SyncLock
+        Return Cv2.ImDecode(bytes, ImreadModes.Color)
+    End Function
+
+    Public Shared Sub WarmupAll()
+        Dim root = IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Templates")
+        If Not IO.Directory.Exists(root) Then Return
+
+        SyncLock _cacheLock
+            _sampleMetaCache.Clear()
+            _sampleBytesCache.Clear()
+        End SyncLock
+
+        For Each groupRoot In IO.Directory.GetDirectories(root)
+            Dim normalized = NormalizeGroupPath(groupRoot)
+            If String.IsNullOrWhiteSpace(normalized) Then Continue For
+
+            Dim idx = LoadIndex(normalized)
+            Dim samples = idx.Samples.Select(Function(x) CloneMeta(x)).ToList()
+
+            SyncLock _cacheLock
+                _sampleMetaCache(normalized) = samples
+            End SyncLock
+
+            Dim sampleDir = IO.Path.Combine(normalized, "training", "samples")
+            If Not IO.Directory.Exists(sampleDir) Then Continue For
+
+            For Each sample In samples
+                Dim filePath = IO.Path.Combine(sampleDir, sample.FileName)
+                If Not IO.File.Exists(filePath) Then Continue For
+                Try
+                    Dim bytes = IO.File.ReadAllBytes(filePath)
+                    SyncLock _cacheLock
+                        _sampleBytesCache(filePath) = bytes
+                    End SyncLock
+                Catch ex As Exception
+                    Logger.Warn("[TemplateTraining] warmup sample failed: " & ex.Message)
+                End Try
+            Next
+        Next
+    End Sub
+
+    Public Shared Function DeleteTrainingSample(groupPath As String, fileName As String) As Boolean
+        Dim groupRoot = NormalizeGroupPath(groupPath)
+        If String.IsNullOrWhiteSpace(groupRoot) OrElse String.IsNullOrWhiteSpace(fileName) Then Return False
+
+        Dim idx = LoadIndex(groupRoot)
+        Dim item = idx.Samples.FirstOrDefault(Function(x) String.Equals(x.FileName, fileName, StringComparison.OrdinalIgnoreCase))
+        If item Is Nothing Then Return False
+
+        Dim sampleDir = IO.Path.Combine(groupRoot, "training", "samples")
+        Dim filePath = IO.Path.Combine(sampleDir, item.FileName)
+        If IO.File.Exists(filePath) Then
+            IO.File.Delete(filePath)
+        End If
+
+        idx.Samples.Remove(item)
+        SaveIndex(groupRoot, idx)
+
+        SyncLock _cacheLock
+            Dim cacheKey = IO.Path.Combine(groupRoot, "training", "samples", item.FileName)
+            _sampleBytesCache.Remove(cacheKey)
+            _sampleMetaCache.Remove(groupRoot)
+        End SyncLock
+
+        Return True
+    End Function
+
     Private Shared Sub PurgeOverflow(groupRoot As String,
                                      idx As TrainingIndexFile,
                                      maxSamples As Integer)
@@ -236,6 +358,10 @@ Public Class TemplateTrainingStore
         Dim idxPath = IO.Path.Combine(dir, "training_index.json")
         Dim json = JsonSerializer.Serialize(idx, New JsonSerializerOptions With {.WriteIndented = True})
         IO.File.WriteAllText(idxPath, json)
+
+        SyncLock _cacheLock
+            _sampleMetaCache(groupRoot) = idx.Samples.Select(Function(x) CloneMeta(x)).ToList()
+        End SyncLock
     End Sub
 
     Private Shared Sub SaveParams(groupRoot As String, params As TrainingTemplateParams)
@@ -245,5 +371,29 @@ Public Class TemplateTrainingStore
         Dim json = JsonSerializer.Serialize(params, New JsonSerializerOptions With {.WriteIndented = True})
         IO.File.WriteAllText(cfgPath, json)
     End Sub
+
+    Private Shared Function CloneMeta(source As TrainingSampleMeta) As TrainingSampleMeta
+        If source Is Nothing Then Return Nothing
+
+        Return New TrainingSampleMeta With {
+            .FileName = source.FileName,
+            .CreatedAt = source.CreatedAt,
+            .LastMatchedAt = source.LastMatchedAt,
+            .RoiX = source.RoiX,
+            .RoiY = source.RoiY,
+            .RoiW = source.RoiW,
+            .RoiH = source.RoiH,
+            .MasterThreshold = source.MasterThreshold,
+            .PyramidLevel = source.PyramidLevel,
+            .MatchMethod = source.MatchMethod,
+            .MinArea = source.MinArea,
+            .CannyLow = source.CannyLow,
+            .CannyHigh = source.CannyHigh,
+            .AngleMin = source.AngleMin,
+            .AngleMax = source.AngleMax,
+            .AngleStep = source.AngleStep,
+            .PolygonPoints = source.PolygonPoints.Select(Function(p) New TrainingPoint With {.X = p.X, .Y = p.Y}).ToList()
+        }
+    End Function
 
 End Class

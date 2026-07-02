@@ -17,6 +17,32 @@
     End Sub
 
     ' =========================
+    ' 啟動指定相機
+    ' =========================
+    Public Sub StartCamera(deviceId As String)
+
+        If String.IsNullOrWhiteSpace(deviceId) Then Return
+        If _cameras.ContainsKey(deviceId) Then Return
+
+        Dim cam As New CameraLink(deviceId)
+
+        AddHandler cam.FrameArrived,
+            Sub(id As String, img As BitmapSource)
+
+                SyncLock _frames
+                    _frames(id) = img
+                End SyncLock
+
+                RaiseEvent FrameArrived(id, img)
+
+            End Sub
+
+        cam.StartCamera(deviceId)
+        _cameras(deviceId) = cam
+
+    End Sub
+
+    ' =========================
     ' 啟動全部相機
     ' =========================
     Public Sub StartAll()
@@ -25,25 +51,7 @@
         If ids Is Nothing OrElse ids.Count = 0 Then Return
 
         For Each id In ids
-
-            If _cameras.ContainsKey(id) Then Continue For
-
-            Dim cam As New CameraLink(id)
-
-            AddHandler cam.FrameArrived,
-                Sub(deviceId As String, img As BitmapSource)
-
-                    SyncLock _frames
-                        _frames(deviceId) = img
-                    End SyncLock
-
-                    RaiseEvent FrameArrived(deviceId, img)
-
-                End Sub
-
-            cam.StartCamera(id)
-            _cameras(id) = cam
-
+            StartCamera(id)
         Next
 
     End Sub

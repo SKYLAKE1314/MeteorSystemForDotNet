@@ -1,24 +1,26 @@
+Imports System.Collections.ObjectModel
 Imports System.Windows
 
 Public Class TemplateManageDialog
 
-    Private _groupPath As String
-    Private _templates As New List(Of TemplateItemVM)()
-    Private _modified As Boolean = False
+    Private ReadOnly _groupPath As String
+    Private ReadOnly _templates As New ObservableCollection(Of TemplateItemVM)()
+    Public Property SelectedSampleFileName As String
+    Public Property SelectedSampleMeta As TemplateTrainingStore.TrainingSampleMeta
 
     Public Class TemplateItemVM
-        Public Property Id As String
-        Public Property CameraSlot As Integer
-        Public Property CreatedAt As DateTime
-        Public Property CreatedAtDisplay As String
-        Public Property LastUsed As DateTime?
-        Public Property LastUsedDisplay As String
+        Public Property FileName As String
         Public Property FilePath As String
+        Public Property CreatedAtDisplay As String
+        Public Property LastMatchedAtDisplay As String
+        Public Property RoiDisplay As String
+        Public Property SampleCountDisplay As String
     End Class
 
     Public Sub New(groupPath As String)
         InitializeComponent()
         _groupPath = TemplateTrainingStore.NormalizeGroupPath(groupPath)
+        TemplateGrid.ItemsSource = _templates
         LoadTemplates()
     End Sub
 
@@ -26,41 +28,35 @@ Public Class TemplateManageDialog
         _templates.Clear()
 
         Try
-            ' List all template subdirectories under the group path
-            If Not IO.Directory.Exists(_groupPath) Then Return
+            If String.IsNullOrWhiteSpace(_groupPath) OrElse Not IO.Directory.Exists(_groupPath) Then
+                TxtEmptyHint.Text = "找不到訓練資料夾"
+                Return
+            End If
 
-            For camSlot As Integer = 0 To 1
-                Dim camPath = IO.Path.Combine(_groupPath, $"cam{camSlot + 1}")
-                If Not IO.Directory.Exists(camPath) Then Continue For
+            Dim samples = TemplateTrainingStore.GetTrainingSamples(_groupPath)
+            Dim sampleDir = IO.Path.Combine(_groupPath, "training", "samples")
 
-                For Each templateDir In IO.Directory.GetDirectories(camPath)
-                    Dim configPath = IO.Path.Combine(templateDir, "config.json")
-                    If IO.File.Exists(configPath) Then
-                        Try
-                            Dim config = Newtonsoft.Json.JsonConvert.DeserializeObject(Of TemplateConfig)(
-                                IO.File.ReadAllText(configPath))
-                            Dim createdTime = IO.File.GetCreationTime(configPath)
-                            Dim lastModTime = IO.File.GetLastWriteTime(configPath)
+            If samples.Count = 0 Then
+                TxtEmptyHint.Text = "目前沒有訓練樣本"
+                Return
+            End If
 
-                            _templates.Add(New TemplateItemVM With {
-                                .Id = IO.Path.GetFileName(templateDir),
-                                .CameraSlot = camSlot + 1,
-                                .CreatedAt = createdTime,
-                                .CreatedAtDisplay = createdTime.ToString("yyyy-MM-dd HH:mm"),
-                                .LastUsed = lastModTime,
-                                .LastUsedDisplay = lastModTime.ToString("yyyy-MM-dd HH:mm"),
-                                .FilePath = templateDir
-                            })
-                        Catch
-                        End Try
-                    End If
-                Next
+            For Each s In samples
+                Dim filePath = IO.Path.Combine(sampleDir, s.FileName)
+                _templates.Add(New TemplateItemVM With {
+                    .FileName = s.FileName,
+                    .FilePath = filePath,
+                    .CreatedAtDisplay = DateTimeOffset.FromUnixTimeMilliseconds(s.CreatedAt).ToString("yyyy-MM-dd HH:mm"),
+                    .LastMatchedAtDisplay = DateTimeOffset.FromUnixTimeMilliseconds(s.LastMatchedAt).ToString("yyyy-MM-dd HH:mm"),
+                    .RoiDisplay = $"{s.RoiX},{s.RoiY},{s.RoiW},{s.RoiH}",
+                    .SampleCountDisplay = samples.Count.ToString()
+                })
             Next
 
-            ' Sort by last used time (most recent first)
-            _templates = _templates.OrderByDescending(Function(x) x.LastUsed).ToList()
-            TemplateGrid.ItemsSource = _templates
-
+            TxtEmptyHint.Text = $"共 {samples.Count} 筆"
+            If TemplateGrid.SelectedItem Is Nothing AndAlso _templates.Count > 0 Then
+                TemplateGrid.SelectedIndex = 0
+            End If
         Catch ex As Exception
             MessageBox.Show($"載入模板失敗：{ex.Message}")
         End Try
@@ -68,32 +64,30 @@ Public Class TemplateManageDialog
 
     Private Sub BtnDelete_Click(sender As Object, e As RoutedEventArgs)
         Dim btn = CType(sender, Button)
-        Dim templateId = CType(btn.Tag, String)
+        Dim fileName = CStr(btn.Tag)
+        If String.IsNullOrWhiteSpace(fileName) Then Return
 
-        Dim item = _templates.FirstOrDefault(Function(x) x.Id = templateId)
-        If item Is Nothing Then Return
-
-        Dim result = MessageBox.Show($"確定要刪除 {templateId} 嗎？", "確認刪除", MessageBoxButton.YesNo, MessageBoxImage.Question)
+        Dim result = MessageBox.Show($"確定要刪除 {fileName} 嗎？", "確認刪除", MessageBoxButton.YesNo, MessageBoxImage.Question)
         If result <> MessageBoxResult.Yes Then Return
 
         Try
-            ' Delete the entire template directory
-            If IO.Directory.Exists(item.FilePath) Then
-                IO.Directory.Delete(item.FilePath, True)
+            If TemplateTrainingStore.DeleteTrainingSample(_groupPath, fileName) Then
+                LoadTemplates()
+                MessageBox.Show("已刪除", "成功", MessageBoxButton.OK, MessageBoxImage.Information)
+            Else
+                MessageBox.Show("找不到要刪除的模板", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error)
             End If
-
-            _templates.Remove(item)
-            TemplateGrid.ItemsSource = Nothing
-            TemplateGrid.ItemsSource = _templates
-            _modified = True
-
-            MessageBox.Show("已刪除", "成功", MessageBoxButton.OK, MessageBoxImage.Information)
         Catch ex As Exception
             MessageBox.Show($"刪除失敗：{ex.Message}", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error)
         End Try
     End Sub
 
     Private Sub BtnOk_Click(sender As Object, e As RoutedEventArgs)
+        Dim selected = TryCast(TemplateGrid.SelectedItem, TemplateItemVM)
+        If selected IsNot Nothing Then
+            SelectedSampleFileName = selected.FileName
+            SelectedSampleMeta = TemplateTrainingStore.GetTrainingSampleMeta(_groupPath, selected.FileName)
+        End If
         Me.DialogResult = True
         Me.Close()
     End Sub

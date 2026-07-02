@@ -92,6 +92,19 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
 
+            <TextBlock x:Name="TxtRecordingCameraTitle"
+                Text="錄影相機"
+                FontSize="16"
+                FontWeight="SemiBold"
+                Foreground="White"
+                Margin="0,12,0,8"/>
+            <ComboBox x:Name="RecordingCameraComboBox"
+                  Width="200"
+                  Margin="20,0,0,0"
+                  ItemsSource="{Binding RecordingCameraList}"
+                  DisplayMemberPath="Name"
+                  SelectionChanged="RecordingCameraComboBox_SelectionChanged"/>
+
             <TextBlock
                 x:Name="TxtAutoRunTitle"
                 Text="自動化執行"

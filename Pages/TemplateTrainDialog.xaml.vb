@@ -282,6 +282,63 @@ Public Class TemplateTrainDialog
         Return New Point(ix, iy)
     End Function
 
+    Private Function ImageToDisplayPoint(p As Point) As WpfPoint
+        Dim imgRect = GetImageDisplayRect()
+        If imgRect.Width <= 0 OrElse imgRect.Height <= 0 OrElse _sourceMat Is Nothing OrElse _sourceMat.Empty() Then
+            Return New WpfPoint(0, 0)
+        End If
+
+        Dim rx = p.X / Math.Max(1.0, _sourceMat.Width - 1)
+        Dim ry = p.Y / Math.Max(1.0, _sourceMat.Height - 1)
+
+        Return New WpfPoint(
+            imgRect.X + rx * imgRect.Width,
+            imgRect.Y + ry * imgRect.Height)
+    End Function
+
+    Private Sub LoadTrainingSampleIntoEditor(fileName As String, meta As TemplateTrainingStore.TrainingSampleMeta)
+        If String.IsNullOrWhiteSpace(fileName) OrElse meta Is Nothing Then Return
+
+        Try
+            Dim mat = TemplateTrainingStore.LoadTrainingSampleImage(_groupPath, fileName)
+            If mat Is Nothing OrElse mat.Empty() Then
+                MessageBox.Show("訓練樣本圖片載入失敗")
+                Return
+            End If
+
+            _sourceMat?.Dispose()
+            _sourceMat = mat
+
+            ImgSource.Source = BitmapSourceConverter.ToBitmapSource(_sourceMat)
+            Me.UpdateLayout()
+            RoiOverlay.UpdateLayout()
+
+            PyramidSlider.Value = Math.Max(PyramidSlider.Minimum, Math.Min(PyramidSlider.Maximum, meta.PyramidLevel))
+            MatchMethodBox.SelectedIndex = Math.Max(0, Math.Min(2, meta.MatchMethod))
+            MinAreaSlider.Value = Math.Max(MinAreaSlider.Minimum, Math.Min(MinAreaSlider.Maximum, meta.MinArea))
+            CannyLowSlider.Value = Math.Max(CannyLowSlider.Minimum, Math.Min(CannyLowSlider.Maximum, meta.CannyLow))
+            CannyHighSlider.Value = Math.Max(CannyHighSlider.Minimum, Math.Min(CannyHighSlider.Maximum, meta.CannyHigh))
+            AngleMinSlider.Value = Math.Max(AngleMinSlider.Minimum, Math.Min(AngleMinSlider.Maximum, meta.AngleMin))
+            AngleMaxSlider.Value = Math.Max(AngleMaxSlider.Minimum, Math.Min(AngleMaxSlider.Maximum, meta.AngleMax))
+            AngleStepSlider.Value = Math.Max(AngleStepSlider.Minimum, Math.Min(AngleStepSlider.Maximum, meta.AngleStep))
+
+            _polygonPoints.Clear()
+            If meta.PolygonPoints IsNot Nothing AndAlso meta.PolygonPoints.Count > 0 Then
+                For Each point In meta.PolygonPoints
+                    _polygonPoints.Add(ImageToDisplayPoint(New Point(point.X, point.Y)))
+                Next
+            End If
+
+            _polygonClosed = _polygonPoints.Count >= 3
+            DrawPolygonOverlay(Nothing)
+            TxtRoiStatus.Text = If(_polygonClosed, $"ROI：已載入 {_polygonPoints.Count} 點", "ROI：樣本無多邊形")
+            TxtPreviewInfo.Text = $"已載入樣本{Environment.NewLine}{fileName}"
+            UpdatePreview()
+        Catch ex As Exception
+            MessageBox.Show("載入訓練樣本失敗: " & ex.Message)
+        End Try
+    End Sub
+
     Private Async Sub BtnAddSample_Click(sender As Object, e As RoutedEventArgs)
         Try
             If String.IsNullOrWhiteSpace(_groupPath) OrElse Not IO.Directory.Exists(_groupPath) Then
@@ -505,9 +562,10 @@ Public Class TemplateTrainDialog
             Dim dlg As New TemplateManageDialog(_groupPath)
             dlg.Owner = Application.Current?.MainWindow
             Dim res = dlg.ShowDialog()
-            If res = True Then
-                RefreshSampleCount()
+            If res = True AndAlso Not String.IsNullOrWhiteSpace(dlg.SelectedSampleFileName) Then
+                LoadTrainingSampleIntoEditor(dlg.SelectedSampleFileName, dlg.SelectedSampleMeta)
             End If
+            RefreshSampleCount()
         Catch ex As Exception
             MessageBox.Show($"管理模板失敗：{ex.Message}")
         End Try

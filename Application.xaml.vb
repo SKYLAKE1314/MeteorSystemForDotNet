@@ -71,12 +71,12 @@ Class Application
         TemplateSnapshotStore.Load()
 
         TemplateCache.LoadAll()
+        TemplateTrainingStore.WarmupAll()
 
 
         AppProgress.Report(60, "初始化相機")
 
         CameraManager.Initialize()
-        CameraService.Instance.StartAll()
 
         AppProgress.Report(70, "初始化相機")
 

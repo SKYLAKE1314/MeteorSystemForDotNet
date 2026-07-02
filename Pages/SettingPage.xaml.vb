@@ -11,6 +11,7 @@ Public Class SettingPage
     Private _cameraList As New List(Of CameraInfo)
 
     Public Property CameraRows As New ObservableCollection(Of CameraRow)
+    Public Property RecordingCameraList As New ObservableCollection(Of CameraInfo)
 
     Public Sub New()
         InitializeComponent()
@@ -83,6 +84,7 @@ Public Class SettingPage
         TxtLanguageTitle.Text = LanguageManager.T("Setting_Language")
         TxtIoBoardTitle.Text = LanguageManager.T("Setting_IoBoard")
         TxtCameraTitle.Text = LanguageManager.T("Setting_Camera")
+        TxtRecordingCameraTitle.Text = "錄影相機"
         TxtAutoRunTitle.Text = LanguageManager.T("Setting_AutoRun")
         TxtGpuTitle.Text = LanguageManager.T("Setting_GpuBoost")
     End Sub
@@ -157,6 +159,11 @@ If(My.Settings.AutoRun, 0, 1)
     Private Sub LoadCameraRows()
 
         Dim list = CameraManager.GetCachedCameras()
+        _cameraList = list
+        RecordingCameraList.Clear()
+        For Each camera In list
+            RecordingCameraList.Add(camera)
+        Next
 
         CameraRows.Clear()
 
@@ -187,6 +194,12 @@ If(My.Settings.AutoRun, 0, 1)
 
         UpdateCameraButtons()
         RefreshAllCameraLists()
+
+        Dim recordingId = My.Settings.RecordingCameraId
+        If String.IsNullOrWhiteSpace(recordingId) AndAlso CameraRows.Count > 0 AndAlso CameraRows(0).SelectedCamera IsNot Nothing Then
+            recordingId = CameraRows(0).SelectedCamera.DeviceId
+        End If
+        RecordingCameraComboBox.SelectedItem = RecordingCameraList.FirstOrDefault(Function(c) c.DeviceId = recordingId)
 
         ' 自動化
         If My.Settings.AutoRun Then
@@ -311,5 +324,13 @@ If(My.Settings.AutoRun, 0, 1)
 
     Private Sub GpuBoostComboBox_SelectionChanged(sender As Object, e As SelectionChangedEventArgs)
 
+    End Sub
+
+    Private Sub RecordingCameraComboBox_SelectionChanged(sender As Object, e As SelectionChangedEventArgs)
+        If Not _isLoaded Then Return
+
+        Dim cam = TryCast(RecordingCameraComboBox.SelectedItem, CameraInfo)
+        My.Settings.RecordingCameraId = cam?.DeviceId
+        My.Settings.Save()
     End Sub
 End Class

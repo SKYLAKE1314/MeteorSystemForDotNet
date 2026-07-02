@@ -26,5 +26,8 @@
     <Setting Name="ModelEditSortMode" Type="System.String" Scope="User">
       <Value Profile="(Default)">alpha</Value>
     </Setting>
+    <Setting Name="RecordingCameraId" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
+    </Setting>
   </Settings>
 </SettingsFile>

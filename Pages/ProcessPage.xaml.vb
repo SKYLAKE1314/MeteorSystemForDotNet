@@ -30,6 +30,8 @@ Partial Public Class ProcessPage
 
     Private _allowDetection As Boolean = False
     Private _detectionResults As New List(Of HomePage.DetectionResult)()
+    Private _currentArtifactFolder As String = ""
+    Private _currentTaskStartTime As Long = 0
 
     Private _realtimeRunning As Boolean = False
 
@@ -268,6 +270,7 @@ Partial Public Class ProcessPage
 
         If _mode <> RunMode.Realtime Then Return
         If AppRuntime.Home Is Nothing Then Return
+        If _allowDetection Then Return
 
         Dispatcher.Invoke(Sub()
 
@@ -353,14 +356,19 @@ Partial Public Class ProcessPage
 
                 _allowDetection = True
                 _detectionResults.Clear()
+                _currentTaskStartTime = DateTimeOffset.Now.ToUnixTimeMilliseconds()
+                _currentArtifactFolder = BuildTaskArtifactFolder(t, _currentTaskStartTime)
 
                 AddLog("[TASK] 0 -> ARM (等待物理按鈕或即時檢測)")
+                Await StartTaskRecordingAsync(t)
 
             Case 3
 
                 AddLog("[TASK] 3 -> END")
 
                 Try
+                    Await TaskVideoRecorder.Instance.StopRecordingAsync()
+
                     ' 沒有前序 0 或尚未完成檢測時，直接回傳空結果
                     If Not _allowDetection OrElse _detectionResults.Count = 0 Then
                         Await SendNullResult(t)
@@ -371,6 +379,13 @@ Partial Public Class ProcessPage
                 Finally
                     _allowDetection = False
                     _detectionResults.Clear()
+                    _currentArtifactFolder = ""
+                    _currentTaskStartTime = 0
+                    If AppRuntime.Home IsNot Nothing Then
+                        AppRuntime.Home.StopTaskFlow()
+                    Else
+                        CameraService.Instance.StopAll()
+                    End If
                 End Try
 
         End Select
@@ -479,10 +494,10 @@ Partial Public Class ProcessPage
             End If
 
             Dim imageBytes = Convert.FromBase64String(normalizedBase64)
-            Dim now = DateTime.Now
-            Dim dateFolder = now.ToString("yyyy\MM\dd")
-            Dim folderName = SafeFileName(requestId)
-            Dim folderPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "DetectionImages", dateFolder, folderName)
+            Dim folderPath = _currentArtifactFolder
+            If String.IsNullOrWhiteSpace(folderPath) Then
+                folderPath = BuildTaskArtifactFolder(New TaskData With {.RequestId = requestId, .PartCode = requestId}, DateTimeOffset.Now.ToUnixTimeMilliseconds())
+            End If
 
             Directory.CreateDirectory(folderPath)
 
@@ -498,6 +513,65 @@ Partial Public Class ProcessPage
             Return Nothing
         End Try
 
+    End Function
+
+    Private Async Function StartTaskRecordingAsync(t As TaskData) As Task
+        Try
+            Dim cameraId = ResolveRecordingCameraId()
+            If String.IsNullOrWhiteSpace(cameraId) Then
+                AddLog("[VIDEO] 未設定錄影相機，略過錄影")
+                Return
+            End If
+
+            Dim folderPath = _currentArtifactFolder
+            If String.IsNullOrWhiteSpace(folderPath) Then
+                _currentTaskStartTime = DateTimeOffset.Now.ToUnixTimeMilliseconds()
+                folderPath = BuildTaskArtifactFolder(t, _currentTaskStartTime)
+                _currentArtifactFolder = folderPath
+            End If
+
+            Directory.CreateDirectory(folderPath)
+            Dim filePath = Path.Combine(folderPath, $"{SafeFileName(t.RequestId)}-live.mp4")
+            Dim info = Await TaskVideoRecorder.Instance.StartRecordingAsync(cameraId, filePath)
+            If info Is Nothing Then Return
+
+            Dim json As New Dictionary(Of String, Object)
+            json("requestId") = t.RequestId
+            json("stationId") = t.StationId
+            json("streamUrl") = info.StreamUrl
+            json("streamStartTime") = info.StreamStartTime
+            json("streamStatus") = info.StreamStatus
+            json("videoFormat") = info.VideoFormat
+            json("bitRate") = info.BitRate
+            json("metadata") = New With {
+                .resolution = info.Resolution,
+                .frameRate = info.FrameRate
+            }
+
+            Await _ws.Broadcast(JsonConvert.SerializeObject(json))
+            AddLog($"[VIDEO] START Sent : {t.RequestId}")
+        Catch ex As Exception
+            AddLog("[VIDEO] 啟動錄影失敗: " & ex.Message)
+        End Try
+    End Function
+
+    Private Function ResolveRecordingCameraId() As String
+        If Not String.IsNullOrWhiteSpace(My.Settings.RecordingCameraId) Then
+            Return My.Settings.RecordingCameraId
+        End If
+
+        Dim fallback = GetCamId(1)
+        If String.IsNullOrWhiteSpace(fallback) Then
+            fallback = GetCamId(0)
+        End If
+        Return fallback
+    End Function
+
+    Private Function BuildTaskArtifactFolder(t As TaskData, startTime As Long) As String
+        Dim productCode = SafeFileName(If(String.IsNullOrWhiteSpace(t?.PartCode), t?.RequestId, t.PartCode))
+        Dim timeFolder = DateTimeOffset.FromUnixTimeMilliseconds(startTime).LocalDateTime.ToString("yyyyMMdd_HHmmss")
+        Dim requestFolder = SafeFileName(If(t?.RequestId, "unknown"))
+        Return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "DetectionImages", productCode, timeFolder, requestFolder)
     End Function
 
     Private Function SafeFileName(value As String) As String
@@ -530,6 +604,11 @@ Partial Public Class ProcessPage
             Return
         End If
 
+        If result Is Nothing OrElse Not result.IsFinal Then
+            AddLog("[DETECT] 收到流程中間結果，等待下一階段")
+            Return
+        End If
+
         _detectionResults.Add(result)
 
         AddLog($"[DETECT] 結果已累積 (檢測次數={_detectionResults.Count}, 當前零件數={result.List.Count})")
@@ -549,6 +628,11 @@ Partial Public Class ProcessPage
 
         If result Is Nothing Then
             AddLog("[DETECT] Failed")
+            Return
+        End If
+
+        If Not result.IsFinal Then
+            AddLog($"[DETECT] Stage={result.Stage}，等待下一次觸發")
             Return
         End If
 
