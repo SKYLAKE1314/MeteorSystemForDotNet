@@ -1,0 +1,150 @@
+﻿<Window x:Class="TemplateTrainDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="模板訓練"
+        Width="1160"
+        Height="780"
+        WindowStartupLocation="CenterOwner"
+        Background="#11131A">
+    <Grid Margin="14">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="340"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Left: source+ROI on top, preview strip on bottom -->
+        <Grid Grid.Column="0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="8"/>
+                <RowDefinition Height="190"/>
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Background="#1A1E29" CornerRadius="10" Padding="10">
+                <Grid>
+                    <Image x:Name="ImgSource" Stretch="Uniform"/>
+                    <Canvas x:Name="RoiOverlay"
+                            Background="Transparent"
+                            MouseLeftButtonDown="RoiOverlay_MouseLeftButtonDown"
+                            MouseMove="RoiOverlay_MouseMove"
+                            MouseRightButtonDown="RoiOverlay_MouseRightButtonDown"/>
+                </Grid>
+            </Border>
+
+            <!-- Preview strip -->
+            <Border Grid.Row="2" Background="#1A1E29" CornerRadius="10" Padding="10">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="130"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                        <TextBlock Text="渲染預覽" Foreground="#CBA0FF" FontSize="13" FontWeight="SemiBold"/>
+                        <TextBlock x:Name="TxtPreviewInfo" Margin="0,6,0,0" Foreground="LightGray" FontSize="11"
+                                   TextWrapping="Wrap" Text="完成多邊形後&#x0a;自動生成"/>
+                        <Button x:Name="BtnRefreshPreview" Margin="0,8,8,0" Height="26" FontSize="11"
+                                Content="🔄 刷新" Click="BtnRefreshPreview_Click"/>
+                    </StackPanel>
+                    <Border x:Name="PreviewBorder"
+                            Grid.Column="1"
+                            Background="#0D0F18"
+                            CornerRadius="6"
+                            MouseWheel="PreviewBorder_MouseWheel"
+                            MouseDown="PreviewBorder_MouseDown"
+                            MouseMove="PreviewBorder_MouseMove"
+                            MouseUp="PreviewBorder_MouseUp">
+                        <Grid ClipToBounds="True">
+                            <Image x:Name="ImgPreview"
+                                   Stretch="Uniform"
+                                   Margin="4"
+                                   RenderTransformOrigin="0.5,0.5">
+                                <Image.RenderTransform>
+                                    <TransformGroup>
+                                        <ScaleTransform x:Name="PreviewScale" ScaleX="1" ScaleY="1"/>
+                                        <TranslateTransform x:Name="PreviewTranslate" X="0" Y="0"/>
+                                    </TransformGroup>
+                                </Image.RenderTransform>
+                            </Image>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <Border Grid.Column="1" Margin="12,0,0,0" Background="#1A1E29" CornerRadius="10" Padding="12">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <TextBlock Text="模板訓練" Foreground="White" FontSize="18" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="TxtTemplateName" Margin="0,6,0,10" Foreground="#CBA0FF" TextWrapping="Wrap"/>
+
+                    <Button x:Name="BtnLoadImage" Content="載入圖片" Height="34" Click="BtnLoadImage_Click"/>
+                    <Button x:Name="BtnAutoAnalyze" Margin="0,6,0,0" Height="28"
+                            Background="#1E3A4A" Foreground="#80DEEA"
+                            Content="⚡ 自動分析參數" Click="BtnAutoAnalyze_Click"/>
+                    <TextBlock x:Name="TxtAutoInfo" Margin="0,3,0,6" Foreground="#546E7A" FontSize="10"
+                               TextWrapping="Wrap" Text="根據圖片自動推算 Canny / MinArea / Pyramid"/>
+                    <Button x:Name="BtnClearPolygon" Height="28" Content="清空多邊形" Click="BtnClearPolygon_Click"/>
+
+                    <TextBlock x:Name="TxtRoiStatus" Margin="0,8,0,0" Foreground="LightGray" Text="ROI：左鍵加點，右鍵撤銷，雙擊完成"/>
+                    <TextBlock x:Name="TxtSampleCount" Margin="0,4,0,10" Foreground="LightGray" Text="樣本數：0 / 50"/>
+
+                    <TextBlock x:Name="TxtMasterThreshold" Margin="0,0,0,10" Foreground="#A8D8A8" Text="母版閾值：-"/>
+
+                    <TextBlock Text="金字塔層級" Foreground="White"/>
+                    <Slider x:Name="PyramidSlider" Minimum="0" Maximum="4" Value="2" TickFrequency="1" IsSnapToTickEnabled="True"/>
+                    <TextBlock Text="{Binding ElementName=PyramidSlider, Path=Value, StringFormat=目前值：{0:F0}}" Foreground="#CBA0FF" HorizontalAlignment="Right"/>
+
+                    <TextBlock Margin="0,8,0,0" Text="匹配方法" Foreground="White"/>
+                    <ComboBox x:Name="MatchMethodBox" SelectedIndex="0">
+                        <ComboBoxItem Content="TM_CCOEFF_NORMED"/>
+                        <ComboBoxItem Content="TM_CCORR_NORMED"/>
+                        <ComboBoxItem Content="TM_SQDIFF_NORMED"/>
+                    </ComboBox>
+
+                    <TextBlock Margin="0,8,0,0" Text="最小輪廓面積" Foreground="White"/>
+                    <Slider x:Name="MinAreaSlider" Minimum="0" Maximum="5000" Value="50" TickFrequency="50"/>
+                    <TextBlock Text="{Binding ElementName=MinAreaSlider, Path=Value, StringFormat=目前值：{0:F0}}" Foreground="#CBA0FF" HorizontalAlignment="Right"/>
+
+                    <TextBlock Margin="0,8,0,0" Text="Canny Low" Foreground="White"/>
+                    <Slider x:Name="CannyLowSlider" Minimum="0" Maximum="255" Value="80" TickFrequency="1"/>
+                    <TextBlock Text="{Binding ElementName=CannyLowSlider, Path=Value, StringFormat=目前值：{0:F0}}" Foreground="#CBA0FF" HorizontalAlignment="Right"/>
+
+                    <TextBlock Margin="0,8,0,0" Text="Canny High" Foreground="White"/>
+                    <Slider x:Name="CannyHighSlider" Minimum="0" Maximum="255" Value="160" TickFrequency="1"/>
+                    <TextBlock Text="{Binding ElementName=CannyHighSlider, Path=Value, StringFormat=目前值：{0:F0}}" Foreground="#CBA0FF" HorizontalAlignment="Right"/>
+
+                    <TextBlock Margin="0,8,0,0" Text="角度最小值" Foreground="White"/>
+                    <Slider x:Name="AngleMinSlider" Minimum="-180" Maximum="180" Value="-60" TickFrequency="1"/>
+                    <TextBlock Text="{Binding ElementName=AngleMinSlider, Path=Value, StringFormat=目前值：{0:F0}}" Foreground="#CBA0FF" HorizontalAlignment="Right"/>
+
+                    <TextBlock Margin="0,8,0,0" Text="角度最大值" Foreground="White"/>
+                    <Slider x:Name="AngleMaxSlider" Minimum="-180" Maximum="180" Value="60" TickFrequency="1"/>
+                    <TextBlock Text="{Binding ElementName=AngleMaxSlider, Path=Value, StringFormat=目前值：{0:F0}}" Foreground="#CBA0FF" HorizontalAlignment="Right"/>
+
+                    <TextBlock Margin="0,8,0,0" Text="角度步進" Foreground="White"/>
+                    <Slider x:Name="AngleStepSlider" Minimum="1" Maximum="30" Value="3" TickFrequency="1" IsSnapToTickEnabled="True"/>
+                    <TextBlock Text="{Binding ElementName=AngleStepSlider, Path=Value, StringFormat=目前值：{0:F0}}" Foreground="#CBA0FF" HorizontalAlignment="Right"/>
+
+                    <Button x:Name="BtnAddSample"
+                            Margin="0,14,0,0"
+                            Height="36"
+                            Background="#7E57C2"
+                            Foreground="White"
+                            Content="加入訓練模板"
+                            Click="BtnAddSample_Click"/>
+
+                    <TextBlock Margin="0,8,0,0"
+                               Foreground="LightGray"
+                               TextWrapping="Wrap"
+                               Text="說明：最多保存 50 張訓練模板，超過後會依最後匹配時間自動刪除較舊樣本。"/>
+
+                    <Button x:Name="BtnManageTemplates" Margin="0,14,0,6" Height="32"
+                            Background="#455A64" Foreground="White"
+                            Content="📋 管理模板" Click="BtnManageTemplates_Click"/>
+
+                    <Button Margin="0,0,0,0" Height="32" Content="關閉" Click="BtnClose_Click"/>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+    </Grid>
+</Window>

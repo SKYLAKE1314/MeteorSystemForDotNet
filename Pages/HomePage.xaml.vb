@@ -21,17 +21,84 @@ Class HomePage
     Private _detectLock As New Object()
     Private _isDetecting As Boolean = False
 
-    Private _detectCameraId As String = GetCamId(0)
-    Private _ocrCameraId As String = GetCamId(1)
-    Public Async Function RunDetection(callback As Action(Of DetectionResult)) As Task
+    Private Enum DetectionFlowStage
+        Idle = 0
+        Matching = 1
+        Barcode = 2
+        Ocr = 3
+    End Enum
 
+    Private _flowStage As DetectionFlowStage = DetectionFlowStage.Idle
+    Private _skipCurrentStageRequested As Boolean = False
+
+    Private Const VoicePromptMatchCompleteScan As String = "MatchCompletedPleaseScan.wav"
+    Private Const VoicePromptDecodeCompleteOcr As String = "DecodeCompletedPleaseOCR.wav"
+
+    Private _detectCameraId As String = GetCamId(1)
+    Private _ocrCameraId As String = GetCamId(1)
+
+    Private Function TryStartDetection(triggerSource As String) As Boolean
         SyncLock _detectLock
             If _isDetecting Then
-                Logger.Warn("[DETECT] skipped (busy)")
-                Return
+                If _flowStage = DetectionFlowStage.Barcode OrElse _flowStage = DetectionFlowStage.Ocr Then
+                    _skipCurrentStageRequested = True
+                    Logger.Info($"[{triggerSource}] 已請求跳過 {If(_flowStage = DetectionFlowStage.Barcode, "解碼", "OCR")}")
+                Else
+                    Logger.Warn($"[{triggerSource}] skipped (busy)")
+                End If
+                Return False
             End If
+
             _isDetecting = True
+            _skipCurrentStageRequested = False
+            _flowStage = DetectionFlowStage.Matching
+            Return True
         End SyncLock
+    End Function
+
+    Private Sub SetFlowStage(stage As DetectionFlowStage)
+        SyncLock _detectLock
+            _flowStage = stage
+            _skipCurrentStageRequested = False
+        End SyncLock
+    End Sub
+
+    Private Function IsSkipRequested(stage As DetectionFlowStage) As Boolean
+        SyncLock _detectLock
+            Return _flowStage = stage AndAlso _skipCurrentStageRequested
+        End SyncLock
+    End Function
+
+    Private Sub FinishDetection()
+        SyncLock _detectLock
+            _isDetecting = False
+            _skipCurrentStageRequested = False
+            _flowStage = DetectionFlowStage.Idle
+        End SyncLock
+    End Sub
+
+    Private Function IsSkippableStageRunning() As Boolean
+        SyncLock _detectLock
+            Return _isDetecting AndAlso (_flowStage = DetectionFlowStage.Barcode OrElse _flowStage = DetectionFlowStage.Ocr)
+        End SyncLock
+    End Function
+
+    Private Sub FillImageBase64(result As DetectionResult)
+        If result Is Nothing OrElse result.Mat Is Nothing Then Return
+
+        Dim bmp = MatToBitmapSource(result.Mat)
+        Dim encoder As New PngBitmapEncoder()
+        encoder.Frames.Add(BitmapFrame.Create(bmp))
+
+        Using ms As New IO.MemoryStream()
+            encoder.Save(ms)
+            result.ImageBase64 = Convert.ToBase64String(ms.ToArray())
+        End Using
+    End Sub
+
+    Public Async Function RunDetection(callback As Action(Of DetectionResult)) As Task
+
+        If Not TryStartDetection("WS") Then Return
 
         Try
             Logger.Debug($"[DETECT ENTER] {Guid.NewGuid()}")
@@ -39,55 +106,37 @@ Class HomePage
             Dim result = Await BtnGetImg_Click()
             If result Is Nothing Then Return
 
-            Dim bmp = MatToBitmapSource(result.Mat)
-
-            Dim encoder As New PngBitmapEncoder()
-            encoder.Frames.Add(BitmapFrame.Create(bmp))
-
-            Using ms As New IO.MemoryStream()
-                encoder.Save(ms)
-                result.ImageBase64 = Convert.ToBase64String(ms.ToArray())
-            End Using
-
+            FillImageBase64(result)
             callback(result)
 
         Catch ex As Exception
             Logger.Error("RunDetection error: " & ex.Message)
 
         Finally
-            _isDetecting = False
+            FinishDetection()
         End Try
 
     End Function
 
     Public Async Function RunDetectionOnce() As Task(Of DetectionResult)
 
+        If Not TryStartDetection("MANUAL") Then Return Nothing
+
         Try
 
             Dim result = Await BtnGetImg_Click()
-
             If result Is Nothing Then Return Nothing
 
-            Dim bmp = MatToBitmapSource(result.Mat)
-
-            Dim encoder As New PngBitmapEncoder()
-            encoder.Frames.Add(BitmapFrame.Create(bmp))
-
-            Using ms As New MemoryStream()
-
-                encoder.Save(ms)
-
-                result.ImageBase64 = Convert.ToBase64String(ms.ToArray())
-
-            End Using
-
+            FillImageBase64(result)
             Return result
 
         Catch ex As Exception
 
             Logger.Error(ex.Message)
-
             Return Nothing
+
+        Finally
+            FinishDetection()
 
         End Try
 
@@ -200,69 +249,171 @@ Class HomePage
     End Sub
 #Region "相機觸發"
     Private _io As IOController
+
+    Private Sub PlayPromptVoice(fileName As String)
+        If String.IsNullOrWhiteSpace(fileName) Then Return
+        If _io Is Nothing Then Return
+        _io.PlayCustomVoice(fileName)
+    End Sub
+
+    Private Function ResolveRoi(snapshot As TemplateSnapshot, src As Mat) As OpenCvSharp.Rect
+        If src Is Nothing OrElse src.Empty() Then Return New OpenCvSharp.Rect(0, 0, 1, 1)
+        If snapshot Is Nothing Then Return New OpenCvSharp.Rect(0, 0, src.Width, src.Height)
+
+        If snapshot.RoiW <= 0 OrElse snapshot.RoiH <= 0 Then
+            Return New OpenCvSharp.Rect(0, 0, src.Width, src.Height)
+        End If
+
+        Dim x = Math.Max(0, Math.Min(snapshot.RoiX, src.Width - 1))
+        Dim y = Math.Max(0, Math.Min(snapshot.RoiY, src.Height - 1))
+        Dim w = Math.Max(1, Math.Min(snapshot.RoiW, src.Width - x))
+        Dim h = Math.Max(1, Math.Min(snapshot.RoiH, src.Height - y))
+
+        Return New OpenCvSharp.Rect(x, y, w, h)
+    End Function
+
+    Private Async Function WaitBarcodeResultAsync(snapshot As TemplateSnapshot, timeoutMs As Integer) As Task(Of String)
+        Dim decoder = AppRuntime.Barcode
+        If decoder Is Nothing Then Return ""
+
+        Dim sw As New Stopwatch()
+        sw.Start()
+
+        While sw.ElapsedMilliseconds < timeoutMs
+            If IsSkipRequested(DetectionFlowStage.Barcode) Then
+                Logger.Info("[FLOW] 解碼已跳過")
+                Return ""
+            End If
+
+            Dim frame = CameraService.Instance.GetFrame(_ocrCameraId)
+            If frame IsNot Nothing Then
+                Using mat = BitmapSourceToMat(frame)
+                    Dim roi = ResolveRoi(snapshot, mat)
+                    Dim text = Await Task.Run(Function() decoder.RunRoi(mat, roi))
+                    If Not String.IsNullOrWhiteSpace(text) Then
+                        Return text.Trim()
+                    End If
+                End Using
+            End If
+
+            Await Task.Delay(120)
+        End While
+
+        Logger.Warn("[FLOW] 解碼超時")
+        Return ""
+    End Function
+
+    Private Async Function WaitOcrResultAsync(snapshot As TemplateSnapshot, timeoutMs As Integer) As Task(Of String)
+        Dim ocr = AppRuntime.OCR
+        If ocr Is Nothing Then Return ""
+
+        Dim sw As New Stopwatch()
+        sw.Start()
+
+        Dim bestText As String = ""
+        Dim bestScore As Double = 0
+
+        While sw.ElapsedMilliseconds < timeoutMs
+            If IsSkipRequested(DetectionFlowStage.Ocr) Then
+                Logger.Info("[FLOW] OCR 已跳過")
+                Return ""
+            End If
+
+            Dim frame = CameraService.Instance.GetFrame(_ocrCameraId)
+            If frame IsNot Nothing Then
+                Using mat = BitmapSourceToMat(frame)
+                    Dim roi = ResolveRoi(snapshot, mat)
+                    Dim ocrResult = Await Task.Run(Function() ocr.RunRoi(mat, roi))
+
+                    If ocrResult IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(ocrResult.Text) Then
+                        If ocrResult.Score > bestScore Then
+                            bestScore = ocrResult.Score
+                            bestText = ocrResult.Text.Trim()
+                        End If
+
+                        If ocrResult.Score >= 0.8 Then
+                            Return ocrResult.Text.Trim()
+                        End If
+                    End If
+                End Using
+            End If
+
+            Await Task.Delay(120)
+        End While
+
+        If Not String.IsNullOrWhiteSpace(bestText) Then Return bestText
+
+        Logger.Warn("[FLOW] OCR 超時")
+        Return ""
+    End Function
+
     Public Async Function BtnGetImg_Click() As Task(Of DetectionResult)
 
         Try
             Dim frame = CameraService.Instance.GetFrame(_detectCameraId)
             If frame Is Nothing Then Return Nothing
+
             Logger.Debug($"[DETECT] frame={(frame IsNot Nothing)}")
-            Dim mat = BitmapSourceToMat(frame)
 
-            Dim templatePath = LastTemplateStore.Load()
-            If String.IsNullOrWhiteSpace(templatePath) Then Return Nothing
-            Logger.Debug($"[DETECT] template={templatePath}")
+            Using mat = BitmapSourceToMat(frame)
 
-            Dim templateName = IO.Path.GetFileName(templatePath)
+                Dim templatePath = LastTemplateStore.Load()
+                If String.IsNullOrWhiteSpace(templatePath) Then Return Nothing
 
-            Dim result = Await Draw_opencv.ProcessAsync(mat, templateName)
+                Logger.Debug($"[DETECT] template={templatePath}")
+                Dim templateName = IO.Path.GetFileName(templatePath)
 
-            Dispatcher.Invoke(Sub()
-                                  RenderImage.Source = result.Mat.ToWriteableBitmap()
-                              End Sub)
+                SetFlowStage(DetectionFlowStage.Matching)
+                Dim result = Await Draw_opencv.ProcessAsync(mat, templateName)
 
-            Dim bmp = MatToBitmapSource(result.Mat)
+                Dispatcher.Invoke(Sub()
+                                      RenderImage.Source = result.Mat.ToWriteableBitmap()
+                                  End Sub)
 
-            Logger.Info($"Score={result.Score:F3}, OK={result.IsOk}")
+                Logger.Info($"Score={result.Score:F3}, OK={result.IsOk}")
 
-            ' IO和音響觸發
-            If result.IsOk Then
-                _io.HandleOK()
-            Else
-                _io.HandleNG()
-            End If
+                If result.IsOk Then
+                    _io.HandleOK()
+                Else
+                    _io.HandleNG()
+                End If
 
-            ' 轉 DetectionResult
-            Dim output As New DetectionResult()
-            output.List = New List(Of DetectionItem)
+                Dim output As New DetectionResult With {
+                    .List = New List(Of DetectionItem),
+                    .Mat = result.Mat
+                }
 
-            'For i As Integer = 1 To 12
+                Dim item As New DetectionItem With {
+                    .detectionNo = "AI-001",
+                    .resultType = If(result.IsOk, "MATCH", "MISMATCH"),
+                    .confidence = result.Score
+                }
 
-            '    output.List.Add(New DetectionItem With {
-            '    .detectionNo = $"AI-{i:000}",
-            '    .resultType = If(result.IsOk, "MATCH", "MISMATCH"),
-            '    .confidence = result.Score
-            '})
+                If result.IsOk Then
+                    Dim snapshot = TemplateSnapshotStore.Load()
+                    Logger.Debug($"[FLOW] Snapshot loaded, EnableBarcode={If(snapshot IsNot Nothing, snapshot.EnableBarcode, False)}, EnableOcr={If(snapshot IsNot Nothing, snapshot.EnableOcr, False)}")
 
-            'Next
-            ' 全检
-            output.List.Add(New DetectionItem With {
-    .detectionNo = "AI-001",
-    .resultType = If(result.IsOk, "MATCH", "MISMATCH"),
-    .confidence = result.Score
-})
-            output.Mat = result.Mat
+                    If snapshot IsNot Nothing Then
+                        If snapshot.EnableBarcode Then
+                            SetFlowStage(DetectionFlowStage.Barcode)
+                            PlayPromptVoice(VoicePromptMatchCompleteScan)
+                            Logger.Info("[FLOW] 開始解碼")
+                            item.recognizedPartCode = Await WaitBarcodeResultAsync(snapshot, 15000)
+                        End If
 
-            ' 生成圖片 base64，供 ProcessPage 落盤並返回檔案路徑
-            Dim imageBitmap = MatToBitmapSource(result.Mat)
-            Dim imageEncoder As New PngBitmapEncoder()
-            imageEncoder.Frames.Add(BitmapFrame.Create(imageBitmap))
+                        If snapshot.EnableOcr Then
+                            SetFlowStage(DetectionFlowStage.Ocr)
+                            PlayPromptVoice(VoicePromptDecodeCompleteOcr)
+                            Logger.Info("[FLOW] 開始 OCR")
+                            item.recognizedPartName = Await WaitOcrResultAsync(snapshot, 15000)
+                        End If
+                    End If
+                End If
 
-            Using imageStream As New MemoryStream()
-                imageEncoder.Save(imageStream)
-                output.ImageBase64 = Convert.ToBase64String(imageStream.ToArray())
+                output.List.Add(item)
+                Return output
+
             End Using
-
-            Return output
 
         Catch ex As Exception
             Logger.Error("Detection error: " & ex.Message)
@@ -277,10 +428,14 @@ Class HomePage
         Try
             Logger.Info("[UI] 即時檢測 - 開始")
 
-            Dim result = Await BtnGetImg_Click()
+            Dim result = Await RunDetectionOnce()
 
             If result Is Nothing Then
-                Logger.Error("[UI] 即時檢測 - 失敗")
+                If IsSkippableStageRunning() Then
+                    Logger.Info("[UI] 已提交跳過請求")
+                Else
+                    Logger.Error("[UI] 即時檢測 - 失敗")
+                End If
                 Return
             End If
 
@@ -311,7 +466,11 @@ Class HomePage
             Dim result = Await RunDetectionOnce()
 
             If result Is Nothing Then
-                Logger.Error("[IO] 即時檢測失敗或無影像")
+                If IsSkippableStageRunning() Then
+                    Logger.Info("[IO] 已提交跳過請求")
+                Else
+                    Logger.Error("[IO] 即時檢測失敗或無影像")
+                End If
                 Return
             End If
 
@@ -851,7 +1010,7 @@ Class HomePage
 
     Private Sub UpdateFrame(sender As Object, e As EventArgs)
 
-        Dim frame = CameraService.Instance.GetFrame(GetCamId(0))
+        Dim frame = CameraService.Instance.GetFrame(GetCamId(1))
 
         If frame Is Nothing Then Return
 

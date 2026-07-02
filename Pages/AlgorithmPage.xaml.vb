@@ -604,6 +604,13 @@ Public Class AlgorithmPage
         ScoreText.Text = result.Score.ToString("0.000")
         ResultText.Text = If(result.IsOk, "OK", "NG")
 
+        If result.IsOk Then
+            Dim lastTemplatePath = LastTemplateStore.Load()
+            If Not String.IsNullOrWhiteSpace(lastTemplatePath) Then
+                TemplateTrainingStore.TouchLatestMatched(lastTemplatePath)
+            End If
+        End If
+
         ResultImage.Source =
             ImageConvertHelper.ToBitmap(result.ResultImage)
 

@@ -23,5 +23,8 @@
     <Setting Name="CameraDeviceIds" Type="System.Collections.Specialized.StringCollection" Scope="User">
       <Value Profile="(Default)" />
     </Setting>
+    <Setting Name="ModelEditSortMode" Type="System.String" Scope="User">
+      <Value Profile="(Default)">alpha</Value>
+    </Setting>
   </Settings>
 </SettingsFile>

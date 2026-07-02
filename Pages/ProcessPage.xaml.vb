@@ -428,10 +428,10 @@ Partial Public Class ProcessPage
 
                 list.Add(New With {
                 .detectionNo = $"DET-{DateTime.Now:yyyyMMdd}-{globalIndex:000}-{t.StationId}-{itemIndex:000}",
-                .taskPartName = t.PartCode,
-                .recognizedPartName = t.PartCode,
+                .taskPartName = If(String.IsNullOrWhiteSpace(item.taskPartName), t.PartCode, item.taskPartName),
+                .recognizedPartName = If(String.IsNullOrWhiteSpace(item.recognizedPartName), t.PartCode, item.recognizedPartName),
                 .collectImageUrl = imagePath,
-                .recognizedPartCode = t.PartCode,
+                .recognizedPartCode = If(String.IsNullOrWhiteSpace(item.recognizedPartCode), t.PartCode, item.recognizedPartCode),
                 .resultType = item.resultType,
                 .confidence = item.confidence
             })

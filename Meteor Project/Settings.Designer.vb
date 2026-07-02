@@ -136,6 +136,18 @@ Namespace My
                 Me("CameraDeviceIds") = value
             End Set
         End Property
+        
+        <Global.System.Configuration.UserScopedSettingAttribute(),  _
+         Global.System.Diagnostics.DebuggerNonUserCodeAttribute(),  _
+         Global.System.Configuration.DefaultSettingValueAttribute("alpha")>  _
+        Public Property ModelEditSortMode() As String
+            Get
+                Return CType(Me("ModelEditSortMode"),String)
+            End Get
+            Set
+                Me("ModelEditSortMode") = value
+            End Set
+        End Property
     End Class
 End Namespace
 

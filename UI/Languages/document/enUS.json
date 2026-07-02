@@ -2,6 +2,7 @@
   "Nav_Run": "Run",
   "Nav_AI": "Machine Learning ⌈Experimental⌋",
   "Nav_Algorithm": "Algorithm",
+  "Nav_ModelEdit": "Template Manager",
   "Nav_Process": "Process",
   "Nav_Setting": "Settings",
 
@@ -16,8 +17,36 @@
   "Home_BtnSave": "Save Image",
   "Home_BtnLaplacian": "Laplacian Rating",
 
-  "Algo_Title": "目标检测工具",
-  "Algo_LoadSource": "载入原图",
-  "Algo_CreateTemplate": "生成模板",
-  "Algo_LoadMatch": "载入比对图"
+  "Algo_Title": "Target Matching Tool",
+  "Algo_LoadSource": "Load Source",
+  "Algo_CreateTemplate": "Create Template",
+  "Algo_LoadMatch": "Load Match Image",
+
+  "ModelEdit_Title": "Template CRUD",
+  "ModelEdit_SearchPlaceholder": "Search templates...",
+  "ModelEdit_Refresh": "Refresh",
+  "ModelEdit_Train": "Train",
+  "ModelEdit_Revise": "Revise",
+  "ModelEdit_Delete": "Delete",
+  "ModelEdit_OpenFolder": "Open Folder",
+  "ModelEdit_SortAlpha": "Alphabet (A-Z)",
+  "ModelEdit_SortPhonetic": "Phonetic",
+  "ModelEdit_CurrentSort": "Current Sort",
+  "ModelEdit_CameraCount": "Camera Templates",
+  "ModelEdit_LastUpdated": "Last Updated",
+  "ModelEdit_RenamePrompt": "Enter a new template name",
+  "ModelEdit_RenameTitle": "Revise Template",
+  "ModelEdit_ErrorNameExists": "Template name already exists. Please use another one",
+  "ModelEdit_ErrorRevise": "Revise failed",
+  "ModelEdit_DeleteConfirm": "Delete this template?",
+  "ModelEdit_DeleteTitle": "Delete Template",
+  "ModelEdit_ErrorDelete": "Delete failed",
+  "ModelEdit_ErrorOpenFolder": "Failed to open folder",
+  "ModelEdit_ErrorTrain": "Failed to open training",
+
+  "Setting_Language": "Language",
+  "Setting_IoBoard": "IO Board",
+  "Setting_Camera": "Camera",
+  "Setting_AutoRun": "Automation",
+  "Setting_GpuBoost": "GPU Acceleration"
 }

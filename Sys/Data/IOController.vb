@@ -263,6 +263,11 @@ Public Class IOController
 
     End Sub
 
+    Public Sub PlayCustomVoice(fileName As String)
+        If String.IsNullOrWhiteSpace(fileName) Then Return
+        Task.Run(Sub() PlayVoice(fileName))
+    End Sub
+
     ' -----------------------------
     ' DI Scanner 控制
     ' -----------------------------

@@ -2,6 +2,7 @@
   "Nav_Run": "執行",
   "Nav_AI": "機器學習⌈實驗性⌋",
   "Nav_Algorithm": "算法設定",
+  "Nav_ModelEdit": "模板管理",
   "Nav_Process": "處理流程",
   "Nav_Setting": "軟體設定",
 
@@ -19,6 +20,34 @@
   "Algo_Title": "目標檢測工具",
   "Algo_LoadSource": "載入原圖",
   "Algo_CreateTemplate": "生成模板",
-  "Algo_LoadMatch": "載入比對圖"
+  "Algo_LoadMatch": "載入比對圖",
+
+  "ModelEdit_Title": "模板修刪查",
+  "ModelEdit_SearchPlaceholder": "搜尋模板...",
+  "ModelEdit_Refresh": "重新整理",
+  "ModelEdit_Train": "訓練",
+  "ModelEdit_Revise": "修訂",
+  "ModelEdit_Delete": "刪除",
+  "ModelEdit_OpenFolder": "開啟資料夾",
+  "ModelEdit_SortAlpha": "字母(A-Z)",
+  "ModelEdit_SortPhonetic": "注音",
+  "ModelEdit_CurrentSort": "目前排序",
+  "ModelEdit_CameraCount": "相機模板數",
+  "ModelEdit_LastUpdated": "最後更新",
+  "ModelEdit_RenamePrompt": "請輸入新的模板名稱",
+  "ModelEdit_RenameTitle": "修訂模板",
+  "ModelEdit_ErrorNameExists": "已存在同名模板，請更換名稱",
+  "ModelEdit_ErrorRevise": "修訂失敗",
+  "ModelEdit_DeleteConfirm": "確定刪除模板？",
+  "ModelEdit_DeleteTitle": "刪除模板",
+  "ModelEdit_ErrorDelete": "刪除失敗",
+  "ModelEdit_ErrorOpenFolder": "開啟資料夾失敗",
+  "ModelEdit_ErrorTrain": "開啟訓練失敗",
+
+  "Setting_Language": "語言",
+  "Setting_IoBoard": "IO板卡",
+  "Setting_Camera": "相機",
+  "Setting_AutoRun": "自動化執行",
+  "Setting_GpuBoost": "GPU硬件加速計劃"
 
 }

@@ -11,6 +11,7 @@
 
             <!-- 標題 -->
             <TextBlock
+                x:Name="TxtLanguageTitle"
                 Text="語言"
                 FontSize="16"
                 FontWeight="SemiBold"
@@ -24,10 +25,12 @@
                 <ComboBoxItem Content="正體中文"/>
                 <ComboBoxItem Content="简体中文"/>
                 <ComboBoxItem Content="English"/>
+                <ComboBoxItem Content="日本語"/>
 
             </ComboBox>
 
             <TextBlock
+                x:Name="TxtIoBoardTitle"
                 Text="IO板卡"
                 FontSize="16"
                 FontWeight="SemiBold"
@@ -45,7 +48,8 @@
             </ComboBox>
 
             <!-- Camera -->
-            <TextBlock Text="相機"
+            <TextBlock x:Name="TxtCameraTitle"
+                Text="相機"
                FontSize="16"
                FontWeight="SemiBold"
                Foreground="White"
@@ -89,6 +93,7 @@
             </ItemsControl>
 
             <TextBlock
+                x:Name="TxtAutoRunTitle"
                 Text="自動化執行"
                 FontSize="16"
                 FontWeight="SemiBold"
@@ -105,6 +110,7 @@
 
             <!-- DLBoost -->
             <TextBlock
+                x:Name="TxtGpuTitle"
                 Text="GPU硬件加速計劃"
                 FontSize="16"
                 FontWeight="SemiBold"

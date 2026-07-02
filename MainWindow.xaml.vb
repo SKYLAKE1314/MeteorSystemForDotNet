@@ -25,7 +25,9 @@ Class MainWindow
 
         PreloadPages()
 
-        NavList.SelectedIndex = 0
+        If NavList.Items.Count > 0 Then
+            NavList.SelectedIndex = 0
+        End If
 
         'Try
         '    Dim kawaiiWindow As New KawaiiJK()
@@ -47,11 +49,18 @@ Class MainWindow
     ' 預載頁面
     ' =========================
     Private Sub PreloadPages()
-        AppRuntime.Home = New HomePage()
+        If AppRuntime.Home Is Nothing Then
+            AppRuntime.Home = New HomePage()
+        End If
+
+        If AppRuntime.Process Is Nothing Then
+            AppRuntime.Process = New ProcessPage()
+        End If
 
         PageCache("HomePage") = AppRuntime.Home
         PageCache("DetectionPage") = New DetectionPage()
         PageCache("AlgorithmPage") = New AlgorithmPage()
+        PageCache("ModelEditPage") = New ModelEditPage()
         PageCache("ProcessPage") = AppRuntime.Process
         PageCache("SettingPage") = New SettingPage()
     End Sub
@@ -60,9 +69,33 @@ Class MainWindow
     ' =========================
     Private Sub NavigateTo(pageName As String)
 
-        If PageCache.ContainsKey(pageName) Then
-            ContentFrame.Navigate(PageCache(pageName))
+        If String.IsNullOrWhiteSpace(pageName) Then Return
+
+        If Not PageCache.ContainsKey(pageName) OrElse PageCache(pageName) Is Nothing Then
+            Select Case pageName
+                Case "HomePage"
+                    If AppRuntime.Home Is Nothing Then AppRuntime.Home = New HomePage()
+                    PageCache(pageName) = AppRuntime.Home
+                Case "ProcessPage"
+                    If AppRuntime.Process Is Nothing Then AppRuntime.Process = New ProcessPage()
+                    PageCache(pageName) = AppRuntime.Process
+                Case "DetectionPage"
+                    PageCache(pageName) = New DetectionPage()
+                Case "AlgorithmPage"
+                    PageCache(pageName) = New AlgorithmPage()
+                Case "ModelEditPage"
+                    PageCache(pageName) = New ModelEditPage()
+                Case "SettingPage"
+                    PageCache(pageName) = New SettingPage()
+                Case Else
+                    Return
+            End Select
         End If
+
+        Dim target = PageCache(pageName)
+        If ContentFrame.Content Is target Then Return
+
+        ContentFrame.Navigate(target)
 
     End Sub
 
@@ -71,7 +104,10 @@ Class MainWindow
         Dim item = TryCast(NavList.SelectedItem, ListBoxItem)
         If item Is Nothing Then Return
 
-        NavigateTo(item.Tag.ToString())
+        Dim pageTag = TryCast(item.Tag, String)
+        If String.IsNullOrWhiteSpace(pageTag) Then Return
+
+        NavigateTo(pageTag)
 
     End Sub
 
@@ -105,15 +141,17 @@ Class MainWindow
 
         Dim items = NavList.Items
 
-        If items.Count < 4 Then Return
+        If items.Count < 6 Then Return
 
         CType(items(0), ListBoxItem).Content = LanguageManager.T("Nav_Run")
         CType(items(1), ListBoxItem).Content = LanguageManager.T("Nav_AI")
         CType(items(2), ListBoxItem).Content = LanguageManager.T("Nav_Algorithm")
-        CType(items(3), ListBoxItem).Content = LanguageManager.T("Nav_Process")
-        CType(items(4), ListBoxItem).Content = LanguageManager.T("Nav_Setting")
+        CType(items(3), ListBoxItem).Content = LanguageManager.T("Nav_ModelEdit")
+        CType(items(4), ListBoxItem).Content = LanguageManager.T("Nav_Process")
+        CType(items(5), ListBoxItem).Content = LanguageManager.T("Nav_Setting")
 
         SideTitle.Text = LanguageManager.T("Side_Title")
+        MainTitleText.Text = LanguageManager.T("Main_Title")
 
     End Sub
 

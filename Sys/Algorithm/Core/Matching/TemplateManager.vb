@@ -252,4 +252,36 @@ Public Class TemplateManager
 
     End Function
 
+    Public Shared Function LoadGroupBaseConfig(groupPath As String) As TemplateConfig
+
+        If String.IsNullOrWhiteSpace(groupPath) Then Return Nothing
+
+        Dim root = groupPath
+        If Not IO.Directory.Exists(root) Then Return Nothing
+
+        Dim folderName = IO.Path.GetFileName(root)
+        If Not String.IsNullOrWhiteSpace(folderName) AndAlso folderName.StartsWith("cam", StringComparison.OrdinalIgnoreCase) Then
+            Dim parent = IO.Directory.GetParent(root)
+            If parent IsNot Nothing AndAlso parent.Exists Then
+                root = parent.FullName
+            End If
+        End If
+
+        Dim camDirs = IO.Directory.GetDirectories(root, "cam*")
+        For Each cam In camDirs
+            Dim cfg = IO.Path.Combine(cam, "config.json")
+            If IO.File.Exists(cfg) Then
+                Return LoadConfig(cfg)
+            End If
+        Next
+
+        Dim rootCfg = IO.Path.Combine(root, "config.json")
+        If IO.File.Exists(rootCfg) Then
+            Return LoadConfig(rootCfg)
+        End If
+
+        Return Nothing
+
+    End Function
+
 End Class

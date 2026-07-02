@@ -2,6 +2,7 @@
   "Nav_Run": "执行",
   "Nav_AI": "深度学习⌈测试⌋",
   "Nav_Algorithm": "算法设置",
+  "Nav_ModelEdit": "模板管理",
   "Nav_Process": "处理流程",
   "Nav_Setting": "软体设置",
 
@@ -19,5 +20,33 @@
   "Algo_Title": "目标检测工具",
   "Algo_LoadSource": "载入原图",
   "Algo_CreateTemplate": "生成模板",
-  "Algo_LoadMatch": "载入比对图"
+  "Algo_LoadMatch": "载入比对图",
+
+  "ModelEdit_Title": "模板修删查",
+  "ModelEdit_SearchPlaceholder": "搜索模板...",
+  "ModelEdit_Refresh": "刷新",
+  "ModelEdit_Train": "训练",
+  "ModelEdit_Revise": "修订",
+  "ModelEdit_Delete": "删除",
+  "ModelEdit_OpenFolder": "打开文件夹",
+  "ModelEdit_SortAlpha": "字母(A-Z)",
+  "ModelEdit_SortPhonetic": "拼音",
+  "ModelEdit_CurrentSort": "当前排序",
+  "ModelEdit_CameraCount": "相机模板数",
+  "ModelEdit_LastUpdated": "最后更新",
+  "ModelEdit_RenamePrompt": "请输入新的模板名称",
+  "ModelEdit_RenameTitle": "修订模板",
+  "ModelEdit_ErrorNameExists": "已存在同名模板，请更换名称",
+  "ModelEdit_ErrorRevise": "修订失败",
+  "ModelEdit_DeleteConfirm": "确定删除模板？",
+  "ModelEdit_DeleteTitle": "删除模板",
+  "ModelEdit_ErrorDelete": "删除失败",
+  "ModelEdit_ErrorOpenFolder": "打开文件夹失败",
+  "ModelEdit_ErrorTrain": "打开训练失败",
+
+  "Setting_Language": "语言",
+  "Setting_IoBoard": "IO板卡",
+  "Setting_Camera": "相机",
+  "Setting_AutoRun": "自动化执行",
+  "Setting_GpuBoost": "GPU硬件加速计划"
 }

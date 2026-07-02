@@ -37,6 +37,8 @@ Public Class SettingPage
         _isLoaded = True
 
         AddHandler Me.Loaded, AddressOf SettingPage_Loaded
+        AddHandler LanguageManager.LanguageChanged, AddressOf LanguageChanged_Handler
+        AddHandler Me.Unloaded, AddressOf SettingPage_Unloaded
     End Sub
 
     ' =========================
@@ -48,6 +50,8 @@ Public Class SettingPage
 
         _isLoaded = True
 
+        RefreshLanguageUI()
+
         Select Case LanguageManager.CurrentLanguage
             Case "zhTW"
                 LanguageComboBox.SelectedIndex = 0
@@ -55,6 +59,8 @@ Public Class SettingPage
                 LanguageComboBox.SelectedIndex = 1
             Case "enUS"
                 LanguageComboBox.SelectedIndex = 2
+            Case "jaJP"
+                LanguageComboBox.SelectedIndex = 3
             Case Else
                 LanguageComboBox.SelectedIndex = 0
         End Select
@@ -62,6 +68,23 @@ Public Class SettingPage
         LoadCameraRows()
 
         Dim savedId As String = My.Settings.CameraDeviceId
+    End Sub
+
+    Private Sub LanguageChanged_Handler(sender As Object, e As EventArgs)
+        RefreshLanguageUI()
+    End Sub
+
+    Private Sub SettingPage_Unloaded(sender As Object, e As RoutedEventArgs)
+        RemoveHandler LanguageManager.LanguageChanged, AddressOf LanguageChanged_Handler
+        RemoveHandler Me.Unloaded, AddressOf SettingPage_Unloaded
+    End Sub
+
+    Private Sub RefreshLanguageUI()
+        TxtLanguageTitle.Text = LanguageManager.T("Setting_Language")
+        TxtIoBoardTitle.Text = LanguageManager.T("Setting_IoBoard")
+        TxtCameraTitle.Text = LanguageManager.T("Setting_Camera")
+        TxtAutoRunTitle.Text = LanguageManager.T("Setting_AutoRun")
+        TxtGpuTitle.Text = LanguageManager.T("Setting_GpuBoost")
     End Sub
 
     ' =========================
@@ -77,6 +100,7 @@ Public Class SettingPage
                 Logger.Debug("正體中文")
             Case 1 : LanguageManager.Load("zhCN")
             Case 2 : LanguageManager.Load("enUS")
+            Case 3 : LanguageManager.Load("jaJP")
         End Select
 
         Dim main = TryCast(Application.Current?.MainWindow, MainWindow)
