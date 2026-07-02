@@ -254,7 +254,7 @@ Public Class IOController
             End If
 
             Using player As New SoundPlayer(filePath)
-                player.Play()
+                player.PlaySync()
             End Using
 
         Catch ex As Exception

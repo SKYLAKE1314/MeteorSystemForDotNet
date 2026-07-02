@@ -310,8 +310,17 @@ Class HomePage
 
     Private Sub PlayPromptVoice(fileName As String)
         If String.IsNullOrWhiteSpace(fileName) Then Return
-        If _io Is Nothing Then Return
-        _io.PlayCustomVoice(fileName)
+        If _io Is Nothing Then
+            Logger.Warn($"[VOICE] IOController尚未初始化，無法播報: {fileName}")
+            Return
+        End If
+        Try
+            Logger.Info($"[VOICE] 播報開始: {fileName}")
+            _io.PlayCustomVoice(fileName)
+            Logger.Info($"[VOICE] 播報完成: {fileName}")
+        Catch ex As Exception
+            Logger.Error($"[VOICE] 播報失敗: {ex.Message}")
+        End Try
     End Sub
 
     Private Function ResolveRoi(snapshot As TemplateSnapshot, src As Mat) As OpenCvSharp.Rect
@@ -468,8 +477,10 @@ Class HomePage
                     _flowStage = DetectionFlowStage.Barcode
                 End SyncLock
 
+                ' 不論OK還是NG，匹配後都播報"匹配完成，請掃描"
                 PlayPromptVoice(VoicePromptMatchCompleteScan)
-                Logger.Info("[FLOW] 開始解碼")
+                Logger.Info($"[RESULT] 匹配 - OK={result.IsOk}, Score={result.Score:F3}")
+                Logger.Info($"[FLOW] 匹配完成，開始解碼")
 
                 Dim code = Await WaitBarcodeResultAsync(snapshot, StageTimeoutMs)
                 SyncLock _detectLock
@@ -478,6 +489,19 @@ Class HomePage
                     End If
                     _flowStage = DetectionFlowStage.Ocr
                 End SyncLock
+
+                ' 如果跳过了条码扫描，记为null
+                If IsSkipRequested(DetectionFlowStage.Barcode) Then
+                    Logger.Info("[RESULT] 条码 - 已跳过 (null)")
+                    code = Nothing
+                    SyncLock _detectLock
+                        If _activeDetectionItem IsNot Nothing Then
+                            _activeDetectionItem.recognizedPartCode = Nothing
+                        End If
+                    End SyncLock
+                Else
+                    Logger.Info($"[RESULT] 条码 - {If(String.IsNullOrWhiteSpace(code), "null (超时)", code)}")
+                End If
 
                 If String.IsNullOrWhiteSpace(code) Then
                     Dim timeoutOutput As DetectionResult
@@ -495,6 +519,13 @@ Class HomePage
 
                     PlayPromptVoice(VoicePromptStageTimeout)
                     PlayPromptVoice(VoicePromptSingleFlowCompleted)
+                    Logger.Info("[FLOW] 单次流程结束 (条码超时)")
+                    Logger.Info("[SUMMARY] ===================")
+                    Logger.Info($"[SUMMARY] 检测编号: {If(_activeDetectionItem IsNot Nothing, _activeDetectionItem.detectionNo, "N/A")}")
+                    Logger.Info($"[SUMMARY] 匹配: {If(_activeDetectionItem IsNot Nothing, _activeDetectionItem.resultType, "N/A")} (Score={result.Score:F3})")
+                    Logger.Info($"[SUMMARY] 条码: null (超时)")
+                    Logger.Info($"[SUMMARY] OCR: 跳过 (无条码)")
+                    Logger.Info("[SUMMARY] ===================")
                     FinishDetection()
                     Return timeoutOutput
                 End If
@@ -503,6 +534,19 @@ Class HomePage
                 Logger.Info("[FLOW] 開始 OCR")
 
                 Dim name = Await WaitOcrResultAsync(snapshot, StageTimeoutMs)
+
+                ' 如果跳过了OCR，记为null
+                If IsSkipRequested(DetectionFlowStage.Ocr) Then
+                    Logger.Info("[RESULT] OCR - 已跳过 (null)")
+                    name = Nothing
+                    SyncLock _detectLock
+                        If _activeDetectionItem IsNot Nothing Then
+                            _activeDetectionItem.recognizedPartName = Nothing
+                        End If
+                    End SyncLock
+                Else
+                    Logger.Info($"[RESULT] OCR - {If(String.IsNullOrWhiteSpace(name), "null (超时)", name)}")
+                End If
 
                 Dim finalOutput As DetectionResult
                 SyncLock _detectLock
@@ -524,11 +568,18 @@ Class HomePage
                     finalOutput.Stage = If(String.IsNullOrWhiteSpace(name), "OCR_TIMEOUT", "OCR")
                 End SyncLock
 
+                ' 输出完整的流程结果日志
+                PlayPromptVoice(VoicePromptSingleFlowCompleted)
+                Logger.Info("[FLOW] 单次流程结束")
+                Logger.Info("[SUMMARY] ===================")
+                Logger.Info($"[SUMMARY] 检测编号: {If(_activeDetectionItem IsNot Nothing, _activeDetectionItem.detectionNo, "N/A")}")
+                Logger.Info($"[SUMMARY] 匹配: {If(_activeDetectionItem IsNot Nothing, _activeDetectionItem.resultType, "N/A")} (Score={result.Score:F3})")
+                Logger.Info($"[SUMMARY] 条码: {If(String.IsNullOrWhiteSpace(code), "null", code)}")
+                Logger.Info($"[SUMMARY] OCR: {If(String.IsNullOrWhiteSpace(name), "null", name)}")
+                Logger.Info("[SUMMARY] ===================")
+
                 If String.IsNullOrWhiteSpace(name) Then
                     PlayPromptVoice(VoicePromptStageTimeout)
-                    PlayPromptVoice(VoicePromptSingleFlowCompleted)
-                Else
-                    PlayPromptVoice(VoicePromptSingleFlowCompleted)
                 End If
 
                 FinishDetection()
@@ -547,16 +598,23 @@ Class HomePage
     Private Async Sub BtnGetImg_Click_Handler(sender As Object, e As RoutedEventArgs) Handles BtnGetImg.Click
 
         Try
+            Logger.Info("[UI] 即時檢測按鈕 - 按下")
+
+            ' 如果検測正在進行中，按下按鈕會跳過當前階段
+            If IsSkippableStageRunning() Then
+                SyncLock _detectLock
+                    Logger.Info($"[UI] 跳過當前阶段: {_flowStage}")
+                    _skipCurrentStageRequested = True
+                End SyncLock
+                Return
+            End If
+
             Logger.Info("[UI] 即時檢測 - 開始")
 
             Dim result = Await RunDetectionOnce()
 
             If result Is Nothing Then
-                If IsSkippableStageRunning() Then
-                    Logger.Info("[UI] 流程進行中，忽略本次觸發")
-                Else
-                    Logger.Error("[UI] 即時檢測 - 失敗")
-                End If
+                Logger.Error("[UI] 即時檢測 - 失敗")
                 Return
             End If
 
@@ -587,16 +645,23 @@ Class HomePage
         Try
             If Not state Then Return ' 只在按下時觸發
 
-            Logger.Info("[IO] 物理按鈕按下，觸發即時檢測")
+            Logger.Info("[IO] 物理按鈕按下")
+
+            ' 如果検測正在進行中，按下按鈕會跳過當前階段
+            If IsSkippableStageRunning() Then
+                SyncLock _detectLock
+                    Logger.Info($"[IO] 跳過當前阶段: {_flowStage}")
+                    _skipCurrentStageRequested = True
+                End SyncLock
+                Return
+            End If
+
+            Logger.Info("[IO] 物理按鈕 - 啟動檢測")
 
             Dim result = Await RunDetectionOnce()
 
             If result Is Nothing Then
-                If IsSkippableStageRunning() Then
-                    Logger.Info("[IO] 流程進行中，忽略本次觸發")
-                Else
-                    Logger.Error("[IO] 即時檢測失敗或無影像")
-                End If
+                Logger.Error("[IO] 即時檢測失敗或無影像")
                 Return
             End If
 

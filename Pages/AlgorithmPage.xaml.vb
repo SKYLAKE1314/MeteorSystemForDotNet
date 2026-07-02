@@ -95,7 +95,15 @@ Public Class AlgorithmPage
                         Return
                     End If
 
-                    Dim frame = CameraService.Instance.GetFrame(_selectedCameraId)
+                    ' 启动相机并等待获取图像
+                    CameraService.Instance.StartCamera(_selectedCameraId)
+
+                    Dim frame As BitmapSource = Nothing
+                    For i As Integer = 1 To 20
+                        System.Threading.Thread.Sleep(50)
+                        frame = CameraService.Instance.GetFrame(_selectedCameraId)
+                        If frame IsNot Nothing Then Exit For
+                    Next
 
                     If frame Is Nothing Then
                         ErrorDialogHelper.ShowError($"尚未取得相機 {_selectedCameraSlot + 1} 的影像")
