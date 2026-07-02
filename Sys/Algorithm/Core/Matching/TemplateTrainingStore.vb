@@ -65,6 +65,22 @@ Public Class TemplateTrainingStore
         Return path
     End Function
 
+    Public Shared Sub InvalidateCache(groupPath As String)
+        Dim groupRoot = NormalizeGroupPath(groupPath)
+        If String.IsNullOrWhiteSpace(groupRoot) Then Return
+        SyncLock _cacheLock
+            _sampleMetaCache.Remove(groupRoot)
+            ' 移除該 group 下所有 sample 的圖片快取
+            Dim keysToRemove = _sampleBytesCache.Keys.
+                Where(Function(k) k.StartsWith(groupRoot, StringComparison.OrdinalIgnoreCase)).
+                ToList()
+            For Each k In keysToRemove
+                _sampleBytesCache.Remove(k)
+            Next
+        End SyncLock
+        Logger.Debug($"[TemplateTraining] 快取已清除: {groupRoot}")
+    End Sub
+
     Public Shared Function GetTrainingSampleCount(groupPath As String) As Integer
         Dim groupRoot = NormalizeGroupPath(groupPath)
         If String.IsNullOrWhiteSpace(groupRoot) Then Return 0
@@ -108,20 +124,15 @@ Public Class TemplateTrainingStore
         Dim safeRoi As New Rect(minX, minY, maxX - minX + 1, maxY - minY + 1)
         If safeRoi.Width <= 0 OrElse safeRoi.Height <= 0 Then Throw New ArgumentException("Polygon bbox invalid")
 
-        Dim outputSize = ResolveTemplateSize(groupRoot, source.Size())
-
+        ' 直接裁剪 ROI 區域儲存，不縮放到母版大小
+        ' 多邊形遮罩讓 ROI 外的像素填為深色背景
         Using mask As Mat = Mat.Zeros(source.Size(), MatType.CV_8UC1),
-              solidFill As New Mat(source.Size(), source.Type(), New Scalar(32, 32, 32)),
-              finalOut As New Mat()
+              solidFill As New Mat(source.Size(), source.Type(), New Scalar(32, 32, 32))
             Cv2.FillPoly(mask, {safePoly}, Scalar.White)
             source.CopyTo(solidFill, mask)
-
-            If outputSize.Width <> source.Width OrElse outputSize.Height <> source.Height Then
-                Cv2.Resize(solidFill, finalOut, outputSize, 0, 0, InterpolationFlags.Linear)
-                Cv2.ImWrite(filePath, finalOut, {New ImageEncodingParam(ImwriteFlags.PngCompression, 3)})
-            Else
-                Cv2.ImWrite(filePath, solidFill, {New ImageEncodingParam(ImwriteFlags.PngCompression, 3)})
-            End If
+            Using crop As New Mat(solidFill, safeRoi)
+                Cv2.ImWrite(filePath, crop, {New ImageEncodingParam(ImwriteFlags.PngCompression, 3)})
+            End Using
         End Using
 
         Dim now = DateTimeOffset.Now.ToUnixTimeMilliseconds()

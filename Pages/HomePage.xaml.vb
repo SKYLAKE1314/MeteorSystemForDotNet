@@ -121,6 +121,7 @@ Class HomePage
     End Function
 
     Private Sub FinishDetection()
+        _io.SetLightOff() ' 流程結束關灯
         SyncLock _detectLock
             _isDetecting = False
             _skipCurrentStageRequested = False
@@ -354,12 +355,14 @@ Class HomePage
         Dim cameraId = ResolveDetectCameraId()
         Dim bestResultMat As Cv.Mat = Nothing
         Dim bestScore As Double = 0
+        Dim bestThreshold As Double = masterData.Config.Threshold ' 追蹤最高分對應的閾值
         Dim matchAttempt As Integer = 0
         Dim lastAttemptTime As Long = -200 ' 立即觸發第一次匹配
 
-        ' 获取子模板列表
+        ' 獲取子模板列表（groupPath = 母版的父目錄，即 test3 資料夾）
         Dim groupPath = IO.Path.GetDirectoryName(templatePath)
         Dim subTemplateMetas = TemplateTrainingStore.GetTrainingSamples(groupPath)
+        Logger.Debug($"[MATCH] 子模板數量={If(subTemplateMetas IsNot Nothing, subTemplateMetas.Count, 0)}, groupPath={groupPath}")
 
         ' 相機啟動一次（在迴圈開始前）
         If Not String.IsNullOrWhiteSpace(cameraId) Then
@@ -385,25 +388,45 @@ Class HomePage
                     Dispatcher.Invoke(Sub() RenderImage.Source = frameCopy)
 
                     Using currentMat = BitmapSourceToMat(frame)
-                        ' 嘗試匹配母版
+                        ' 嘗試匹配母版（使用母版自己的 config）
                         Dim masterResult = Await Draw_opencv.ProcessAsync(currentMat, masterData.Template, masterData.Config)
                         If masterResult IsNot Nothing AndAlso masterResult.Score > bestScore Then
                             bestScore = masterResult.Score
+                            bestThreshold = masterData.Config.Threshold
                             bestResultMat = masterResult.Mat
-                            Logger.Debug($"[MATCH] 第{matchAttempt}次 母版 Score={masterResult.Score:F3}")
+                            Logger.Debug($"[MATCH] #{matchAttempt} 母版 Score={masterResult.Score:F3} (閾值={masterData.Config.Threshold:F3})")
+                            ' 即時渲染匹配結果（含框線和分數）
+                            If masterResult.Mat IsNot Nothing Then
+                                Dim wb = masterResult.Mat.ToWriteableBitmap()
+                                Dispatcher.Invoke(Sub() RenderImage.Source = wb)
+                            End If
                         End If
 
-                        ' 嘗試匹配所有子模板
+                        ' 嘗試匹配所有子模板（每個子模板用自己的 params）
                         If subTemplateMetas IsNot Nothing AndAlso subTemplateMetas.Count > 0 Then
                             For Each subMeta In subTemplateMetas
                                 Dim subMat = TemplateTrainingStore.LoadTrainingSampleImage(groupPath, subMeta.FileName)
                                 If subMat IsNot Nothing Then
                                     Try
-                                        Dim subResult = Await Draw_opencv.ProcessAsync(currentMat, subMat, masterData.Config)
+                                        ' 從 TrainingSampleMeta 建立此子模板專屬的 TemplateConfig
+                                        Dim subConfig As New TemplateConfig With {
+                                            .Threshold = If(subMeta.MasterThreshold > 0, subMeta.MasterThreshold, masterData.Config.Threshold),
+                                            .MatchMethod = subMeta.MatchMethod,
+                                            .PyramidLevel = subMeta.PyramidLevel,
+                                            .CannyLow = If(subMeta.CannyLow > 0, subMeta.CannyLow, masterData.Config.CannyLow),
+                                            .CannyHigh = If(subMeta.CannyHigh > 0, subMeta.CannyHigh, masterData.Config.CannyHigh)
+                                        }
+                                        Dim subResult = Await Draw_opencv.ProcessAsync(currentMat, subMat, subConfig)
                                         If subResult IsNot Nothing AndAlso subResult.Score > bestScore Then
                                             bestScore = subResult.Score
+                                            bestThreshold = subConfig.Threshold
                                             bestResultMat = subResult.Mat
-                                            Logger.Debug($"[MATCH] 第{matchAttempt}次 子模板'{subMeta.FileName}' Score={subResult.Score:F3}")
+                                            Logger.Debug($"[MATCH] #{matchAttempt} 子模板'{subMeta.FileName}' Score={subResult.Score:F3} (閾值={subConfig.Threshold:F3})")
+                                            ' 即時渲染匹配結果
+                                            If subResult.Mat IsNot Nothing Then
+                                                Dim wb = subResult.Mat.ToWriteableBitmap()
+                                                Dispatcher.Invoke(Sub() RenderImage.Source = wb)
+                                            End If
                                         End If
                                     Finally
                                         subMat.Dispose()
@@ -413,16 +436,16 @@ Class HomePage
                         End If
                     End Using
                 Else
-                    Logger.Warn($"[MATCH] 第{matchAttempt}次: 無法獲取相機畫面")
+                    Logger.Warn($"[MATCH] #{matchAttempt}: 無法獲取相機畫面")
                 End If
             End If
 
             Await Task.Delay(50)
         End While
 
-        ' 3秒結束後，用最高分與閾值比較決定 OK/NG
-        Dim isOk = (bestScore >= masterData.Config.Threshold)
-        Logger.Info($"[MATCH] 3秒結束，最高分={bestScore:F3}, 閾值={masterData.Config.Threshold:F3}, IsOk={isOk}, 共{matchAttempt}次")
+        ' 3秒結束後，用最高分與對應閾值比較決定 OK/NG
+        Dim isOk = (bestScore >= bestThreshold)
+        Logger.Info($"[MATCH] 3秒結束，最高分={bestScore:F3}, 對應閾值={bestThreshold:F3}, IsOk={isOk}, 共{matchAttempt}次")
 
         Dim finalResult As New Draw_opencv.ResultPack With {
             .Score = bestScore,

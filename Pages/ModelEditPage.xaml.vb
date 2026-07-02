@@ -235,6 +235,8 @@ Class ModelEditPage
             Dim dlg As New TemplateTrainDialog(groupPath)
             dlg.Owner = Application.Current?.MainWindow
             dlg.ShowDialog()
+            ' 訓練完成後清除快取，確保匹配時拿到最新子模板
+            TemplateTrainingStore.InvalidateCache(groupPath)
             ReloadTemplateList()
         Catch ex As Exception
             MessageBox.Show(LanguageManager.T("ModelEdit_ErrorTrain") & ": " & ex.Message)

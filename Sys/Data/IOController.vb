@@ -234,6 +234,34 @@ Public Class IOController
 
     End Sub
 
+    ' 黃燈：等待中
+    Public Sub SetLightYellow()
+        SetTowerLight(False, True, False)
+    End Sub
+
+    ' 綠燈閃亮 durationMs 後自動熄燈
+    Public Sub GreenPulse(Optional durationMs As Integer = 2000)
+        SetTowerLight(False, False, True)
+        Task.Run(Async Function()
+                     Await Task.Delay(durationMs)
+                     SetLightOff()
+                 End Function)
+    End Sub
+
+    ' 全部關燈
+    Public Sub SetLightOff()
+        If Not _hardwareEnabled Then Return
+        Try
+            If _buzzer Is Nothing Then Return
+            _buzzer.SetDO(1, False)
+            _buzzer.SetDO(2, False)
+            _buzzer.SetDO(3, False)
+            _log("燈號關閉")
+        Catch ex As Exception
+            _log("燈號關閉失敗: " & ex.Message)
+        End Try
+    End Sub
+
 #End Region
 
 #Region "Voice"
