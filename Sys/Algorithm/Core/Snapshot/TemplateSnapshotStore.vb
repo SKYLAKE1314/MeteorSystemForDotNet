@@ -1,5 +1,6 @@
 ﻿Imports System.IO
 Imports System.Text.Json
+Imports System.Text.Json.Serialization
 
 Public Module TemplateSnapshotStore
 
@@ -9,8 +10,9 @@ Public Module TemplateSnapshotStore
     Public Sub Save(snapshot As TemplateSnapshot)
 
         Dim json = JsonSerializer.Serialize(snapshot, New JsonSerializerOptions With {
-        .WriteIndented = True
-    })
+            .WriteIndented = True,
+            .DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never
+        })
 
         Dim tmpPath = FilePath & ".tmp"
 
