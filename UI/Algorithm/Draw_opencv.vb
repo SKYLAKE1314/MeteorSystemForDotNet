@@ -27,11 +27,66 @@ Public Class Draw_opencv
             }
         End If
 
+        Return Await ProcessAsync(input, data.Template, data.Config)
+
+    End Function
+
+    ' =========================================
+    ' 根據 config 參數對圖像進行增強（CLAHE + 金字塔）
+    ' =========================================
+    Private Shared Function EnhanceForMatching(src As Cv.Mat, config As TemplateConfig) As Cv.Mat
+        Dim work As New Cv.Mat()
+
+        ' 統一轉灰度
+        If src.Channels() > 1 Then
+            Cv.Cv2.CvtColor(src, work, Cv.ColorConversionCodes.BGR2GRAY)
+        Else
+            work = src.Clone()
+        End If
+
+        ' CLAHE 自適應對比增強（CannyLow/High 值越大越強調邊緣，借用做強度參數）
+        Dim clipLimit As Double = If(config.CannyLow > 0, Math.Min(config.CannyLow / 40.0, 8.0), 2.0)
+        Using clahe = Cv.Cv2.CreateCLAHE(clipLimit, New Cv.Size(8, 8))
+            Dim enhanced As New Cv.Mat()
+            clahe.Apply(work, enhanced)
+            work.Dispose()
+            work = enhanced
+        End Using
+
+        ' 金字塔降採樣（減少噪點，提高匹配穩定性）
+        Dim level = Math.Max(0, Math.Min(config.PyramidLevel, 3))
+        For i = 1 To level
+            Dim down As New Cv.Mat()
+            Cv.Cv2.PyrDown(work, down)
+            work.Dispose()
+            work = down
+        Next
+
+        Return work
+    End Function
+
+    ' =========================================
+    ' 重載：直接使用已加載的模板 Mat 和配置（繞過 TemplateCache）
+    ' =========================================
+    Public Shared Async Function ProcessAsync(
+        input As Cv.Mat,
+        templateMat As Cv.Mat,
+        config As TemplateConfig) As Task(Of ResultPack)
+
+        If input Is Nothing OrElse templateMat Is Nothing OrElse config Is Nothing Then Return Nothing
+
+        ' 動態增強：對 source 和 template 套用相同的 CLAHE + 金字塔
+        Dim srcWork = EnhanceForMatching(input, config)
+        Dim tplWork = EnhanceForMatching(templateMat, config)
+
         Dim result = Await TemplateMatcher.MatchAsync(
-            input,
-            data.Template,
-            data.Config.Threshold,
-            data.Config.MatchMethod)
+            srcWork,
+            tplWork,
+            config.Threshold,
+            config.MatchMethod)
+
+        srcWork.Dispose()
+        tplWork.Dispose()
 
         Dim display = input.Clone()
 
@@ -40,8 +95,8 @@ Public Class Draw_opencv
             Dim rect As New Cv.Rect(
                 result.MatchPoint.X,
                 result.MatchPoint.Y,
-                data.Template.Width,
-                data.Template.Height)
+                templateMat.Width,
+                templateMat.Height)
 
             ' =========================
             ' Draw box
@@ -98,10 +153,10 @@ Public Class Draw_opencv
             2)
 
         Return New ResultPack With {
-    .Mat = display,
-    .Score = result.Score,
-    .IsOk = (result.Score >= data.Config.Threshold)
-}
+            .Mat = display,
+            .Score = result.Score,
+            .IsOk = (result.Score >= config.Threshold)
+        }
 
     End Function
 

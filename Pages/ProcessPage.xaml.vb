@@ -475,9 +475,28 @@ Partial Public Class ProcessPage
         .partType = t.PartCode
     }
 
+        ' 發送檢測結果JSON
         Await _ws.Broadcast(JsonConvert.SerializeObject(json))
 
+        ' TaskStatus == 3 時發送視頻流元數據JSON
+        Dim streamJson As New Dictionary(Of String, Object)
+        streamJson("requestId") = t.RequestId
+        streamJson("stationId") = t.StationId
+        streamJson("streamUrl") = $"http://edge-server/videos/{t.RequestId}-live.mp4"
+        streamJson("streamStartTime") = DateTimeOffset.Now.ToUnixTimeMilliseconds()
+        streamJson("streamStatus") = "RUNNING"
+        streamJson("videoFormat") = "MP4"
+        streamJson("bitRate") = 1024
+        streamJson("metadata") = New With {
+            .resolution = "1920x1080",
+            .frameRate = 25
+        }
+
+        ' 發送視頻流元數據JSON
+        Await _ws.Broadcast(JsonConvert.SerializeObject(streamJson))
+
         AddLog($"[WS] RESULT Sent : {t.RequestId} (总数={totalCount}, 匹配={matchCount}, 检测次数={results.Count})")
+        AddLog($"[WS] STREAM Sent : {t.RequestId}")
 
     End Function
 

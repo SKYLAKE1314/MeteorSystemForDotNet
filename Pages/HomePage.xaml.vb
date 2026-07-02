@@ -339,6 +339,105 @@ Class HomePage
         Return New OpenCvSharp.Rect(x, y, w, h)
     End Function
 
+    ' 多次匹配方法：在3秒内每200ms嘗試一次，收集最高分，最後比對閾值決定OK/NG
+    Private Async Function WaitMultipleMatchAsync(templatePath As String, snapshot As TemplateSnapshot, timeoutMs As Integer) As Task(Of MatchResultWrapper)
+        Dim sw As New Stopwatch()
+        sw.Start()
+
+        ' 直接從路徑加載母版（繞過 TemplateCache，確保加載最新模板）
+        Dim masterData = TemplateManager.LoadTemplate(templatePath)
+        If masterData Is Nothing OrElse masterData.Template Is Nothing Then
+            Logger.Warn($"[FLOW] 無法加載母版模板: {templatePath}")
+            Return New MatchResultWrapper With {.Result = Nothing}
+        End If
+
+        Dim cameraId = ResolveDetectCameraId()
+        Dim bestResultMat As Cv.Mat = Nothing
+        Dim bestScore As Double = 0
+        Dim matchAttempt As Integer = 0
+        Dim lastAttemptTime As Long = -200 ' 立即觸發第一次匹配
+
+        ' 获取子模板列表
+        Dim groupPath = IO.Path.GetDirectoryName(templatePath)
+        Dim subTemplateMetas = TemplateTrainingStore.GetTrainingSamples(groupPath)
+
+        ' 相機啟動一次（在迴圈開始前）
+        If Not String.IsNullOrWhiteSpace(cameraId) Then
+            CameraService.Instance.StartCamera(cameraId)
+        End If
+
+        ' 每200ms嘗試一次（3秒內最多約15次）
+        Const AttemptIntervalMs As Long = 200
+
+        While sw.ElapsedMilliseconds < timeoutMs
+            If sw.ElapsedMilliseconds - lastAttemptTime >= AttemptIntervalMs Then
+                matchAttempt += 1
+                lastAttemptTime = sw.ElapsedMilliseconds
+
+                Dim frame As BitmapSource = Nothing
+                If Not String.IsNullOrWhiteSpace(cameraId) Then
+                    frame = CameraService.Instance.GetFrame(cameraId)
+                End If
+
+                If frame IsNot Nothing Then
+                    ' 更新預覽畫面
+                    Dim frameCopy = frame
+                    Dispatcher.Invoke(Sub() RenderImage.Source = frameCopy)
+
+                    Using currentMat = BitmapSourceToMat(frame)
+                        ' 嘗試匹配母版
+                        Dim masterResult = Await Draw_opencv.ProcessAsync(currentMat, masterData.Template, masterData.Config)
+                        If masterResult IsNot Nothing AndAlso masterResult.Score > bestScore Then
+                            bestScore = masterResult.Score
+                            bestResultMat = masterResult.Mat
+                            Logger.Debug($"[MATCH] 第{matchAttempt}次 母版 Score={masterResult.Score:F3}")
+                        End If
+
+                        ' 嘗試匹配所有子模板
+                        If subTemplateMetas IsNot Nothing AndAlso subTemplateMetas.Count > 0 Then
+                            For Each subMeta In subTemplateMetas
+                                Dim subMat = TemplateTrainingStore.LoadTrainingSampleImage(groupPath, subMeta.FileName)
+                                If subMat IsNot Nothing Then
+                                    Try
+                                        Dim subResult = Await Draw_opencv.ProcessAsync(currentMat, subMat, masterData.Config)
+                                        If subResult IsNot Nothing AndAlso subResult.Score > bestScore Then
+                                            bestScore = subResult.Score
+                                            bestResultMat = subResult.Mat
+                                            Logger.Debug($"[MATCH] 第{matchAttempt}次 子模板'{subMeta.FileName}' Score={subResult.Score:F3}")
+                                        End If
+                                    Finally
+                                        subMat.Dispose()
+                                    End Try
+                                End If
+                            Next
+                        End If
+                    End Using
+                Else
+                    Logger.Warn($"[MATCH] 第{matchAttempt}次: 無法獲取相機畫面")
+                End If
+            End If
+
+            Await Task.Delay(50)
+        End While
+
+        ' 3秒結束後，用最高分與閾值比較決定 OK/NG
+        Dim isOk = (bestScore >= masterData.Config.Threshold)
+        Logger.Info($"[MATCH] 3秒結束，最高分={bestScore:F3}, 閾值={masterData.Config.Threshold:F3}, IsOk={isOk}, 共{matchAttempt}次")
+
+        Dim finalResult As New Draw_opencv.ResultPack With {
+            .Score = bestScore,
+            .IsOk = isOk,
+            .Mat = bestResultMat
+        }
+        Return New MatchResultWrapper With {.Result = finalResult, .MatchCount = matchAttempt}
+    End Function
+
+    ' 匹配结果包装类
+    Private Class MatchResultWrapper
+        Public Property Result As Draw_opencv.ResultPack
+        Public Property MatchCount As Integer = 0
+    End Class
+
     Private Async Function WaitBarcodeResultAsync(snapshot As TemplateSnapshot, timeoutMs As Integer) As Task(Of String)
         Dim decoder = AppRuntime.Barcode
         If decoder Is Nothing Then Return ""
@@ -358,13 +457,22 @@ Class HomePage
 
             Dim frame = CameraService.Instance.GetFrame(cameraId)
             If frame IsNot Nothing Then
-                Using mat = BitmapSourceToMat(frame)
-                    Dim roi = ResolveRoi(snapshot, mat)
-                    Dim text = Await Task.Run(Function() decoder.RunRoi(mat, roi))
-                    If Not String.IsNullOrWhiteSpace(text) Then
-                        Return text.Trim()
-                    End If
-                End Using
+                ' 即時更新預覽
+                Dim frameCopy = frame
+                Dispatcher.Invoke(Sub() RenderImage.Source = frameCopy)
+
+                ' 解碼放入 Task.Run 避免卡 UI，將 Mat 复製到 Task 內部再釋放
+                Dim text = Await Task.Run(Function()
+                                              Using mat = BitmapSourceToMat(frameCopy)
+                                                  Dim roi = ResolveRoi(snapshot, mat)
+                                                  Return decoder.RunRoi(mat, roi)
+                                              End Using
+                                          End Function)
+
+                If Not String.IsNullOrWhiteSpace(text) Then
+                    Logger.Info($"[FLOW] 解碼成功: {text.Trim()}")
+                    Return text.Trim()
+                End If
             End If
 
             Await Task.Delay(StageLoopDelayMs)
@@ -382,6 +490,18 @@ Class HomePage
         If String.IsNullOrWhiteSpace(cameraId) Then Return ""
         CameraService.Instance.StartCamera(cameraId)
 
+        ' 解析期望的OCR文本（支持多個子模板，用;分隔）
+        Dim expectedTexts As New List(Of String)
+        If Not String.IsNullOrWhiteSpace(snapshot?.OcrExpectedText) Then
+            expectedTexts.AddRange(snapshot.OcrExpectedText.Split(";"c).
+                Select(Function(t) t.Trim()).
+                Where(Function(t) Not String.IsNullOrWhiteSpace(t)).
+                ToList())
+        End If
+
+        ' 多角度旋轉（與OCR測試原理相同）
+        Dim angles() As Double = {-45, 0, 15, 45}
+
         Dim sw As New Stopwatch()
         sw.Start()
 
@@ -396,24 +516,67 @@ Class HomePage
 
             Dim frame = CameraService.Instance.GetFrame(cameraId)
             If frame IsNot Nothing Then
-                Using mat = BitmapSourceToMat(frame)
-                    Dim roi = ResolveRoi(snapshot, mat)
-                    Dim ocrResult = Await Task.Run(Function() ocr.RunRoi(mat, roi))
+                ' 更新預覽畫面（UI執行緒）
+                Dim frameCopy = frame
+                Dispatcher.Invoke(Sub() RenderImage.Source = frameCopy)
 
-                    If ocrResult IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(ocrResult.Text) Then
-                        If ocrResult.Score > bestScore Then
-                            bestScore = ocrResult.Score
-                            bestText = ocrResult.Text.Trim()
-                        End If
+                ' 所有OCR運算放入Task.Run，避免UI卡頓
+                Dim result = Await Task.Run(Function()
+                                                Dim localBestText As String = ""
+                                                Dim localBestScore As Double = 0
 
-                        If ocrResult.Score >= 0.8 Then
-                            Return ocrResult.Text.Trim()
-                        End If
+                                                Using mat = BitmapSourceToMat(frameCopy)
+                                                    Dim roi = ResolveRoi(snapshot, mat)
+
+                                                    For Each angle In angles
+                                                        Using rotated = RotateMat(mat, angle)
+                                                            Dim ocrResult = ocr.RunRoi(rotated, roi)
+
+                                                            If ocrResult IsNot Nothing AndAlso
+                                                               Not String.IsNullOrWhiteSpace(ocrResult.Text) Then
+
+                                                                Logger.Debug($"[OCR] Angle={angle} Text={ocrResult.Text.Trim()} Score={ocrResult.Score:F3}")
+
+                                                                If ocrResult.Score > localBestScore Then
+                                                                    localBestScore = ocrResult.Score
+                                                                    localBestText = ocrResult.Text.Trim()
+                                                                End If
+
+                                                                ' 達到高置信度即可停止繼續嘗試角度
+                                                                If ocrResult.Score >= 0.8 Then Exit For
+                                                            End If
+                                                        End Using
+                                                    Next
+                                                End Using
+
+                                                Return New With {.Text = localBestText, .Score = localBestScore}
+                                            End Function)
+
+                If Not String.IsNullOrWhiteSpace(result.Text) Then
+                    ' 檢查是否包含期望的任何子文本
+                    If expectedTexts.Count > 0 Then
+                        For Each expected In expectedTexts
+                            If result.Text.Contains(expected) Then
+                                Logger.Info($"[FLOW] OCR 包含匹配成功: 期望={expected}, 識別={result.Text}, Score={result.Score:F3}")
+                                Return result.Text
+                            End If
+                        Next
                     End If
-                End Using
+
+                    ' 更新最高分記錄
+                    If result.Score > bestScore Then
+                        bestScore = result.Score
+                        bestText = result.Text
+                    End If
+
+                    ' 未設定期望文本時，達到高置信度即返回
+                    If result.Score >= 0.8 AndAlso expectedTexts.Count = 0 Then
+                        Return result.Text
+                    End If
+                End If
             End If
 
-            Await Task.Delay(StageLoopDelayMs)
+            Await Task.Delay(100) ' OCR 帧間小休，防止多角度重複匹配卡點
         End While
 
         If Not String.IsNullOrWhiteSpace(bestText) Then Return bestText
@@ -425,167 +588,180 @@ Class HomePage
     Public Async Function BtnGetImg_Click() As Task(Of DetectionResult)
 
         Try
-            Dim frame = Await GetDetectFrameAsync()
-            If frame Is Nothing Then Return Nothing
+            Dim templatePath = LastTemplateStore.Load()
+            If String.IsNullOrWhiteSpace(templatePath) Then Return Nothing
 
-            Logger.Debug($"[DETECT] frame={(frame IsNot Nothing)}")
+            Logger.Debug($"[DETECT] template={templatePath}")
+            Dim templateName = IO.Path.GetFileName(templatePath)
 
-            Using mat = BitmapSourceToMat(frame)
+            Dim stage As DetectionFlowStage = DetectionFlowStage.Idle
+            If Not TryBeginDetectionSession("MANUAL", stage) Then
+                Logger.Info($"[FLOW] 檢測已在進行中：{stage}")
+                Return Nothing
+            End If
 
-                Dim templatePath = LastTemplateStore.Load()
-                If String.IsNullOrWhiteSpace(templatePath) Then Return Nothing
+            Dim snapshot = TemplateSnapshotStore.Load()
 
-                Logger.Debug($"[DETECT] template={templatePath}")
-                Dim templateName = IO.Path.GetFileName(templatePath)
+            Logger.Debug($"[FLOW] Current stage={stage}, EnableBarcode={If(snapshot IsNot Nothing, snapshot.EnableBarcode, False)}, EnableOcr={If(snapshot IsNot Nothing, snapshot.EnableOcr, False)}")
 
-                Dim stage As DetectionFlowStage = DetectionFlowStage.Idle
-                If Not TryBeginDetectionSession("MANUAL", stage) Then
-                    Logger.Info($"[FLOW] 檢測已在進行中：{stage}")
-                    Return Nothing
-                End If
+            ' 匹配多次，在3秒內每秒尝试一次（傳遞完整路徑以直接加載模板）
+            Dim matchResult = Await WaitMultipleMatchAsync(templatePath, snapshot, 3000)
+            Dim result = matchResult.Result
 
-                Dim snapshot = TemplateSnapshotStore.Load()
+            ' 即使匹配無結果（無相機畫面）也繼續流程，以NG記錄
+            If result Is Nothing Then
+                Logger.Warn("[FLOW] 匹配無結果（無相機畫面），以NG繼續流程")
+                result = New Draw_opencv.ResultPack With {.Score = 0, .IsOk = False, .Mat = Nothing}
+            End If
 
-                Logger.Debug($"[FLOW] Current stage={stage}, EnableBarcode={If(snapshot IsNot Nothing, snapshot.EnableBarcode, False)}, EnableOcr={If(snapshot IsNot Nothing, snapshot.EnableOcr, False)}")
-
-                Dim result = Await Draw_opencv.ProcessAsync(mat, templateName)
-
+            If result.Mat IsNot Nothing Then
                 Dispatcher.Invoke(Sub()
                                       RenderImage.Source = result.Mat.ToWriteableBitmap()
                                   End Sub)
+            End If
 
-                Logger.Info($"Score={result.Score:F3}, OK={result.IsOk}")
+            Logger.Info($"Score={result.Score:F3}, OK={result.IsOk}")
 
-                If result.IsOk Then
-                    _io.HandleOK()
-                Else
-                    _io.HandleNG()
+            If result.IsOk Then
+                _io.HandleOK()
+            Else
+                _io.HandleNG()
+            End If
+
+            SyncLock _detectLock
+                If _activeDetectionResult Is Nothing Then
+                    _activeDetectionResult = New DetectionResult With {.List = New List(Of DetectionItem)}
                 End If
-
-                SyncLock _detectLock
-                    If _activeDetectionResult Is Nothing Then
-                        _activeDetectionResult = New DetectionResult With {.List = New List(Of DetectionItem)}
-                    End If
-                    If _activeDetectionItem Is Nothing Then
-                        _activeDetectionItem = New DetectionItem With {.detectionNo = $"AI-{DateTime.Now:yyyyMMdd-HHmmssfff}"}
-                        _activeDetectionResult.List.Add(_activeDetectionItem)
-                    End If
-                    _activeDetectionResult.Mat = result.Mat
-                    _activeDetectionItem.taskPartName = templateName
-                    _activeDetectionItem.resultType = If(result.IsOk, "MATCH", "MISMATCH")
-                    _activeDetectionItem.confidence = result.Score
-                    _flowStage = DetectionFlowStage.Barcode
-                End SyncLock
-
-                ' 不論OK還是NG，匹配後都播報"匹配完成，請掃描"
-                PlayPromptVoice(VoicePromptMatchCompleteScan)
-                Logger.Info($"[RESULT] 匹配 - OK={result.IsOk}, Score={result.Score:F3}")
-                Logger.Info($"[FLOW] 匹配完成，開始解碼")
-
-                Dim code = Await WaitBarcodeResultAsync(snapshot, StageTimeoutMs)
-                SyncLock _detectLock
-                    If _activeDetectionItem IsNot Nothing Then
-                        _activeDetectionItem.recognizedPartCode = code
-                    End If
-                    _flowStage = DetectionFlowStage.Ocr
-                End SyncLock
-
-                ' 如果跳过了条码扫描，记为null
-                If IsSkipRequested(DetectionFlowStage.Barcode) Then
-                    Logger.Info("[RESULT] 条码 - 已跳过 (null)")
-                    code = Nothing
-                    SyncLock _detectLock
-                        If _activeDetectionItem IsNot Nothing Then
-                            _activeDetectionItem.recognizedPartCode = Nothing
-                        End If
-                    End SyncLock
-                Else
-                    Logger.Info($"[RESULT] 条码 - {If(String.IsNullOrWhiteSpace(code), "null (超时)", code)}")
+                If _activeDetectionItem Is Nothing Then
+                    _activeDetectionItem = New DetectionItem With {.detectionNo = $"AI-{DateTime.Now:yyyyMMdd-HHmmssfff}"}
+                    _activeDetectionResult.List.Add(_activeDetectionItem)
                 End If
+                _activeDetectionResult.Mat = result.Mat
+                _activeDetectionItem.taskPartName = templateName
+                _activeDetectionItem.resultType = If(result.IsOk, "MATCH", "MISMATCH")
+                _activeDetectionItem.confidence = result.Score
+            End SyncLock
+            SetFlowStage(DetectionFlowStage.Barcode) ' 重置 skip 標誌，防止上一階段的按鈕操作漏入此階段
 
-                If String.IsNullOrWhiteSpace(code) Then
-                    Dim timeoutOutput As DetectionResult
-                    SyncLock _detectLock
-                        If _activeDetectionItem IsNot Nothing Then
-                            _activeDetectionItem.resultType = "MISMATCH"
-                        End If
-                        timeoutOutput = _activeDetectionResult
-                        If timeoutOutput IsNot Nothing Then
-                            timeoutOutput.Mat = result.Mat
-                            timeoutOutput.IsFinal = True
-                            timeoutOutput.Stage = "BARCODE_TIMEOUT"
-                        End If
-                    End SyncLock
+            ' 不論OK還是NG，匹配後都播報"匹配完成，請掃描"
+            PlayPromptVoice(VoicePromptMatchCompleteScan)
+            Logger.Info($"[RESULT] 匹配 - OK={result.IsOk}, Score={result.Score:F3}")
+            Logger.Info($"[FLOW] 匹配完成，開始解碼")
 
-                    PlayPromptVoice(VoicePromptStageTimeout)
-                    PlayPromptVoice(VoicePromptSingleFlowCompleted)
-                    Logger.Info("[FLOW] 单次流程结束 (条码超时)")
-                    Logger.Info("[SUMMARY] ===================")
-                    Logger.Info($"[SUMMARY] 检测编号: {If(_activeDetectionItem IsNot Nothing, _activeDetectionItem.detectionNo, "N/A")}")
-                    Logger.Info($"[SUMMARY] 匹配: {If(_activeDetectionItem IsNot Nothing, _activeDetectionItem.resultType, "N/A")} (Score={result.Score:F3})")
-                    Logger.Info($"[SUMMARY] 条码: null (超时)")
-                    Logger.Info($"[SUMMARY] OCR: 跳过 (无条码)")
-                    Logger.Info("[SUMMARY] ===================")
-                    FinishDetection()
-                    Return timeoutOutput
+            Dim code = Await WaitBarcodeResultAsync(snapshot, StageTimeoutMs)
+
+            ' 解碼結果 vs 期望文本檢查
+            Dim barcodeExpected = snapshot?.BarcodeExpectedText?.Trim()
+            Dim barcodeMatched As Boolean = True
+            If Not String.IsNullOrWhiteSpace(code) AndAlso Not String.IsNullOrWhiteSpace(barcodeExpected) Then
+                barcodeMatched = code.Contains(barcodeExpected) OrElse barcodeExpected.Contains(code)
+                If Not barcodeMatched Then
+                    Logger.Warn($"[RESULT] 條碼不匹配! 期望={barcodeExpected}, 實際={code}")
                 End If
+            End If
 
-                PlayPromptVoice(VoicePromptDecodeCompleteOcr)
-                Logger.Info("[FLOW] 開始 OCR")
-
-                Dim name = Await WaitOcrResultAsync(snapshot, StageTimeoutMs)
-
-                ' 如果跳过了OCR，记为null
-                If IsSkipRequested(DetectionFlowStage.Ocr) Then
-                    Logger.Info("[RESULT] OCR - 已跳过 (null)")
-                    name = Nothing
-                    SyncLock _detectLock
-                        If _activeDetectionItem IsNot Nothing Then
-                            _activeDetectionItem.recognizedPartName = Nothing
-                        End If
-                    End SyncLock
-                Else
-                    Logger.Info($"[RESULT] OCR - {If(String.IsNullOrWhiteSpace(name), "null (超时)", name)}")
+            SyncLock _detectLock
+                If _activeDetectionItem IsNot Nothing Then
+                    _activeDetectionItem.recognizedPartCode = code
+                    If Not barcodeMatched Then _activeDetectionItem.resultType = "MISMATCH"
                 End If
+            End SyncLock
+            SetFlowStage(DetectionFlowStage.Ocr) ' 重置 skip 標誌
 
-                Dim finalOutput As DetectionResult
+            ' 如果跳过了条码扫描，记为null
+            If IsSkipRequested(DetectionFlowStage.Barcode) Then
+                Logger.Info("[RESULT] 条码 - 已跳过 (null)")
+                code = Nothing
                 SyncLock _detectLock
                     If _activeDetectionItem IsNot Nothing Then
-                        _activeDetectionItem.recognizedPartName = name
-                        If String.IsNullOrWhiteSpace(name) Then
-                            _activeDetectionItem.resultType = "MISMATCH"
-                        End If
+                        _activeDetectionItem.recognizedPartCode = Nothing
                     End If
-                    finalOutput = _activeDetectionResult
-                    If finalOutput Is Nothing Then
-                        finalOutput = New DetectionResult With {.List = New List(Of DetectionItem)}
-                        If _activeDetectionItem IsNot Nothing Then
-                            finalOutput.List.Add(_activeDetectionItem)
-                        End If
+                End SyncLock
+            Else
+                Logger.Info($"[RESULT] 条码 - {If(String.IsNullOrWhiteSpace(code), "null (超时)", code)}")
+            End If
+
+            If String.IsNullOrWhiteSpace(code) Then
+                Dim timeoutOutput As DetectionResult
+                SyncLock _detectLock
+                    If _activeDetectionItem IsNot Nothing Then
+                        _activeDetectionItem.resultType = "MISMATCH"
                     End If
-                    finalOutput.Mat = result.Mat
-                    finalOutput.IsFinal = True
-                    finalOutput.Stage = If(String.IsNullOrWhiteSpace(name), "OCR_TIMEOUT", "OCR")
+                    timeoutOutput = _activeDetectionResult
+                    If timeoutOutput IsNot Nothing Then
+                        timeoutOutput.Mat = result.Mat
+                        timeoutOutput.IsFinal = True
+                        timeoutOutput.Stage = "BARCODE_TIMEOUT"
+                    End If
                 End SyncLock
 
-                ' 输出完整的流程结果日志
+                PlayPromptVoice(VoicePromptStageTimeout)
                 PlayPromptVoice(VoicePromptSingleFlowCompleted)
-                Logger.Info("[FLOW] 单次流程结束")
+                Logger.Info("[FLOW] 单次流程结束 (条码超时)")
                 Logger.Info("[SUMMARY] ===================")
                 Logger.Info($"[SUMMARY] 检测编号: {If(_activeDetectionItem IsNot Nothing, _activeDetectionItem.detectionNo, "N/A")}")
                 Logger.Info($"[SUMMARY] 匹配: {If(_activeDetectionItem IsNot Nothing, _activeDetectionItem.resultType, "N/A")} (Score={result.Score:F3})")
-                Logger.Info($"[SUMMARY] 条码: {If(String.IsNullOrWhiteSpace(code), "null", code)}")
-                Logger.Info($"[SUMMARY] OCR: {If(String.IsNullOrWhiteSpace(name), "null", name)}")
+                Logger.Info($"[SUMMARY] 条码: null (超时)")
+                Logger.Info($"[SUMMARY] OCR: 跳过 (无条码)")
                 Logger.Info("[SUMMARY] ===================")
-
-                If String.IsNullOrWhiteSpace(name) Then
-                    PlayPromptVoice(VoicePromptStageTimeout)
-                End If
-
                 FinishDetection()
-                Return finalOutput
+                Return timeoutOutput
+            End If
 
-            End Using
+            PlayPromptVoice(VoicePromptDecodeCompleteOcr)
+            Logger.Info("[FLOW] 開始 OCR")
+
+            Dim name = Await WaitOcrResultAsync(snapshot, StageTimeoutMs)
+
+            ' 如果跳过了OCR，记为null
+            If IsSkipRequested(DetectionFlowStage.Ocr) Then
+                Logger.Info("[RESULT] OCR - 已跳过 (null)")
+                name = Nothing
+                SyncLock _detectLock
+                    If _activeDetectionItem IsNot Nothing Then
+                        _activeDetectionItem.recognizedPartName = Nothing
+                    End If
+                End SyncLock
+            Else
+                Logger.Info($"[RESULT] OCR - {If(String.IsNullOrWhiteSpace(name), "null (超时)", name)}")
+            End If
+
+            Dim finalOutput As DetectionResult
+            SyncLock _detectLock
+                If _activeDetectionItem IsNot Nothing Then
+                    _activeDetectionItem.recognizedPartName = name
+                    If String.IsNullOrWhiteSpace(name) Then
+                        _activeDetectionItem.resultType = "MISMATCH"
+                    End If
+                End If
+                finalOutput = _activeDetectionResult
+                If finalOutput Is Nothing Then
+                    finalOutput = New DetectionResult With {.List = New List(Of DetectionItem)}
+                    If _activeDetectionItem IsNot Nothing Then
+                        finalOutput.List.Add(_activeDetectionItem)
+                    End If
+                End If
+                finalOutput.Mat = result.Mat
+                finalOutput.IsFinal = True
+                finalOutput.Stage = If(String.IsNullOrWhiteSpace(name), "OCR_TIMEOUT", "OCR")
+            End SyncLock
+
+            ' 输出完整的流程结果日志
+            PlayPromptVoice(VoicePromptSingleFlowCompleted)
+            Logger.Info("[FLOW] 单次流程结束")
+            Logger.Info("[SUMMARY] ===================")
+            Logger.Info($"[SUMMARY] 检测编号: {If(_activeDetectionItem IsNot Nothing, _activeDetectionItem.detectionNo, "N/A")}")
+            Logger.Info($"[SUMMARY] 匹配: {If(_activeDetectionItem IsNot Nothing, _activeDetectionItem.resultType, "N/A")} (Score={result.Score:F3})")
+            Logger.Info($"[SUMMARY] 条码: {If(String.IsNullOrWhiteSpace(code), "null", code)}")
+            Logger.Info($"[SUMMARY] OCR: {If(String.IsNullOrWhiteSpace(name), "null", name)}")
+            Logger.Info("[SUMMARY] ===================")
+
+            If String.IsNullOrWhiteSpace(name) Then
+                PlayPromptVoice(VoicePromptStageTimeout)
+            End If
+
+            FinishDetection()
+            Return finalOutput
 
         Catch ex As Exception
             Logger.Error("Detection error: " & ex.Message)
