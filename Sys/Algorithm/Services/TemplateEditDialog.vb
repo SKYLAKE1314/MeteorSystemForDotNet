@@ -18,7 +18,7 @@ Public Class TemplateEditDialog
     Public Sub New(snapshot As TemplateSnapshot, preview As ImageSource)
         Me.Title = "模板編輯"
         Me.Width = 650
-        Me.Height = 450
+        Me.Height = 520
         Me.WindowStartupLocation = WindowStartupLocation.CenterOwner
         Me.ResizeMode = ResizeMode.CanResize
         Me.Background = New SolidColorBrush(Color.FromRgb(&HF3, &HF3, &HF3))
@@ -28,6 +28,10 @@ Public Class TemplateEditDialog
         End If
 
         Me.Snapshot = snapshot
+
+        Dim tbBg As New SolidColorBrush(Color.FromRgb(&HF2, &HEC, &HFF))
+        Dim tbBorder As New SolidColorBrush(Color.FromRgb(&H9A, &H6B, &HD8))
+        Dim tbFg As New SolidColorBrush(Color.FromRgb(&H3C, &H1E, &H66))
 
         ' ===== Root Grid with proper styling =====
         Dim root As New Grid()
@@ -66,10 +70,15 @@ Public Class TemplateEditDialog
         contentPanel.Children.Add(ocrLabel)
 
         Dim ocrGrid As New Grid()
+
+        ' 2 rows（label row + input row）
+        ocrGrid.RowDefinitions.Add(New RowDefinition() With {.Height = GridLength.Auto})
+        ocrGrid.RowDefinitions.Add(New RowDefinition() With {.Height = GridLength.Auto})
+
+        ' 3 columns（left / gap / right）
         ocrGrid.ColumnDefinitions.Add(New ColumnDefinition() With {.Width = New GridLength(1, GridUnitType.Star)})
         ocrGrid.ColumnDefinitions.Add(New ColumnDefinition() With {.Width = New GridLength(10)})
         ocrGrid.ColumnDefinitions.Add(New ColumnDefinition() With {.Width = New GridLength(1, GridUnitType.Star)})
-        ocrGrid.Margin = New Thickness(0, 0, 0, 15)
 
         Dim ocrOrigLabel As New TextBlock()
         ocrOrigLabel.Text = "原始"
@@ -79,12 +88,15 @@ Public Class TemplateEditDialog
         ocrGrid.Children.Add(ocrOrigLabel)
 
         TbOcrRecognized = New TextBox()
-        TbOcrRecognized.Height = 40
+        TbOcrRecognized.Height = 110
         TbOcrRecognized.TextWrapping = TextWrapping.Wrap
+        TbOcrRecognized.AcceptsReturn = True
+        TbOcrRecognized.VerticalScrollBarVisibility = ScrollBarVisibility.Auto
         TbOcrRecognized.IsReadOnly = True
-        TbOcrRecognized.Background = New SolidColorBrush(Color.FromRgb(&HF5, &HF5, &HF5))
+        TbOcrRecognized.Background = tbBg
+        TbOcrRecognized.Foreground = tbFg
         TbOcrRecognized.BorderThickness = New Thickness(1)
-        TbOcrRecognized.BorderBrush = New SolidColorBrush(Color.FromRgb(&HD0, &HD0, &HD0))
+        TbOcrRecognized.BorderBrush = tbBorder
         Grid.SetColumn(TbOcrRecognized, 0)
         Grid.SetRow(TbOcrRecognized, 1)
         ocrGrid.Children.Add(TbOcrRecognized)
@@ -100,10 +112,14 @@ Public Class TemplateEditDialog
         ocrGrid.Children.Add(ocrExpectLabel)
 
         TbOcrExpected = New TextBox()
-        TbOcrExpected.Height = 40
+        TbOcrExpected.Height = 110
         TbOcrExpected.TextWrapping = TextWrapping.Wrap
+        TbOcrExpected.AcceptsReturn = True
+        TbOcrExpected.VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+        TbOcrExpected.Background = tbBg
+        TbOcrExpected.Foreground = tbFg
         TbOcrExpected.BorderThickness = New Thickness(1)
-        TbOcrExpected.BorderBrush = New SolidColorBrush(Color.FromRgb(&HC0, &HC0, &HC0))
+        TbOcrExpected.BorderBrush = tbBorder
         Grid.SetColumn(TbOcrExpected, 2)
         Grid.SetRow(TbOcrExpected, 1)
         ocrGrid.Children.Add(TbOcrExpected)
@@ -136,9 +152,10 @@ Public Class TemplateEditDialog
         TbBarcodeDecoded.Height = 40
         TbBarcodeDecoded.TextWrapping = TextWrapping.Wrap
         TbBarcodeDecoded.IsReadOnly = True
-        TbBarcodeDecoded.Background = New SolidColorBrush(Color.FromRgb(&HF5, &HF5, &HF5))
+        TbBarcodeDecoded.Background = tbBg
+        TbBarcodeDecoded.Foreground = tbFg
         TbBarcodeDecoded.BorderThickness = New Thickness(1)
-        TbBarcodeDecoded.BorderBrush = New SolidColorBrush(Color.FromRgb(&HD0, &HD0, &HD0))
+        TbBarcodeDecoded.BorderBrush = tbBorder
         Grid.SetColumn(TbBarcodeDecoded, 0)
         Grid.SetRow(TbBarcodeDecoded, 1)
         barcodeGrid.Children.Add(TbBarcodeDecoded)
@@ -156,8 +173,10 @@ Public Class TemplateEditDialog
         TbBarcodeExpected = New TextBox()
         TbBarcodeExpected.Height = 40
         TbBarcodeExpected.TextWrapping = TextWrapping.Wrap
+        TbBarcodeExpected.Background = tbBg
+        TbBarcodeExpected.Foreground = tbFg
         TbBarcodeExpected.BorderThickness = New Thickness(1)
-        TbBarcodeExpected.BorderBrush = New SolidColorBrush(Color.FromRgb(&HC0, &HC0, &HC0))
+        TbBarcodeExpected.BorderBrush = tbBorder
         Grid.SetColumn(TbBarcodeExpected, 2)
         Grid.SetRow(TbBarcodeExpected, 1)
         barcodeGrid.Children.Add(TbBarcodeExpected)
@@ -177,8 +196,10 @@ Public Class TemplateEditDialog
         TbComment.Height = 60
         TbComment.TextWrapping = TextWrapping.Wrap
         TbComment.AcceptsReturn = True
+        TbComment.Background = tbBg
+        TbComment.Foreground = tbFg
         TbComment.BorderThickness = New Thickness(1)
-        TbComment.BorderBrush = New SolidColorBrush(Color.FromRgb(&HC0, &HC0, &HC0))
+        TbComment.BorderBrush = tbBorder
         TbComment.Padding = New Thickness(8)
         contentPanel.Children.Add(TbComment)
 

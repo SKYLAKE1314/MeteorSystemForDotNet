@@ -123,6 +123,7 @@ If(My.Settings.AutoRun, 0, 1)
         row.SelectedCamera = cam
 
         RefreshAllCameraLists()
+        SaveCameraRows()
 
         My.Settings.CameraDeviceId = cam?.DeviceId
         My.Settings.Save()
@@ -135,21 +136,32 @@ If(My.Settings.AutoRun, 0, 1)
 
         CameraRows.Clear()
 
-        Dim savedId = My.Settings.CameraDeviceId
+        Dim savedIds = My.Settings.CameraDeviceIds
 
-        Dim first = New CameraRow With {
-        .Title = "相機 1",
-        .CameraList = list
-    }
+        If savedIds IsNot Nothing AndAlso savedIds.Count > 0 Then
 
-        CameraRows.Add(first)
+            For Each id In savedIds
 
-        ' 還原選擇
-        first.SelectedCamera =
-        list.FirstOrDefault(Function(c) c.DeviceId = savedId)
+                Dim camRow = New CameraRow With {
+                .Title = $"相機 {CameraRows.Count + 1}",
+                .CameraList = list
+            }
+
+                camRow.SelectedCamera =
+                list.FirstOrDefault(Function(c) c.DeviceId = id)
+
+                CameraRows.Add(camRow)
+            Next
+
+        Else
+            ' fallback
+            CameraRows.Add(New CameraRow With {
+            .Title = "相機 1",
+            .CameraList = list
+        })
+        End If
 
         UpdateCameraButtons()
-
         RefreshAllCameraLists()
 
         ' 自動化
@@ -199,7 +211,6 @@ If(My.Settings.AutoRun, 0, 1)
     End Sub
     ' 新增相機
     Private Sub AddCamera()
-
         Dim list = CameraManager.GetCachedCameras()
 
         CameraRows.Add(New CameraRow With {
@@ -208,7 +219,7 @@ If(My.Settings.AutoRun, 0, 1)
     })
 
         UpdateCameraButtons()
-
+        SaveCameraRows()
     End Sub
 
     ' 相機控件刪減
@@ -234,7 +245,20 @@ If(My.Settings.AutoRun, 0, 1)
         CameraRows.Remove(row)
 
         UpdateCameraButtons()
+        SaveCameraRows()
+    End Sub
 
+    Private Sub SaveCameraRows()
+        Dim ids As New System.Collections.Specialized.StringCollection()
+
+        For Each row In CameraRows
+            If row.SelectedCamera IsNot Nothing Then
+                ids.Add(row.SelectedCamera.DeviceId)
+            End If
+        Next
+
+        My.Settings.CameraDeviceIds = ids
+        My.Settings.Save()
     End Sub
 
     Private Sub RefreshAllCameraLists()

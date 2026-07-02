@@ -20,6 +20,9 @@ Class HomePage
 
     Private _detectLock As New Object()
     Private _isDetecting As Boolean = False
+
+    Private _detectCameraId As String = GetCamId(0)
+    Private _ocrCameraId As String = GetCamId(1)
     Public Async Function RunDetection(callback As Action(Of DetectionResult)) As Task
 
         SyncLock _detectLock
@@ -200,7 +203,7 @@ Class HomePage
     Public Async Function BtnGetImg_Click() As Task(Of DetectionResult)
 
         Try
-            Dim frame = CameraService.Instance.LatestFrame
+            Dim frame = CameraService.Instance.GetFrame(_detectCameraId)
             If frame Is Nothing Then Return Nothing
             Logger.Debug($"[DETECT] frame={(frame IsNot Nothing)}")
             Dim mat = BitmapSourceToMat(frame)
@@ -448,7 +451,7 @@ Class HomePage
     End Sub
     Private _lastFrameMat As Mat
     Private _lastFrameBitmap As BitmapSource
-    Private Sub OnFrameArrived(bitmap As BitmapSource)
+    Private Sub OnFrameArrived(deviceId As String, img As BitmapSource)
 
         If RenderImage Is Nothing Then Return
 
@@ -456,13 +459,12 @@ Class HomePage
 
                                                If RenderImage Is Nothing Then Return
 
-                                               RenderImage.Source = bitmap
+                                               RenderImage.Source = img
 
                                                ' ⭐ 保存最後一幀（UI層）
-                                               _lastFrameBitmap = bitmap
+                                               _lastFrameBitmap = img
 
                                            End Sub)
-
     End Sub
     Private Sub Page_Unloaded(sender As Object, e As RoutedEventArgs) Handles Me.Unloaded
         RemoveHandler CameraService.Instance.FrameArrived, AddressOf OnFrameArrived
@@ -477,7 +479,7 @@ Class HomePage
 
             AddHandler CameraService.Instance.FrameArrived, AddressOf OnFrameArrived
 
-            CameraService.Instance.Start()
+            CameraService.Instance.StartAll()
 
             _isStreaming = True
 
@@ -497,7 +499,7 @@ Class HomePage
 
             RemoveHandler CameraService.Instance.FrameArrived, AddressOf OnFrameArrived
 
-            CameraService.Instance.Stop()
+            CameraService.Instance.StopAll()
 
             _isStreaming = False
 
@@ -565,7 +567,7 @@ Class HomePage
             ' 1. Laplacian 選最佳幀
             While sw.ElapsedMilliseconds < 3000
 
-                Dim frame = CameraService.Instance.LatestFrame
+                Dim frame = CameraService.Instance.GetFrame(_ocrCameraId)
 
                 If frame IsNot Nothing Then
 
@@ -719,7 +721,9 @@ Class HomePage
 
             While sw.ElapsedMilliseconds < timeoutMs
 
-                Dim frame As BitmapSource = CameraService.Instance.LatestFrame
+                Dim ocrCamId = GetCamId(1)
+                If String.IsNullOrEmpty(ocrCamId) Then Return
+                Dim frame As BitmapSource = CameraService.Instance.GetFrame(ocrCamId)
 
                 If frame IsNot Nothing Then
 
@@ -805,8 +809,12 @@ Class HomePage
 
         Task.Run(Sub()
 
-                     CameraService.Instance.Stop()
-                     CameraService.Instance.Start()
+                     Dim ids = My.Settings.CameraDeviceIds
+
+                     If ids Is Nothing OrElse ids.Count = 0 Then Return
+
+                     CameraService.Instance.StopAll()
+                     CameraService.Instance.StartAll()
 
                  End Sub)
 
@@ -843,7 +851,7 @@ Class HomePage
 
     Private Sub UpdateFrame(sender As Object, e As EventArgs)
 
-        Dim frame = CameraService.Instance.LatestFrame
+        Dim frame = CameraService.Instance.GetFrame(GetCamId(0))
 
         If frame Is Nothing Then Return
 

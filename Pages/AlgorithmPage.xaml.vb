@@ -37,6 +37,13 @@ Public Class AlgorithmPage
     Private templateZoom As Double = 1.0
     Private templateIsPanning As Boolean = False
     Private templateLastPanPoint As WpfPoint
+
+    ' 當前選擇的相機（多相機建模使用）
+    Private _selectedCameraId As String = ""
+    Private _selectedCameraSlot As Integer = 0
+
+    ' 當前建模任務的父資料夾名稱（第一個相機建模時輸入，第二個沿用）
+    Private _currentTemplateName As String = ""
     ' =========================
     ' Loaded
     ' =========================
@@ -74,10 +81,25 @@ Public Class AlgorithmPage
 
         SafeRun(Sub()
 
-                    Dim frame = CameraService.Instance.LatestFrame
+                    ' 彈出相機選擇對話窗
+                    Dim picker As New CameraPickDialog()
+                    picker.Owner = Application.Current?.MainWindow
+                    Dim picked = picker.ShowDialog()
+                    If picked <> True Then Return
+
+                    _selectedCameraId = picker.SelectedCameraId
+                    _selectedCameraSlot = picker.SelectedCameraSlot
+
+                    If String.IsNullOrWhiteSpace(_selectedCameraId) Then
+                        ErrorDialogHelper.ShowError("尚未設定相機")
+                        Return
+                    End If
+
+                    Dim frame = CameraService.Instance.GetFrame(_selectedCameraId)
 
                     If frame Is Nothing Then
-                        ErrorDialogHelper.ShowError("尚未取得相機影像")
+                        ErrorDialogHelper.ShowError($"尚未取得相機 {_selectedCameraSlot + 1} 的影像")
+                        Return
                     End If
 
                     _srcMat?.Dispose()
@@ -90,6 +112,9 @@ Public Class AlgorithmPage
                     RoiCanvas,
                     SrcImage,
                     _srcMat)
+
+                    SrcImage.Source = ImageConvertHelper.ToBitmap(_srcMat)
+                    SrcImage.UpdateLayout()
 
                     ResetUI()
 
@@ -220,7 +245,7 @@ Public Class AlgorithmPage
         Try
             _roiCtrl.MouseUp()
 
-            _roi = _roiCtrl.Roi   ' ⭐⭐⭐ 必加
+            _roi = _roiCtrl.Roi
 
             If _roi.Width <= 0 OrElse _roi.Height <= 0 Then
                 RoiStatusText.Text = "ROI 無效"
@@ -281,7 +306,9 @@ Public Class AlgorithmPage
             TemplateImage.Source =
             ImageConvertHelper.ToBitmap(result.Item2)
 
-            TemplateStatusText.Text = "模板生成完成"
+            ApplyAutoTemplateParameters(safeRoi)
+
+            TemplateStatusText.Text = $"模板生成完成 (自動參數：金字塔={CInt(PyramidSlider.Value)}, 閾值={ThresholdSlider.Value:F2})"
 
         Catch ex As Exception
             MessageBox.Show(ex.ToString())
@@ -315,62 +342,66 @@ Public Class AlgorithmPage
 
                     If _templateMat Is Nothing Then Return
 
+                    ' 第一次儲存才詢問父資料夾名稱
+                    If String.IsNullOrWhiteSpace(_currentTemplateName) Then
+                        Dim name = Microsoft.VisualBasic.InputBox(
+                            "請輸入模板組名稱（兩個相機共用此名稱）",
+                            "建立模板組",
+                            $"Template_{DateTime.Now:yyyyMMdd_HHmmss}")
+                        If String.IsNullOrWhiteSpace(name) Then
+                            MessageBox.Show("已取消")
+                            Return
+                        End If
+                        For Each c In IO.Path.GetInvalidFileNameChars()
+                            name = name.Replace(c, "_"c)
+                        Next
+                        _currentTemplateName = name
+                    End If
+
                     Dim config As New TemplateConfig
 
                     With config
                         .Threshold = ThresholdSlider.Value
                         .MatchMethod = MatchMethodBox.SelectedIndex
-
                         .RoiX = _roi.X
                         .RoiY = _roi.Y
                         .RoiW = _roi.Width
                         .RoiH = _roi.Height
-
                         .EnableOcr = True
                         .OcrExpectedText = RoiText.Text
-
                         .EnableBarcode = True
                         .BarcodeExpectedText = ResultText.Text
-
                         .PyramidLevel = CInt(PyramidSlider.Value)
                         .MinArea = CInt(MinAreaSlider.Value)
-
                         .CannyLow = CInt(CannyLowSlider.Value)
                         .CannyHigh = CInt(CannyHighSlider.Value)
-
                         .AngleMin = AngleMinSlider.Value
                         .AngleMax = AngleMaxSlider.Value
                         .AngleStep = AngleStepSlider.Value
                     End With
 
-                    Dim path = TemplateManager.SaveTemplate(_templateMat, config)
+                    ' 儲存到 Templates/{_currentTemplateName}/cam{slot}/
+                    Dim path = TemplateManager.SaveTemplate(_templateMat, config, _currentTemplateName, _selectedCameraSlot)
                     If String.IsNullOrWhiteSpace(path) Then Return
 
                     Dim snapshot As New TemplateSnapshot
 
                     With snapshot
                         .TemplatePath = path
-
                         .Threshold = config.Threshold
                         .MatchMethod = config.MatchMethod
-
                         .RoiX = config.RoiX
                         .RoiY = config.RoiY
                         .RoiW = config.RoiW
                         .RoiH = config.RoiH
-
                         .EnableOcr = config.EnableOcr
                         .OcrExpectedText = config.OcrExpectedText
-
                         .EnableBarcode = config.EnableBarcode
                         .BarcodeExpectedText = config.BarcodeExpectedText
-
                         .PyramidLevel = config.PyramidLevel
                         .MinArea = config.MinArea
-
                         .CannyLow = config.CannyLow
                         .CannyHigh = config.CannyHigh
-
                         .AngleMin = config.AngleMin
                         .AngleMax = config.AngleMax
                         .AngleStep = config.AngleStep
@@ -380,7 +411,7 @@ Public Class AlgorithmPage
                     Dim dlg As New TemplateEditDialog(snapshot, Nothing)
                     dlg.Owner = Application.Current?.MainWindow
                     Dim res = dlg.ShowDialog()
-                    
+
                     If res <> True Then
                         MessageBox.Show("已取消保存")
                         Return
@@ -389,7 +420,7 @@ Public Class AlgorithmPage
                     TemplateSnapshotStore.Save(snapshot)
                     LastTemplateStore.Save(path)
 
-                    MessageBox.Show("模板已保存")
+                    MessageBox.Show($"已保存：{_currentTemplateName}/cam{_selectedCameraSlot + 1}")
 
                 End Sub)
 
@@ -510,28 +541,28 @@ Public Class AlgorithmPage
 
         SafeRun(Sub()
 
-                   Try
-                       ' 建立新的 snapshot
-                       Dim snapshot As New TemplateSnapshot
-                       snapshot.OcrRecognizedText = ocrText
-                       snapshot.BarcodeDecodedText = barcodeText
-                       snapshot.OcrExpectedText = RoiText.Text
-                       snapshot.BarcodeExpectedText = ResultText.Text
+                    Try
+                        ' 建立新的 snapshot
+                        Dim snapshot As New TemplateSnapshot
+                        snapshot.OcrRecognizedText = ocrText
+                        snapshot.BarcodeDecodedText = barcodeText
+                        snapshot.OcrExpectedText = RoiText.Text
+                        snapshot.BarcodeExpectedText = ResultText.Text
 
-                       ' 建立對話窗並顯示
-                       Dim dlg As New TemplateEditDialog(snapshot, Nothing)
-                       dlg.Owner = Application.Current?.MainWindow
-                       Dim res = dlg.ShowDialog()
+                        ' 建立對話窗並顯示
+                        Dim dlg As New TemplateEditDialog(snapshot, Nothing)
+                        dlg.Owner = Application.Current?.MainWindow
+                        Dim res = dlg.ShowDialog()
 
-                       If res = True Then
-                           ' 用戶確認了編輯
-                           RoiText.Text = dlg.Snapshot.OcrExpectedText
-                           ResultText.Text = dlg.Snapshot.BarcodeExpectedText
-                       End If
+                        If res = True Then
+                            ' 用戶確認了編輯
+                            RoiText.Text = dlg.Snapshot.OcrExpectedText
+                            ResultText.Text = dlg.Snapshot.BarcodeExpectedText
+                        End If
 
-                   Catch ex As Exception
-                       Logger.Error("打開模板編輯窗失敗: " & ex.Message)
-                   End Try
+                    Catch ex As Exception
+                        Logger.Error("打開模板編輯窗失敗: " & ex.Message)
+                    End Try
 
                 End Sub)
 
@@ -584,6 +615,7 @@ Public Class AlgorithmPage
     Private Sub ResetUI()
 
         RoiCanvas.Children.Clear()
+        _roi = New CvRect()
 
         TemplateImage.Source = Nothing
         ResultImage.Source = Nothing
@@ -612,24 +644,15 @@ Public Class AlgorithmPage
                 Return
             End If
 
-            ' =========================
-            ' ROI crop（顯示用）
-            ' =========================
             Dim roiMat As New Mat(_srcMat, _roi)
             ResultImage.Source = ImageConvertHelper.ToBitmap(roiMat)
 
-            ' =========================
-            ' OCR
-            ' =========================
             Dim result = _ocr.RunRoi(_srcMat, _roi)
-
             If result Is Nothing Then Return
 
             Dim text As String = result.Text
             Dim score As Double = result.Score
 
-            ' =========================
-            ' =========================
             If String.IsNullOrWhiteSpace(text) Then
                 text = "[OCR EMPTY]"
             End If
@@ -637,14 +660,6 @@ Public Class AlgorithmPage
             RoiText.Text = text
             ScoreText.Text = score.ToString("F3")
 
-            MessageBox.Show(
-    $"OCR結果：{text}" &
-    vbCrLf &
-    $"置信度：{score:F3}")
-
-            ' =========================
-            ' 打開編輯對話窗並預填 OCR 結果
-            ' =========================
             ShowTemplateEditDialog(ocrText:=text)
 
         Catch ex As Exception
@@ -673,15 +688,10 @@ Public Class AlgorithmPage
 
             If String.IsNullOrWhiteSpace(text) Then
                 ResultText.Text = "未識別"
-                MessageBox.Show("沒有讀到條碼")
             Else
                 ResultText.Text = text
-                MessageBox.Show("讀碼成功：" & text)
             End If
 
-            ' =========================
-            ' 打開編輯對話窗並預填條碼結果
-            ' =========================
             ShowTemplateEditDialog(barcodeText:=text)
 
         Catch ex As Exception
@@ -690,6 +700,34 @@ Public Class AlgorithmPage
 
     End Sub
 #End Region
+
+    Private Sub ApplyAutoTemplateParameters(roi As CvRect)
+        If _srcMat Is Nothing Then Return
+        If roi.Width <= 0 OrElse roi.Height <= 0 Then Return
+
+        Dim srcArea As Double = CDbl(_srcMat.Width) * CDbl(_srcMat.Height)
+        If srcArea <= 0 Then Return
+
+        Dim roiArea As Double = CDbl(roi.Width) * CDbl(roi.Height)
+        Dim ratio As Double = roiArea / srcArea
+
+        Dim autoPyramid As Integer
+        Dim autoThreshold As Double
+
+        If ratio < 0.03 Then
+            autoPyramid = 3
+            autoThreshold = 0.75
+        ElseIf ratio < 0.1 Then
+            autoPyramid = 2
+            autoThreshold = 0.8
+        Else
+            autoPyramid = 1
+            autoThreshold = 0.85
+        End If
+
+        PyramidSlider.Value = Math.Max(PyramidSlider.Minimum, Math.Min(PyramidSlider.Maximum, autoPyramid))
+        ThresholdSlider.Value = Math.Max(ThresholdSlider.Minimum, Math.Min(ThresholdSlider.Maximum, autoThreshold))
+    End Sub
     ' =========================
     ' Safe run
     ' =========================

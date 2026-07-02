@@ -89,6 +89,7 @@
                                 </Style>
 
                             </UniformGrid.Resources>
+                            
                             <Button x:Name="BtnGetSource"
                                     Content="獲取圖像"
                                     Background="#AA4A20D0"
@@ -142,7 +143,7 @@
                         <!-- 匹配閾值 -->
                         <StackPanel Margin="0,0,0,15">
 
-                            <TextBlock Text="匹配閾值"
+                            <TextBlock Text="匹配閾值 (0.00 ~ 1.00)"
                                        Foreground="White"
                                        Margin="0,0,0,5"/>
 
@@ -150,62 +151,118 @@
                                     Minimum="0"
                                     Maximum="1"
                                     Value="0.8"
-                                    TickFrequency="0.1"/>
+                                    TickFrequency="0.01"
+                                    SmallChange="0.01"
+                                    LargeChange="0.05"/>
 
-                            <TextBlock Text="{Binding ElementName=ThresholdSlider, Path=Value, StringFormat=F2}"
+                            <TextBlock Text="{Binding ElementName=ThresholdSlider, Path=Value, StringFormat=目前值：{0:F2}}"
                                        Foreground="LightGreen"
                                        HorizontalAlignment="Right"
                                        Margin="0,5,0,0"/>
-                            <TextBlock Text="金字塔層級"
-           Foreground="White"/>
+                            <TextBlock Text="金字塔層級 (0 ~ 4，整數)"
+                                       Foreground="White"
+                                       Margin="0,8,0,0"/>
 
                             <Slider x:Name="PyramidSlider"
-        Minimum="0"
-        Maximum="4"
-        Value="2"
-        TickFrequency="1"/>
+                                    Minimum="0"
+                                    Maximum="4"
+                                    Value="2"
+                                    TickFrequency="1"
+                                    IsSnapToTickEnabled="True"/>
+                            <TextBlock Text="{Binding ElementName=PyramidSlider, Path=Value, StringFormat=目前值：{0:F0}}"
+                                       Foreground="LightGreen"
+                                       HorizontalAlignment="Right"
+                                       Margin="0,5,0,0"/>
 
-                            <TextBlock Text="最小輪廓面積"
-           Foreground="White"/>
+                            <TextBlock Text="最小輪廓面積 (0 ~ 5000 px²)"
+                                       Foreground="White"
+                                       Margin="0,8,0,0"/>
 
                             <Slider x:Name="MinAreaSlider"
-        Minimum="0"
-        Maximum="5000"
-        Value="50"/>
+                                    Minimum="0"
+                                    Maximum="5000"
+                                    Value="50"
+                                    TickFrequency="50"
+                                    SmallChange="10"
+                                    LargeChange="100"/>
+                            <TextBlock Text="{Binding ElementName=MinAreaSlider, Path=Value, StringFormat=目前值：{0:F0}}"
+                                       Foreground="LightGreen"
+                                       HorizontalAlignment="Right"
+                                       Margin="0,5,0,0"/>
 
-                            <TextBlock Text="Canny Low"
+                            <TextBlock Text="Canny Low (0 ~ 255)"
                                        Foreground="White"/>
 
                             <Slider x:Name="CannyLowSlider"
-        Minimum="0"
-        Maximum="255"
-        Value="80"/>
+                                    Minimum="0"
+                                    Maximum="255"
+                                    Value="80"
+                                    TickFrequency="1"
+                                    SmallChange="1"
+                                    LargeChange="10"/>
+                            <TextBlock Text="{Binding ElementName=CannyLowSlider, Path=Value, StringFormat=目前值：{0:F0}}"
+                                       Foreground="LightGreen"
+                                       HorizontalAlignment="Right"
+                                       Margin="0,5,0,0"/>
 
-                            <TextBlock Text="Canny High"
+                            <TextBlock Text="Canny High (0 ~ 255)"
                                        Foreground="White"/>
 
                             <Slider x:Name="CannyHighSlider"
-        Minimum="0"
-        Maximum="255"
-        Value="160"/>
+                                    Minimum="0"
+                                    Maximum="255"
+                                    Value="160"
+                                    TickFrequency="1"
+                                    SmallChange="1"
+                                    LargeChange="10"/>
+                            <TextBlock Text="{Binding ElementName=CannyHighSlider, Path=Value, StringFormat=目前值：{0:F0}}"
+                                       Foreground="LightGreen"
+                                       HorizontalAlignment="Right"
+                                       Margin="0,5,0,0"/>
 
                             <TextBlock Text="角度範圍"
                                        Foreground="White"/>
+                            <TextBlock Text="角度最小值 (-180 ~ 180)"
+                                       Foreground="LightGray"/>
 
                             <Slider x:Name="AngleMinSlider"
-        Minimum="-180"
-        Maximum="180"
-        Value="-20"/>
+                                    Minimum="-180"
+                                    Maximum="180"
+                                    Value="-20"
+                                    TickFrequency="1"
+                                    SmallChange="1"
+                                    LargeChange="10"/>
+                            <TextBlock Text="{Binding ElementName=AngleMinSlider, Path=Value, StringFormat=目前值：{0:F0}}"
+                                       Foreground="LightGreen"
+                                       HorizontalAlignment="Right"
+                                       Margin="0,5,0,0"/>
 
+                            <TextBlock Text="角度最大值 (-180 ~ 180)"
+                                       Foreground="LightGray"/>
                             <Slider x:Name="AngleMaxSlider"
-        Minimum="-180"
-        Maximum="180"
-        Value="20"/>
+                                    Minimum="-180"
+                                    Maximum="180"
+                                    Value="20"
+                                    TickFrequency="1"
+                                    SmallChange="1"
+                                    LargeChange="10"/>
+                            <TextBlock Text="{Binding ElementName=AngleMaxSlider, Path=Value, StringFormat=目前值：{0:F0}}"
+                                       Foreground="LightGreen"
+                                       HorizontalAlignment="Right"
+                                       Margin="0,5,0,0"/>
 
+                            <TextBlock Text="角度步進 (1 ~ 30)"
+                                       Foreground="LightGray"/>
                             <Slider x:Name="AngleStepSlider"
-        Minimum="1"
-        Maximum="30"
-        Value="5"/>
+                                    Minimum="1"
+                                    Maximum="30"
+                                    Value="5"
+                                    TickFrequency="1"
+                                    IsSnapToTickEnabled="True"/>
+                            <TextBlock Text="{Binding ElementName=AngleStepSlider, Path=Value, StringFormat=目前值：{0:F0}}"
+                                       Foreground="LightGreen"
+                                       HorizontalAlignment="Right"
+                                       Margin="0,5,0,0"/>
                         </StackPanel>
 
                         <!-- 匹配方法 -->

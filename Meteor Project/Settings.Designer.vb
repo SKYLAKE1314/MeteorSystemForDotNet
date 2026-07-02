@@ -125,6 +125,17 @@ Namespace My
                 Me("RealtimeEnabled") = value
             End Set
         End Property
+        
+        <Global.System.Configuration.UserScopedSettingAttribute(),  _
+         Global.System.Diagnostics.DebuggerNonUserCodeAttribute()>  _
+        Public Property CameraDeviceIds() As Global.System.Collections.Specialized.StringCollection
+            Get
+                Return CType(Me("CameraDeviceIds"),Global.System.Collections.Specialized.StringCollection)
+            End Get
+            Set
+                Me("CameraDeviceIds") = value
+            End Set
+        End Property
     End Class
 End Namespace
 

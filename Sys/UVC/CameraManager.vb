@@ -77,6 +77,10 @@ Public Class CameraManager
 
     Public Shared Sub Refresh()
         _cameraCache = GetCameras()
+        For Each cam In _cameraCache
+            Logger.Info($"Camera Found: {cam.Name} | {cam.DeviceId} | Index:{cam.Index}")
+        Next
+
         NotifyCameraChanged()
     End Sub
 

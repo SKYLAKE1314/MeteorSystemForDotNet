@@ -18,8 +18,7 @@ Class MainWindow
         _windowdesigner.SetButtonActions(MinButton, MaxButton, CloseButton)
 
         AddHandler Me.Loaded, AddressOf MainWindow_Loaded
-        ' 相機訂閲
-        CameraService.Instance.Start()
+
     End Sub
 
     Private Sub MainWindow_Loaded(sender As Object, e As RoutedEventArgs)
@@ -35,6 +34,10 @@ Class MainWindow
         '    MessageBox.Show($"開啟live2d失敗: {ex.Message}")
         'End Try
 
+        ' 相機訂閲
+        'AddHandler Me.Loaded, Sub()
+        '                          CameraService.Instance.StartAll()
+        '                      End Sub
         ' ⭐ 加這個
         RefreshLanguageUI()
 

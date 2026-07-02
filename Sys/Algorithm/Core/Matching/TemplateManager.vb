@@ -31,7 +31,34 @@ Public Class TemplateManager
     End Sub
 
     ' =========================
-    ' Save Template
+    ' Save Template (multi-camera)
+    ' =========================
+    Public Shared Function SaveTemplate(
+        template As Mat,
+        config As TemplateConfig,
+        parentFolder As String,
+        cameraSlot As Integer) As String
+
+        EnsureRoot()
+
+        Dim slotName As String = $"cam{cameraSlot + 1}"
+        Dim folderPath = IO.Path.Combine(TemplateRoot, parentFolder, slotName)
+        IO.Directory.CreateDirectory(folderPath)
+
+        Dim imagePath = IO.Path.Combine(folderPath, "template.png")
+        Cv2.ImWrite(imagePath, template)
+
+        Dim jsonPath = IO.Path.Combine(folderPath, "config.json")
+        Dim json = JsonSerializer.Serialize(config,
+            New JsonSerializerOptions With {.WriteIndented = True})
+        IO.File.WriteAllText(jsonPath, json)
+
+        Return folderPath
+
+    End Function
+
+    ' =========================
+    ' Save Template (original, single camera)
     ' =========================
     Public Shared Function SaveTemplate(
         template As Mat,

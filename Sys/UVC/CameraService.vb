@@ -1,44 +1,76 @@
-﻿Imports System.Windows.Media.Imaging
+﻿Public Class CameraService
 
-Public Class CameraService
+    Private Shared ReadOnly _inst As New CameraService()
 
-    Private Shared ReadOnly _instance As New CameraService()
     Public Shared ReadOnly Property Instance As CameraService
         Get
-            Return _instance
+            Return _inst
         End Get
     End Property
 
-    Private _camera As New CameraLink()
-    Private _running As Boolean
+    Private _cameras As New Dictionary(Of String, CameraLink)
+    Private _frames As New Dictionary(Of String, BitmapSource)
 
-    Public Event FrameArrived As Action(Of BitmapSource)
-    Public Property LatestFrame As BitmapSource
-    Public Property LastFrameTime As DateTime
+    Public Event FrameArrived As Action(Of String, BitmapSource)
 
     Private Sub New()
-        AddHandler _camera.FrameArrived, AddressOf OnFrame
     End Sub
 
-    Private Sub OnFrame(img As BitmapSource)
+    ' =========================
+    ' 啟動全部相機
+    ' =========================
+    Public Sub StartAll()
 
-        LatestFrame = img
-        LastFrameTime = DateTime.Now
+        Dim ids = My.Settings.CameraDeviceIds
+        If ids Is Nothing OrElse ids.Count = 0 Then Return
 
-        RaiseEvent FrameArrived(img)
+        For Each id In ids
+
+            If _cameras.ContainsKey(id) Then Continue For
+
+            Dim cam As New CameraLink(id)
+
+            AddHandler cam.FrameArrived,
+                Sub(deviceId As String, img As BitmapSource)
+
+                    SyncLock _frames
+                        _frames(deviceId) = img
+                    End SyncLock
+
+                    RaiseEvent FrameArrived(deviceId, img)
+
+                End Sub
+
+            cam.StartCamera(id)
+            _cameras(id) = cam
+
+        Next
 
     End Sub
 
-    Public Sub Start()
-        If _running Then Return
+    ' =========================
+    ' 取得指定相機畫面
+    ' =========================
+    Public Function GetFrame(deviceId As String) As BitmapSource
 
-        _camera.StartCamera()
-        _running = True
-    End Sub
+        SyncLock _frames
+            If _frames.ContainsKey(deviceId) Then
+                Return _frames(deviceId)
+            End If
+        End SyncLock
 
-    Public Sub [Stop]()
-        _camera.StopCamera()
-        _running = False
+        Return Nothing
+
+    End Function
+
+    Public Sub StopAll()
+
+        For Each cam In _cameras.Values
+            cam.StopCamera()
+        Next
+
+        _cameras.Clear()
+
     End Sub
 
 End Class

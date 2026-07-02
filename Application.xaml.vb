@@ -73,10 +73,14 @@ Class Application
         TemplateCache.LoadAll()
 
 
-        AppProgress.Report(70, "初始化相機")
+        AppProgress.Report(60, "初始化相機")
 
         CameraManager.Initialize()
-        CameraService.Instance.Start()
+        CameraService.Instance.StartAll()
+
+        AppProgress.Report(70, "初始化相機")
+
+
         AppProgress.Report(80, "初始化OCR")
 
         AppRuntime.OCR = New PaddleOcrService()
