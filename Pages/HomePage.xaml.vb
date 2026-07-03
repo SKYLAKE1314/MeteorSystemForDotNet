@@ -254,6 +254,29 @@ Class HomePage
         Logger.Info("HomePage 已載入")
 
         ' =========================
+        ' 初始化相機選擇 ComboBox
+        ' =========================
+        Try
+            CameraManager.Initialize()
+            CameraManager.Refresh()
+            Dim cameras = CameraManager.GetCachedCameras()
+            If cameras IsNot Nothing AndAlso cameras.Count > 0 Then
+                CameraComboBox.ItemsSource = cameras
+                If Not String.IsNullOrWhiteSpace(_detectCameraId) Then
+                    CameraComboBox.SelectedValue = _detectCameraId
+                ElseIf cameras.Count > 0 Then
+                    CameraComboBox.SelectedIndex = 0
+                    _detectCameraId = cameras(0).DeviceId
+                End If
+                Logger.Info($"相機列表已加載，共 {cameras.Count} 個相機")
+            Else
+                Logger.Warn("未找到可用的相機設備")
+            End If
+        Catch ex As Exception
+            Logger.Error($"初始化相機列表失敗: {ex.Message}")
+        End Try
+
+        ' =========================
         ' Live2D Path
         ' =========================
         'Dim live2dPath As String =
@@ -396,6 +419,45 @@ Class HomePage
                     Dispatcher.Invoke(Sub() RenderImage.Source = frameCopy)
 
                     Using currentMat = BitmapSourceToMat(frame)
+                        Dim gray = currentMat.CvtColor(ColorConversionCodes.BGR2GRAY)
+                        Dim meanVal = Cv2.Mean(gray).Val0
+
+                        ' ===== 改進的內容檢驗 =====
+                        ' 1. 檢查亮度：過暗或過亮都跳過
+                        If meanVal < 15 OrElse meanVal > 245 Then
+                            Logger.Warn($"[MATCH] 跳過異常亮度幀: mean={meanVal:F1}")
+                            Continue While
+                        End If
+
+                        ' 2. 檢查方差：檢測圖像的對比度（區分空白背景）
+                        Dim meanScalar As New Cv.Scalar()
+                        Dim stdDevScalar As New Cv.Scalar()
+                        Cv2.MeanStdDev(gray, meanScalar, stdDevScalar)
+                        Dim stdDev = stdDevScalar.Val0
+
+                        ' 方差過低表示圖像過於均勻（如空白背景或單色背景）
+                        If stdDev < 10 Then
+                            Logger.Warn($"[MATCH] 跳過對比度過低的幀: stdDev={stdDev:F1}")
+                            Continue While
+                        End If
+
+                        ' 3. 檢查邊緣密度：確保有足夠的邊緣特徵
+                        Dim edges As New Cv.Mat()
+                        Cv2.Canny(gray, edges, 80, 160)
+                        Dim edgeCount = Cv2.CountNonZero(edges)
+                        Dim totalPixels = edges.Width * edges.Height
+                        Dim edgeDensity = CDbl(edgeCount) / CDbl(totalPixels)
+
+                        ' 邊緣密度過低表示圖像內容不足（< 1% 邊緣為異常）
+                        If edgeDensity < 0.01 Then
+                            Logger.Warn($"[MATCH] 跳過邊緣密度過低的幀: density={edgeDensity:P2} ({edgeCount}/{totalPixels})")
+                            edges.Dispose()
+                            Continue While
+                        End If
+
+                        edges.Dispose()
+                        Logger.Debug($"[MATCH] #{matchAttempt} 幀質量檢驗通過: mean={meanVal:F1}, stdDev={stdDev:F1}, edgeDensity={edgeDensity:P2}")
+
                         ' 嘗試匹配母版（使用母版自己的 config）
                         Dim masterResult = Await Draw_opencv.ProcessAsync(currentMat, masterData.Template, masterData.Config)
                         If masterResult IsNot Nothing AndAlso masterResult.Score > bestScore Then
@@ -403,10 +465,21 @@ Class HomePage
                             bestThreshold = masterData.Config.Threshold
                             bestResultMat = masterResult.Mat
                             Logger.Debug($"[MATCH] #{matchAttempt} 母版 Score={masterResult.Score:F3} (閾值={masterData.Config.Threshold:F3})")
+                            Dim stableCount As Integer = 0
+                            Dim lastScore As Double = 0
                             ' 即時渲染匹配結果（含框線和分數）
-                            If masterResult.Mat IsNot Nothing Then
-                                Dim wb = masterResult.Mat.ToWriteableBitmap()
-                                Dispatcher.Invoke(Sub() RenderImage.Source = wb)
+                            If masterResult.Score > bestScore Then
+                                If Math.Abs(masterResult.Score - lastScore) < 0.02 Then
+                                    stableCount += 1
+                                Else
+                                    stableCount = 0
+                                End If
+
+                                If stableCount >= 2 Then
+                                    bestScore = masterResult.Score
+                                End If
+
+                                lastScore = masterResult.Score
                             End If
                         End If
 
@@ -522,10 +595,10 @@ Class HomePage
                     Task.Run(Function()
                                  Try
                                      Using mat = BitmapSourceToMat(frameCopy)
-                                         ' 先全畫面解碼（位置無關）
+                                         ' 1. 先全畫面解碼（位置無關）
                                          Dim text = decoder.Run(mat)
 
-                                         ' 全畫面失敗時，若有設定 ROI 再縮小範圍嘗試
+                                         ' 2. 全畫面失敗時，若有設定 ROI 再縮小範圍嘗試
                                          If String.IsNullOrWhiteSpace(text) Then
                                              Dim roi = ResolveRoi(snapshot, mat)
                                              Dim isFullFrame = (roi.X = 0 AndAlso roi.Y = 0 AndAlso
@@ -535,8 +608,14 @@ Class HomePage
                                              End If
                                          End If
 
+                                         ' 3. 若仍未解碼，嘗試多角度解碼和增強預處理
+                                         If String.IsNullOrWhiteSpace(text) Then
+                                             text = TryAdvancedBarcodeDecode(decoder, mat, snapshot)
+                                         End If
+
                                          If Not String.IsNullOrWhiteSpace(text) Then
                                              resultBox = text.Trim()
+                                             Logger.Debug($"[BARCODE] 解碼成功: {text}")
                                          End If
                                      End Using
                                  Catch ex As Exception
@@ -554,6 +633,184 @@ Class HomePage
 
         Logger.Warn("[FLOW] 解碼超時")
         Return ""
+    End Function
+
+    ''' <summary>
+    ''' 高級條碼解碼：考慮多角度、小的/模糊的目標
+    ''' 策略：1)對比度增強 2)多角度嘗試 3)縮放處理小目標 4)適應性二值化
+    ''' </summary>
+    Private Function TryAdvancedBarcodeDecode(decoder As Object, mat As Mat, snapshot As TemplateSnapshot) As String
+        Try
+            ' 策略1：對比度增強（CLAHE）
+            Dim enhanced = EnhanceContrast(mat)
+            If enhanced IsNot Nothing Then
+                Try
+                    Dim result = decoder.Run(enhanced)
+                    If Not String.IsNullOrWhiteSpace(result) Then
+                        Logger.Debug("[BARCODE] 通過對比度增強成功解碼")
+                        Return result
+                    End If
+                Finally
+                    enhanced.Dispose()
+                End Try
+            End If
+
+            ' 策略2：多角度嘗試（±15°, ±30°）
+            Dim angles As Integer() = {-30, -15, 15, 30}
+            For Each angle In angles
+                Dim rotated = RotateImage(mat, angle)
+                If rotated IsNot Nothing Then
+                    Try
+                        Dim result = decoder.Run(rotated)
+                        If Not String.IsNullOrWhiteSpace(result) Then
+                            Logger.Debug($"[BARCODE] 通過旋轉 {angle}° 成功解碼")
+                            Return result
+                        End If
+                    Finally
+                        rotated.Dispose()
+                    End Try
+                End If
+            Next
+
+            ' 策略3：上採樣以提高小目標可讀性（2x 放大）
+            Dim upscaled = UpscaleImage(mat, 2.0)
+            If upscaled IsNot Nothing Then
+                Try
+                    Dim result = decoder.Run(upscaled)
+                    If Not String.IsNullOrWhiteSpace(result) Then
+                        Logger.Debug("[BARCODE] 通過上採樣 (2x) 成功解碼")
+                        Return result
+                    End If
+
+                    ' 上採樣後也嘗試對比度增強
+                    Dim enhancedUpscaled = EnhanceContrast(upscaled)
+                    If enhancedUpscaled IsNot Nothing Then
+                        Try
+                            result = decoder.Run(enhancedUpscaled)
+                            If Not String.IsNullOrWhiteSpace(result) Then
+                                Logger.Debug("[BARCODE] 通過上採樣+對比度增強成功解碼")
+                                Return result
+                            End If
+                        Finally
+                            enhancedUpscaled.Dispose()
+                        End Try
+                    End If
+                Finally
+                    upscaled.Dispose()
+                End Try
+            End If
+
+            ' 策略4：適應性二值化（自動閾值）
+            Dim binarized = AdaptiveBinarize(mat)
+            If binarized IsNot Nothing Then
+                Try
+                    Dim result = decoder.Run(binarized)
+                    If Not String.IsNullOrWhiteSpace(result) Then
+                        Logger.Debug("[BARCODE] 通過適應性二值化成功解碼")
+                        Return result
+                    End If
+                Finally
+                    binarized.Dispose()
+                End Try
+            End If
+
+            ' 都失敗時記錄警告
+            Logger.Warn("[BARCODE] 高級解碼策略全部失敗")
+            Return ""
+
+        Catch ex As Exception
+            Logger.Warn($"[BARCODE] 高級解碼異常: {ex.Message}")
+            Return ""
+        End Try
+    End Function
+
+    ''' <summary>
+    ''' 對比度增強（CLAHE - 自適應直方圖均衡化）
+    ''' </summary>
+    Private Function EnhanceContrast(mat As Mat) As Mat
+        Try
+            Dim gray As Mat
+            If mat.Channels() = 3 Then
+                gray = New Mat()
+                Cv2.CvtColor(mat, gray, ColorConversionCodes.BGR2GRAY)
+            Else
+                gray = mat.Clone()
+            End If
+
+            ' CLAHE 參數：clip limit=2.0, tile size=8x8
+            Dim clahe = Cv2.CreateCLAHE(2.0, New Cv.Size(8, 8))
+            Dim enhanced = New Mat()
+            clahe.Apply(gray, enhanced)
+
+            If mat.Channels() = 3 Then
+                gray.Dispose()
+            End If
+
+            Return enhanced
+        Catch ex As Exception
+            Logger.Warn($"[BARCODE] 對比度增強失敗: {ex.Message}")
+            Return Nothing
+        End Try
+    End Function
+
+    ''' <summary>
+    ''' 旋轉圖像
+    ''' </summary>
+    Private Function RotateImage(mat As Mat, angleDegrees As Double) As Mat
+        Try
+            Dim center = New Cv.Point2f(mat.Width / 2, mat.Height / 2)
+            Dim rotMatrix = Cv2.GetRotationMatrix2D(center, angleDegrees, 1.0)
+            Dim rotated = New Mat()
+            Cv2.WarpAffine(mat, rotated, rotMatrix, New Cv.Size(mat.Width, mat.Height))
+            rotMatrix.Dispose()
+            Return rotated
+        Catch ex As Exception
+            Logger.Warn($"[BARCODE] 旋轉圖像失敗: {ex.Message}")
+            Return Nothing
+        End Try
+    End Function
+
+    ''' <summary>
+    ''' 上採樣圖像以提高小目標的可讀性
+    ''' </summary>
+    Private Function UpscaleImage(mat As Mat, scale As Double) As Mat
+        Try
+            Dim newSize = New Cv.Size(CInt(mat.Width * scale), CInt(mat.Height * scale))
+            Dim upscaled = New Mat()
+            Cv2.Resize(mat, upscaled, newSize, 0, 0, InterpolationFlags.Cubic)
+            Return upscaled
+        Catch ex As Exception
+            Logger.Warn($"[BARCODE] 上採樣失敗: {ex.Message}")
+            Return Nothing
+        End Try
+    End Function
+
+    ''' <summary>
+    ''' 適應性二值化（Otsu 方法）以處理照明不均的情況
+    ''' </summary>
+    Private Function AdaptiveBinarize(mat As Mat) As Mat
+        Try
+            Dim gray As Mat
+            If mat.Channels() = 3 Then
+                gray = New Mat()
+                Cv2.CvtColor(mat, gray, ColorConversionCodes.BGR2GRAY)
+            Else
+                gray = mat.Clone()
+            End If
+
+            ' 自適應閾值（Otsu）
+            Dim binary = New Mat()
+            Cv2.Threshold(gray, binary, 0, 255, ThresholdTypes.Binary Or ThresholdTypes.Otsu)
+
+            If mat.Channels() = 3 Then
+                gray.Dispose()
+            End If
+
+            Return binary
+        Catch ex As Exception
+            Logger.Warn($"[BARCODE] 適應性二值化失敗: {ex.Message}")
+            Return Nothing
+        End Try
     End Function
 
     Private Async Function WaitOcrResultAsync(snapshot As TemplateSnapshot, timeoutMs As Integer) As Task(Of String)
@@ -724,6 +981,9 @@ Class HomePage
                 _io.HandleNG()
             End If
 
+
+            Logger.Debug("進入")
+
             SyncLock _detectLock
                 If _activeDetectionResult Is Nothing Then
                     _activeDetectionResult = New DetectionResult With {.List = New List(Of DetectionItem)}
@@ -740,9 +1000,9 @@ Class HomePage
             SetFlowStage(DetectionFlowStage.Barcode) ' 重置 skip 標誌，防止上一階段的按鈕操作漏入此階段
 
             ' 不論OK還是NG，匹配後都播報"匹配完成，請掃描"
-            'PlayPromptVoice(VoicePromptMatchCompleteScan)
-            'Logger.Info($"[RESULT] 匹配 - OK={result.IsOk}, Score={result.Score:F3}")
-            'Logger.Info($"[FLOW] 匹配完成，開始解碼")
+            PlayPromptVoice(VoicePromptMatchCompleteScan)
+            Logger.Info($"[RESULT] 匹配 - OK={result.IsOk}, Score={result.Score:F3}")
+            Logger.Info($"[FLOW] 匹配完成，開始解碼")
             ' 臨時
             _ocrCameraId = GetCamId(1)         ' 相機2
             CameraService.Instance.StartCamera(_ocrCameraId)
@@ -1110,6 +1370,16 @@ Class HomePage
 
             If _isStreaming Then Return
 
+            ' 從 ComboBox 獲取選定的相機
+            If CameraComboBox.SelectedValue IsNot Nothing Then
+                _detectCameraId = CameraComboBox.SelectedValue.ToString()
+                Logger.Info($"選定相機: {_detectCameraId}")
+            ElseIf String.IsNullOrWhiteSpace(_detectCameraId) Then
+                Logger.Error("未選擇相機設備")
+                MessageBox.Show("請先選擇相機設備")
+                Return
+            End If
+
             AddHandler CameraService.Instance.FrameArrived, AddressOf OnFrameArrived
 
             If Not String.IsNullOrWhiteSpace(_detectCameraId) Then
@@ -1124,6 +1394,20 @@ Class HomePage
             MessageBox.Show(ex.Message)
         End Try
 
+    End Sub
+
+    ' =========================================
+    ' ComboBox 選擇變更事件
+    ' =========================================
+    Private Sub CameraComboBox_SelectionChanged(sender As Object, e As SelectionChangedEventArgs)
+        Try
+            If CameraComboBox.SelectedValue IsNot Nothing Then
+                _detectCameraId = CameraComboBox.SelectedValue.ToString()
+                Logger.Info($"相機選擇已改變: {_detectCameraId}")
+            End If
+        Catch ex As Exception
+            Logger.Error($"相機選擇變更失敗: {ex.Message}")
+        End Try
     End Sub
 
     Private Sub BtnStop_Click(sender As Object, e As RoutedEventArgs)

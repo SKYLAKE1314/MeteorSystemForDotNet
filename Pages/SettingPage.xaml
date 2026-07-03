@@ -67,9 +67,9 @@
                                VerticalAlignment="Center"/>
 
                             <!-- 相機選擇 -->
-                            <ComboBox Width="200"
+                            <ComboBox Width="250"
                               ItemsSource="{Binding CameraList}"
-                              DisplayMemberPath="Name"
+                              DisplayMemberPath="DisplayName"
                               SelectedItem="{Binding SelectedCamera}"
                               SelectionChanged="Camera_SelectionChanged"/>
 
@@ -99,10 +99,10 @@
                 Foreground="White"
                 Margin="0,12,0,8"/>
             <ComboBox x:Name="RecordingCameraComboBox"
-                  Width="200"
+                  Width="250"
                   Margin="20,0,0,0"
                   ItemsSource="{Binding RecordingCameraList}"
-                  DisplayMemberPath="Name"
+                  DisplayMemberPath="DisplayName"
                   SelectionChanged="RecordingCameraComboBox_SelectionChanged"/>
 
             <TextBlock

@@ -67,7 +67,15 @@ Public Class BarcodeDecodeService
 
         ' CLAHE 增強
         Using gray As New Mat()
-            Cv2.CvtColor(src, gray, ColorConversionCodes.BGR2GRAY)
+
+            If src.Channels() = 3 Then
+                Cv2.CvtColor(src, gray, ColorConversionCodes.BGR2GRAY)
+            ElseIf src.Channels() = 4 Then
+                Cv2.CvtColor(src, gray, ColorConversionCodes.BGRA2GRAY)
+            Else
+                src.CopyTo(gray)
+            End If
+
             Using clahe = Cv2.CreateCLAHE(2.0, New OpenCvSharp.Size(8, 8))
                 Using enhanced As New Mat()
                     clahe.Apply(gray, enhanced)
@@ -75,6 +83,7 @@ Public Class BarcodeDecodeService
                     If Not String.IsNullOrWhiteSpace(text) Then Return text
                 End Using
             End Using
+
         End Using
 
         Return ""

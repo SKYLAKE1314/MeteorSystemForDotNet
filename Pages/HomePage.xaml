@@ -34,6 +34,20 @@
 
                 <StackPanel Orientation="Horizontal">
 
+                    <TextBlock Text="相機選擇:"
+                    Foreground="White"
+                    VerticalAlignment="Center"
+                    Margin="0,0,5,0"/>
+
+                    <ComboBox x:Name="CameraComboBox"
+                    Width="200"
+                    Height="32"
+                    Margin="0,0,10,0"
+                    VerticalAlignment="Center"
+                    DisplayMemberPath="DisplayName"
+                    SelectedValuePath="DeviceId"
+                    SelectionChanged="CameraComboBox_SelectionChanged"/>
+
                     <Button x:Name="BtnLoadImage"
                     Content="選擇圖像"
                     Width="120"
