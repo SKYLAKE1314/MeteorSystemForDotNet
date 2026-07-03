@@ -44,6 +44,8 @@ Public Class AlgorithmPage
 
     ' 當前建模任務的父資料夾名稱（第一個相機建模時輸入，第二個沿用）
     Private _currentTemplateName As String = ""
+    Private _templateCameraId As String = ""
+
     ' =========================
     ' Loaded
     ' =========================
@@ -310,6 +312,7 @@ Public Class AlgorithmPage
                                         End Function)
 
             _templateMat = result.Item1
+            _templateCameraId = _selectedCameraId
 
             TemplateImage.Source =
             ImageConvertHelper.ToBitmap(result.Item2)
@@ -317,7 +320,6 @@ Public Class AlgorithmPage
             ApplyAutoTemplateParameters(safeRoi)
 
             TemplateStatusText.Text = $"模板生成完成 (自動參數：金字塔={CInt(PyramidSlider.Value)}, 閾值={ThresholdSlider.Value:F2})"
-
         Catch ex As Exception
             MessageBox.Show(ex.ToString())
         End Try
@@ -369,7 +371,8 @@ Public Class AlgorithmPage
                     Dim config As New TemplateConfig
 
                     With config
-                        .CameraDeviceId = _selectedCameraId ' 記錄建模相機
+                        '.CameraDeviceId = _selectedCameraId ' 記錄建模相機
+                        .CameraDeviceId = _templateCameraId ' 記錄建模相機
                         .Threshold = ThresholdSlider.Value
                         .MatchMethod = MatchMethodBox.SelectedIndex
                         .RoiX = _roi.X

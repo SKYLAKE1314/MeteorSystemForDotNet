@@ -1,5 +1,6 @@
 ﻿Imports System.IO
 Imports System.Text
+Imports System.Threading
 Imports System.Windows
 Imports System.Windows.Threading
 Imports MetroSystemForDotNet
@@ -352,7 +353,14 @@ Class HomePage
             Return New MatchResultWrapper With {.Result = Nothing}
         End If
 
-        Dim cameraId = ResolveDetectCameraId()
+        'Dim cameraId = ResolveDetectCameraId()
+        '臨時
+        Dim cameraId = GetCamId(0)
+
+        CameraService.Instance.StopAll()
+        Thread.Sleep(100)
+        CameraService.Instance.StartCamera(cameraId)
+        '
         Dim bestResultMat As Cv.Mat = Nothing
         Dim bestScore As Double = 0
         Dim bestThreshold As Double = masterData.Config.Threshold ' 追蹤最高分對應的閾值
@@ -452,6 +460,7 @@ Class HomePage
             .IsOk = isOk,
             .Mat = bestResultMat
         }
+        CameraService.Instance.StopCamera(cameraId)
         Return New MatchResultWrapper With {.Result = finalResult, .MatchCount = matchAttempt}
     End Function
 
@@ -465,8 +474,15 @@ Class HomePage
         Dim decoder = AppRuntime.Barcode
         If decoder Is Nothing Then Return ""
 
-        Dim cameraId = ResolveDetectCameraId()
+        'Dim cameraId = ResolveDetectCameraId()
+        '臨時
+        Dim cameraId = GetCamId(1)
+        '
         If String.IsNullOrWhiteSpace(cameraId) Then Return ""
+        ' 臨時
+        CameraService.Instance.StopAll()
+        Thread.Sleep(100)
+        '
         CameraService.Instance.StartCamera(cameraId)
 
         Dim sw As New Stopwatch()
@@ -544,8 +560,15 @@ Class HomePage
         Dim ocr = AppRuntime.OCR
         If ocr Is Nothing Then Return ""
 
-        Dim cameraId = ResolveDetectCameraId()
+        'Dim cameraId = ResolveDetectCameraId()
+        ' 臨時
+        Dim cameraId = GetCamId(1)
+        '
         If String.IsNullOrWhiteSpace(cameraId) Then Return ""
+        ' 臨時
+        CameraService.Instance.StopAll()
+        Thread.Sleep(100)
+        '
         CameraService.Instance.StartCamera(cameraId)
 
         ' 解析期望的OCR文本（支持多個子模板，用;分隔）
@@ -672,7 +695,13 @@ Class HomePage
             Logger.Debug($"[FLOW] Current stage={stage}, EnableBarcode={If(snapshot IsNot Nothing, snapshot.EnableBarcode, False)}, EnableOcr={If(snapshot IsNot Nothing, snapshot.EnableOcr, False)}")
 
             ' 匹配多次，在3秒內每秒尝试一次（傳遞完整路徑以直接加載模板）
+            ' 臨時
+            _detectCameraId = GetCamId(0)      ' 相機1
+            CameraService.Instance.StartCamera(_detectCameraId)
+            '
+            Logger.Info("===== Before Match =====")
             Dim matchResult = Await WaitMultipleMatchAsync(templatePath, snapshot, 3000)
+            Logger.Info("===== After Match =====")
             Dim result = matchResult.Result
 
             ' 即使匹配無結果（無相機畫面）也繼續流程，以NG記錄
@@ -711,11 +740,16 @@ Class HomePage
             SetFlowStage(DetectionFlowStage.Barcode) ' 重置 skip 標誌，防止上一階段的按鈕操作漏入此階段
 
             ' 不論OK還是NG，匹配後都播報"匹配完成，請掃描"
-            PlayPromptVoice(VoicePromptMatchCompleteScan)
-            Logger.Info($"[RESULT] 匹配 - OK={result.IsOk}, Score={result.Score:F3}")
-            Logger.Info($"[FLOW] 匹配完成，開始解碼")
+            'PlayPromptVoice(VoicePromptMatchCompleteScan)
+            'Logger.Info($"[RESULT] 匹配 - OK={result.IsOk}, Score={result.Score:F3}")
+            'Logger.Info($"[FLOW] 匹配完成，開始解碼")
+            ' 臨時
+            _ocrCameraId = GetCamId(1)         ' 相機2
+            CameraService.Instance.StartCamera(_ocrCameraId)
+            '
 
             Dim code = Await WaitBarcodeResultAsync(snapshot, StageTimeoutMs)
+
 
             ' 解碼結果 vs 期望文本檢查
             Dim barcodeExpected = snapshot?.BarcodeExpectedText?.Trim()
