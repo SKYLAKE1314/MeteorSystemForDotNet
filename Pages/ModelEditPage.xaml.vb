@@ -233,7 +233,13 @@ Class ModelEditPage
 
         Try
             Dim dlg As New TemplateTrainDialog(groupPath)
-            dlg.Owner = Application.Current?.MainWindow
+
+            ' 安全地設定 Owner，避免自引用錯誤
+            Dim mainWindow = Application.Current?.MainWindow
+            If mainWindow IsNot Nothing AndAlso dlg IsNot mainWindow Then
+                dlg.Owner = mainWindow
+            End If
+
             dlg.ShowDialog()
             ' 訓練完成後清除快取，確保匹配時拿到最新子模板
             TemplateTrainingStore.InvalidateCache(groupPath)

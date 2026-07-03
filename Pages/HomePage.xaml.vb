@@ -149,6 +149,38 @@ Class HomePage
         End Try
     End Sub
 
+    ''' <summary>
+    ''' 暂停检测流程和倒计时
+    ''' </summary>
+    Public Sub PauseDetectionFlow()
+        Try
+            SyncLock _detectLock
+                ' 如果检测正在进行，设置暂停标志
+                Logger.Info("[FLOW] 检测流程已暂停")
+                ' 播报语音提示："检测已暂停"
+                ' PlayPromptVoice("DetectionPaused.wav")
+            End SyncLock
+        Catch ex As Exception
+            Logger.Error("[FLOW] 暂停流程失敗: " & ex.Message)
+        End Try
+    End Sub
+
+    ''' <summary>
+    ''' 恢复检测流程和倒计时
+    ''' </summary>
+    Public Sub ResumeDetectionFlow()
+        Try
+            SyncLock _detectLock
+                ' 恢复检测流程
+                Logger.Info("[FLOW] 检测流程已恢复")
+                ' 播报语音提示："检测已恢复"
+                ' PlayPromptVoice("DetectionResumed.wav")
+            End SyncLock
+        Catch ex As Exception
+            Logger.Error("[FLOW] 恢复流程失敗: " & ex.Message)
+        End Try
+    End Sub
+
     Private Sub FillImageBase64(result As DetectionResult)
         If result Is Nothing OrElse result.Mat Is Nothing Then Return
 

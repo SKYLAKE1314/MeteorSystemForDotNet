@@ -26,6 +26,7 @@ Public Class TaskVideoRecorder
     Private _worker As Task
     Private _currentInfo As RecordingInfo
     Private _currentFilePath As String
+    Private _isPaused As Boolean = False
 
     Private Sub New()
     End Sub
@@ -65,10 +66,33 @@ Public Class TaskVideoRecorder
             _cts = New Threading.CancellationTokenSource()
             _currentInfo = info
             _currentFilePath = filePath
+            _isPaused = False
             _worker = Task.Run(Function() RecordLoopAsync(cameraId, filePath, info, _cts.Token))
         End SyncLock
 
         Return info
+    End Function
+
+    Public Async Function PauseRecordingAsync() As Task
+        SyncLock _syncRoot
+            If _currentInfo IsNot Nothing Then
+                _isPaused = True
+                _currentInfo.StreamStatus = "PAUSED"
+                Logger.Info("[VideoRecorder] 錄製已暫停")
+            End If
+        End SyncLock
+        Await Task.Delay(50)
+    End Function
+
+    Public Async Function ResumeRecordingAsync() As Task
+        SyncLock _syncRoot
+            If _currentInfo IsNot Nothing Then
+                _isPaused = False
+                _currentInfo.StreamStatus = "RUNNING"
+                Logger.Info("[VideoRecorder] 錄製已恢復")
+            End If
+        End SyncLock
+        Await Task.Delay(50)
     End Function
 
     Public Async Function StopRecordingAsync() As Task
@@ -127,6 +151,12 @@ Public Class TaskVideoRecorder
             Dim frameInterval = CInt(Math.Max(1, 1000 / Math.Max(1, info.FrameRate)))
 
             While Not token.IsCancellationRequested
+                ' 如果暫停，則跳過此幀但不停止循環
+                If _isPaused Then
+                    Await Task.Delay(frameInterval, token)
+                    Continue While
+                End If
+
                 Dim frame = CameraService.Instance.GetFrame(cameraId)
 
                 If frame IsNot Nothing Then

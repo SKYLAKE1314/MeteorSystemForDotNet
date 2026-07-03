@@ -32,6 +32,27 @@ Public Class TemplateTrainDialog
         _masterConfig = TemplateManager.LoadGroupBaseConfig(_groupPath)
         ApplyMasterConfig()
         RefreshSampleCount()
+
+        ' 初始化相機列表
+        InitializeCameraList()
+    End Sub
+
+    ''' <summary>
+    ''' 初始化相機選擇列表
+    ''' </summary>
+    Private Sub InitializeCameraList()
+        Try
+            CameraManager.Initialize()
+            CameraManager.Refresh()
+            Dim cameras = CameraManager.GetCachedCameras()
+            If cameras IsNot Nothing AndAlso cameras.Count > 0 Then
+                CameraComboBox.ItemsSource = cameras
+                ' 預設選擇第一個相機
+                CameraComboBox.SelectedIndex = 0
+            End If
+        Catch ex As Exception
+            MessageBox.Show("初始化相機列表失敗: " & ex.Message)
+        End Try
     End Sub
 
     Private Sub ApplyMasterConfig()
@@ -66,23 +87,124 @@ Public Class TemplateTrainDialog
 
             If dialog.ShowDialog() <> True Then Return
 
+            LoadImageFromPath(dialog.FileName)
+        Catch ex As Exception
+            MessageBox.Show("載入圖片失敗: " & ex.Message)
+        End Try
+    End Sub
+
+    ''' <summary>
+    ''' 相機選擇變更事件
+    ''' </summary>
+    Private Sub CameraComboBox_SelectionChanged(sender As Object, e As SelectionChangedEventArgs)
+        ' 簡單的選擇變更處理，實際采集在 BtnCaptureFromCamera_Click 中
+    End Sub
+
+    ''' <summary>
+    ''' 從相機采集圖像
+    ''' </summary>
+    Private Async Sub BtnCaptureFromCamera_Click(sender As Object, e As RoutedEventArgs)
+        Try
+            If CameraComboBox.SelectedValue Is Nothing Then
+                MessageBox.Show("請先選擇相機")
+                Return
+            End If
+
+            Dim cameraId = CameraComboBox.SelectedValue.ToString()
+            If String.IsNullOrWhiteSpace(cameraId) Then
+                MessageBox.Show("相機設備識別碼無效")
+                Return
+            End If
+
+            ' 禁用按鈕防止重複點擊
+            BtnCaptureFromCamera.IsEnabled = False
+            BtnCaptureFromCamera.Content = "⏳ 采集中..."
+
+            ' 啟動相機並等待第一幀
+            CameraService.Instance.StartCamera(cameraId)
+            Await Task.Delay(100)
+
+            Dim frame = Await WaitForCameraFrameAsync(cameraId, 3000)
+            If frame Is Nothing Then
+                MessageBox.Show("無法取得相機畫面，請檢查相機是否連接")
+                BtnCaptureFromCamera.IsEnabled = True
+                BtnCaptureFromCamera.Content = "📷 從相機采集圖像"
+                Return
+            End If
+
+            ' 將相機幀轉換為 Mat
+            Using mat = BitmapSourceConverter.ToMat(frame)
+                LoadImageFromMat(mat.Clone())
+            End Using
+
+            CameraService.Instance.StopCamera(cameraId)
+            BtnCaptureFromCamera.IsEnabled = True
+            BtnCaptureFromCamera.Content = "📷 從相機采集圖像"
+
+        Catch ex As Exception
+            MessageBox.Show("采集圖像失敗: " & ex.Message)
+            BtnCaptureFromCamera.IsEnabled = True
+            BtnCaptureFromCamera.Content = "📷 從相機采集圖像"
+        End Try
+    End Sub
+
+    ''' <summary>
+    ''' 等待相機幀（超時機制）
+    ''' </summary>
+    Private Async Function WaitForCameraFrameAsync(cameraId As String, timeoutMs As Integer) As Task(Of BitmapSource)
+        Dim sw As New Stopwatch()
+        sw.Start()
+
+        While sw.ElapsedMilliseconds < timeoutMs
+            Dim frame = CameraService.Instance.GetFrame(cameraId)
+            If frame IsNot Nothing Then Return frame
+            Await Task.Delay(50)
+        End While
+
+        Return Nothing
+    End Function
+
+    ''' <summary>
+    ''' 從文件路徑加載圖像
+    ''' </summary>
+    Private Sub LoadImageFromPath(filePath As String)
+        Try
             _sourceMat?.Dispose()
-            _sourceMat = Cv2.ImRead(dialog.FileName)
+            _sourceMat = Cv2.ImRead(filePath)
 
             If _sourceMat Is Nothing OrElse _sourceMat.Empty() Then
                 MessageBox.Show("圖片載入失敗")
                 Return
             End If
 
+            LoadImageFromMat(_sourceMat)
+        Catch ex As Exception
+            MessageBox.Show("載入圖片失敗: " & ex.Message)
+        End Try
+    End Sub
+
+    ''' <summary>
+    ''' 從 Mat 對象加載圖像到 UI
+    ''' </summary>
+    Private Sub LoadImageFromMat(mat As Mat)
+        Try
+            If mat Is Nothing OrElse mat.Empty() Then
+                MessageBox.Show("圖像無效")
+                Return
+            End If
+
+            _sourceMat?.Dispose()
+            _sourceMat = mat
+
             ImgSource.Source = BitmapSourceConverter.ToBitmapSource(_sourceMat)
             ClearPolygon()
             ImgPreview.Source = Nothing
             ResetPreviewView()
-            TxtPreviewInfo.Text = "完成多邊形後\n自動生成"
+            TxtPreviewInfo.Text = "完成多邊形後" & vbCrLf & "自動生成"
             TxtRoiStatus.Text = "ROI：左鍵加點，右鍵撤銷，雙擊完成"
             AutoAnalyzeParams(_sourceMat)
         Catch ex As Exception
-            MessageBox.Show("載入圖片失敗: " & ex.Message)
+            MessageBox.Show("處理圖像失敗: " & ex.Message)
         End Try
     End Sub
 

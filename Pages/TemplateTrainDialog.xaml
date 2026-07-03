@@ -77,7 +77,25 @@
                     <TextBlock Text="模板訓練" Foreground="White" FontSize="18" FontWeight="SemiBold"/>
                     <TextBlock x:Name="TxtTemplateName" Margin="0,6,0,10" Foreground="#CBA0FF" TextWrapping="Wrap"/>
 
-                    <Button x:Name="BtnLoadImage" Content="載入圖片" Height="34" Click="BtnLoadImage_Click"/>
+                    <!-- 相機選擇和圖像采集 -->
+                    <TextBlock Text="圖像源" Foreground="White" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                    <TextBlock Text="選擇相機" Foreground="#CBA0FF" FontSize="11" Margin="0,0,0,3"/>
+                    <ComboBox x:Name="CameraComboBox"
+                              Height="32"
+                              Margin="0,0,0,6"
+                              DisplayMemberPath="DisplayName"
+                              SelectedValuePath="DeviceId"
+                              SelectionChanged="CameraComboBox_SelectionChanged"/>
+
+                    <Button x:Name="BtnCaptureFromCamera" 
+                            Content="📷 從相機采集圖像"
+                            Height="34"
+                            Background="#1E3A8A"
+                            Foreground="#80DEEA"
+                            Click="BtnCaptureFromCamera_Click"
+                            Margin="0,0,0,6"/>
+
+                    <Button x:Name="BtnLoadImage" Content="📁 從文件載入圖片" Height="34" Click="BtnLoadImage_Click"/>
                     <Button x:Name="BtnAutoAnalyze" Margin="0,6,0,0" Height="28"
                             Background="#1E3A4A" Foreground="#80DEEA"
                             Content="⚡ 自動分析參數" Click="BtnAutoAnalyze_Click"/>

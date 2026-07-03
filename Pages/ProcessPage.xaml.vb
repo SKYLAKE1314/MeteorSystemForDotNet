@@ -353,7 +353,9 @@ Partial Public Class ProcessPage
         Select Case t.TaskStatus
 
             Case 0
-
+                '==============================
+                ' 状态 0: 启动检测和录制
+                '==============================
                 _allowDetection = True
                 _detectionResults.Clear()
                 _currentTaskStartTime = DateTimeOffset.Now.ToUnixTimeMilliseconds()
@@ -362,11 +364,50 @@ Partial Public Class ProcessPage
                 AddLog("[TASK] 0 -> ARM (等待物理按鈕或即時檢測)")
                 Await StartTaskRecordingAsync(t)
 
-            Case 3
+            Case 1
+                '==============================
+                ' 状态 1: 暂停检测倒计时和录制
+                '==============================
+                AddLog("[TASK] 1 -> PAUSE (暂停检测倒计时和录制)")
 
-                AddLog("[TASK] 3 -> END")
+                ' 暂停录制
+                Await TaskVideoRecorder.Instance.PauseRecordingAsync()
+                Logger.Info("[VideoRecorder] 录制已暂停")
+
+                ' 播报语音提示："检测已暂停"
+                ' PlayPromptVoice("DetectionPaused.wav")
+
+                ' 在 HomePage 中也暂停检测流程
+                If AppRuntime.Home IsNot Nothing Then
+                    AppRuntime.Home.PauseDetectionFlow()
+                End If
+
+            Case 2
+                '==============================
+                ' 状态 2: 恢复检测倒计时和录制
+                '==============================
+                AddLog("[TASK] 2 -> RESUME (恢复检测倒计时和录制)")
+
+                ' 恢复录制
+                Await TaskVideoRecorder.Instance.ResumeRecordingAsync()
+                Logger.Info("[VideoRecorder] 录制已恢复")
+
+                ' 播报语音提示："检测已恢复"
+                ' PlayPromptVoice("DetectionResumed.wav")
+
+                ' 在 HomePage 中也恢复检测流程
+                If AppRuntime.Home IsNot Nothing Then
+                    AppRuntime.Home.ResumeDetectionFlow()
+                End If
+
+            Case 3
+                '==============================
+                ' 状态 3: 停止录制并发送结果
+                '==============================
+                AddLog("[TASK] 3 -> END (停止录制)")
 
                 Try
+                    ' 停止录制（保留暂停期间外的所有内容）
                     Await TaskVideoRecorder.Instance.StopRecordingAsync()
 
                     ' 沒有前序 0 或尚未完成檢測時，直接回傳空結果
