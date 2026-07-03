@@ -31,29 +31,35 @@ Public Class CameraManager
         Dim deviceList As New List(Of CameraInfo)
 
         For Each obj As ManagementObject In searcher.Get()
-
             deviceList.Add(New CameraInfo With {
                 .Name = obj("Name")?.ToString(),
-                .DeviceId = obj("PNPDeviceID")?.ToString()
+                .DeviceId = obj("PNPDeviceID")?.ToString(),
+                .Index = -1
             })
-
         Next
 
-        Dim index As Integer = 0
+        ' 依緒探测 OpenCV index 0..N，根據順序對應 WMI 設備
+        ' 同名相機使用 PNPDeviceID 區分（已是唯一統一碼）
+        Dim openIndex As Integer = 0
+        Dim unmapped As New Queue(Of CameraInfo)(deviceList)
 
-        For Each cam In deviceList
-
-            Using cap As New VideoCapture(index)
-
-                If cap.IsOpened() Then
-                    cam.Index = index
-                    result.Add(cam)
-                    index += 1
-                End If
-
-            End Using
-
-        Next
+        While unmapped.Count > 0
+            Try
+                Using cap As New VideoCapture(openIndex, VideoCaptureAPIs.DSHOW)
+                    If cap.IsOpened() Then
+                        Dim cam = unmapped.Dequeue()
+                        cam.Index = openIndex
+                        result.Add(cam)
+                    Else
+                        Exit While
+                    End If
+                End Using
+            Catch ex As Exception
+                Logger.Warn($"[CameraManager] index {openIndex} probe failed: {ex.Message}")
+                Exit While
+            End Try
+            openIndex += 1
+        End While
 
         Return result
 

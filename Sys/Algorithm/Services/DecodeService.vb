@@ -38,11 +38,10 @@ Public Class BarcodeDecodeService
         Dim safeRoi = ClampRoi(src, roi)
 
         Using crop As New Mat(src, safeRoi)
-            ' 先嘗試原圖
             Dim text = DecodeFromMat(crop)
             If Not String.IsNullOrWhiteSpace(text) Then Return text
 
-            ' CLAHE 增強後再嘗試（改善低對比度條碼）
+            ' CLAHE 增強後再嘗試
             Using gray As New Mat()
                 Cv2.CvtColor(crop, gray, ColorConversionCodes.BGR2GRAY)
                 Using clahe = Cv2.CreateCLAHE(2.0, New OpenCvSharp.Size(8, 8))
@@ -56,6 +55,29 @@ Public Class BarcodeDecodeService
 
             Return ""
         End Using
+    End Function
+
+    ' 全畫面解碼（不限 ROI）：先原圖，再 CLAHE 增強
+    Public Function Run(src As Mat) As String
+        If src Is Nothing Then Return ""
+
+        ' 原圖
+        Dim text = DecodeFromMat(src)
+        If Not String.IsNullOrWhiteSpace(text) Then Return text
+
+        ' CLAHE 增強
+        Using gray As New Mat()
+            Cv2.CvtColor(src, gray, ColorConversionCodes.BGR2GRAY)
+            Using clahe = Cv2.CreateCLAHE(2.0, New OpenCvSharp.Size(8, 8))
+                Using enhanced As New Mat()
+                    clahe.Apply(gray, enhanced)
+                    text = DecodeFromMat(enhanced)
+                    If Not String.IsNullOrWhiteSpace(text) Then Return text
+                End Using
+            End Using
+        End Using
+
+        Return ""
     End Function
 
     Private Function DecodeFromMat(m As Mat) As String

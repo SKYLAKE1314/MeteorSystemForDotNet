@@ -1,5 +1,6 @@
 ﻿Public Class TemplateConfig
 
+    Public Property CameraDeviceId As String ' 建模時使用的相機 DeviceId
     Public Property Threshold As Double
     Public Property MatchMethod As Integer
 

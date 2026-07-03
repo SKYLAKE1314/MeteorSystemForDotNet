@@ -22,7 +22,11 @@
     Public Sub StartCamera(deviceId As String)
 
         If String.IsNullOrWhiteSpace(deviceId) Then Return
-        If _cameras.ContainsKey(deviceId) Then Return
+
+        ' 如果已經在執行中，不重複啟動
+        SyncLock _cameras
+            If _cameras.ContainsKey(deviceId) Then Return
+        End SyncLock
 
         Dim cam As New CameraLink(deviceId)
 
@@ -38,7 +42,26 @@
             End Sub
 
         cam.StartCamera(deviceId)
-        _cameras(deviceId) = cam
+
+        SyncLock _cameras
+            _cameras(deviceId) = cam
+        End SyncLock
+
+    End Sub
+
+    Public Sub StopCamera(deviceId As String)
+
+        Dim cam As CameraLink = Nothing
+        SyncLock _cameras
+            If _cameras.TryGetValue(deviceId, cam) Then
+                _cameras.Remove(deviceId)
+            End If
+        End SyncLock
+        cam?.StopCamera()
+
+        SyncLock _frames
+            _frames.Remove(deviceId)
+        End SyncLock
 
     End Sub
 
@@ -73,11 +96,19 @@
 
     Public Sub StopAll()
 
-        For Each cam In _cameras.Values
+        Dim cams As List(Of CameraLink)
+        SyncLock _cameras
+            cams = _cameras.Values.ToList()
+            _cameras.Clear()
+        End SyncLock
+
+        For Each cam In cams
             cam.StopCamera()
         Next
 
-        _cameras.Clear()
+        SyncLock _frames
+            _frames.Clear()
+        End SyncLock
 
     End Sub
 

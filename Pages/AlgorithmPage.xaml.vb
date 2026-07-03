@@ -369,6 +369,7 @@ Public Class AlgorithmPage
                     Dim config As New TemplateConfig
 
                     With config
+                        .CameraDeviceId = _selectedCameraId ' 記錄建模相機
                         .Threshold = ThresholdSlider.Value
                         .MatchMethod = MatchMethodBox.SelectedIndex
                         .RoiX = _roi.X
@@ -396,6 +397,7 @@ Public Class AlgorithmPage
 
                     With snapshot
                         .TemplatePath = path
+                        .CameraDeviceId = config.CameraDeviceId ' 依建模相機
                         .Threshold = config.Threshold
                         .MatchMethod = config.MatchMethod
                         .RoiX = config.RoiX

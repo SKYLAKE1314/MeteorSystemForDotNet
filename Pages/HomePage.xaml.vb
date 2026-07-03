@@ -121,7 +121,7 @@ Class HomePage
     End Function
 
     Private Sub FinishDetection()
-        _io.SetLightOff() ' 流程結束關灯
+        _io.SetLightYellow() ' 流程結束後黃燈常亮待機
         SyncLock _detectLock
             _isDetecting = False
             _skipCurrentStageRequested = False
@@ -472,33 +472,68 @@ Class HomePage
         Dim sw As New Stopwatch()
         sw.Start()
 
+        ' 50ms 一次，最大化解碼頻率
+        Const DecodeIntervalMs As Long = 50
+        Dim lastAttempt As Long = -DecodeIntervalMs
+        Dim decoding As Boolean = False      ' 防止前一幀還未解完就重疊
+        Dim resultBox As String = Nothing    ' 跨 Task 傳遞結果
+
         While sw.ElapsedMilliseconds < timeoutMs
+
             If IsSkipRequested(DetectionFlowStage.Barcode) Then
                 Logger.Info("[FLOW] 解碼已跳過")
                 Return ""
             End If
 
-            Dim frame = CameraService.Instance.GetFrame(cameraId)
-            If frame IsNot Nothing Then
-                ' 即時更新預覽
-                Dim frameCopy = frame
-                Dispatcher.Invoke(Sub() RenderImage.Source = frameCopy)
+            ' 有結果立即返回
+            If resultBox IsNot Nothing Then
+                Logger.Info($"[FLOW] 解碼成功: {resultBox}")
+                Return resultBox
+            End If
 
-                ' 解碼放入 Task.Run 避免卡 UI，將 Mat 复製到 Task 內部再釋放
-                Dim text = Await Task.Run(Function()
-                                              Using mat = BitmapSourceToMat(frameCopy)
-                                                  Dim roi = ResolveRoi(snapshot, mat)
-                                                  Return decoder.RunRoi(mat, roi)
-                                              End Using
-                                          End Function)
+            Dim elapsed = sw.ElapsedMilliseconds
+            If Not decoding AndAlso elapsed - lastAttempt >= DecodeIntervalMs Then
+                lastAttempt = elapsed
+                Dim frame = CameraService.Instance.GetFrame(cameraId)
 
-                If Not String.IsNullOrWhiteSpace(text) Then
-                    Logger.Info($"[FLOW] 解碼成功: {text.Trim()}")
-                    Return text.Trim()
+                If frame IsNot Nothing Then
+                    ' 更新預覽（不阻塞）
+                    Dim frameCopy = frame
+                    Dispatcher.BeginInvoke(Sub() RenderImage.Source = frameCopy)
+
+                    ' 解碼在執行緒池，不 await，用 flag 防重疊
+                    decoding = True
+                    Task.Run(Function()
+                                 Try
+                                     Using mat = BitmapSourceToMat(frameCopy)
+                                         ' 先全畫面解碼（位置無關）
+                                         Dim text = decoder.Run(mat)
+
+                                         ' 全畫面失敗時，若有設定 ROI 再縮小範圍嘗試
+                                         If String.IsNullOrWhiteSpace(text) Then
+                                             Dim roi = ResolveRoi(snapshot, mat)
+                                             Dim isFullFrame = (roi.X = 0 AndAlso roi.Y = 0 AndAlso
+                                                                roi.Width = mat.Width AndAlso roi.Height = mat.Height)
+                                             If Not isFullFrame Then
+                                                 text = decoder.RunRoi(mat, roi)
+                                             End If
+                                         End If
+
+                                         If Not String.IsNullOrWhiteSpace(text) Then
+                                             resultBox = text.Trim()
+                                         End If
+                                     End Using
+                                 Catch ex As Exception
+                                     Logger.Warn("[FLOW] 解碼異常: " & ex.Message)
+                                 Finally
+                                     decoding = False
+                                 End Try
+                                 Return True
+                             End Function)
                 End If
             End If
 
-            Await Task.Delay(StageLoopDelayMs)
+            Await Task.Delay(10) ' UI 呼吸間隔，不影響解碼頻率
         End While
 
         Logger.Warn("[FLOW] 解碼超時")
@@ -624,6 +659,15 @@ Class HomePage
             End If
 
             Dim snapshot = TemplateSnapshotStore.Load()
+
+            ' 若模板記錄了建模相機，切換到該相機；否則沿用當前設定
+            If snapshot IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(snapshot.CameraDeviceId) Then
+                If Not String.Equals(snapshot.CameraDeviceId, _detectCameraId, StringComparison.OrdinalIgnoreCase) Then
+                    Logger.Info($"[Camera] 模板指定相機 {snapshot.CameraDeviceId}，切換中...")
+                    _detectCameraId = snapshot.CameraDeviceId
+                    CameraService.Instance.StartCamera(_detectCameraId)
+                End If
+            End If
 
             Logger.Debug($"[FLOW] Current stage={stage}, EnableBarcode={If(snapshot IsNot Nothing, snapshot.EnableBarcode, False)}, EnableOcr={If(snapshot IsNot Nothing, snapshot.EnableOcr, False)}")
 
@@ -1367,12 +1411,19 @@ Class HomePage
         Task.Run(Sub()
 
                      Dim ids = My.Settings.CameraDeviceIds
-
-                     If ids Is Nothing OrElse ids.Count = 0 Then Return
+                     If ids Is Nothing OrElse ids.Count = 0 Then
+                         CameraService.Instance.StopAll()
+                         Return
+                     End If
 
                      CameraService.Instance.StopAll()
-                     If Not String.IsNullOrWhiteSpace(_detectCameraId) Then
-                         CameraService.Instance.StartCamera(_detectCameraId)
+
+                     ' 重新解析當前檢測相機——用最新設定中的第一個相機
+                     Dim newCameraId = GetCamId(1)
+                     If Not String.IsNullOrWhiteSpace(newCameraId) Then
+                         _detectCameraId = newCameraId
+                         CameraService.Instance.StartCamera(newCameraId)
+                         Logger.Info($"[Camera] 設定已更新，相機切換為: {newCameraId}")
                      End If
 
                  End Sub)

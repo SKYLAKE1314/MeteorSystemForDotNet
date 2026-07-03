@@ -198,15 +198,14 @@ Public Class IOController
 
     Private Async Function ExecuteNgHardwareAsync() As Task
 
-        SetTowerLight(False, True, False)
+        SetTowerLight(True, False, False) ' 紅燈
 
-        _buzzer?.SetCoil(3, True)
+        _buzzer?.SetCoil(3, True) ' 蜂鳴
 
         Await Task.Delay(2000).ConfigureAwait(False)
 
         _buzzer?.SetCoil(3, False)
-        _buzzer?.SetCoil(0, False)
-        _buzzer?.SetCoil(1, False)
+        SetLightYellow() ' 2秒後返回黃燈待機
 
         _log("收到NG")
 
@@ -224,9 +223,9 @@ Public Class IOController
 
             _log($"燈號 R={red} Y={yellow} G={green}")
 
-            _buzzer.SetDO(1, green)
-            _buzzer.SetDO(2, red)
-            _buzzer.SetDO(3, yellow)
+            _buzzer.SetDO(1, red)
+            _buzzer.SetDO(2, yellow)
+            _buzzer.SetDO(3, green)
 
         Catch ex As Exception
             _log("燈號失敗: " & ex.Message)
@@ -244,7 +243,7 @@ Public Class IOController
         SetTowerLight(False, False, True)
         Task.Run(Async Function()
                      Await Task.Delay(durationMs)
-                     SetLightOff()
+                     SetLightYellow() ' 綠燈結束後黃燈常亮待機
                  End Function)
     End Sub
 

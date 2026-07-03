@@ -154,6 +154,9 @@ If(My.Settings.AutoRun, 0, 1)
         My.Settings.CameraDeviceId = cam?.DeviceId
         My.Settings.Save()
 
+        ' 通知其他頁面相機設定已變更，立即生效
+        CameraManager.NotifyCameraChanged()
+
     End Sub
 
     Private Sub LoadCameraRows()
