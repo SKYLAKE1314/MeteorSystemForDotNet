@@ -131,7 +131,10 @@ Public Class TemplateTrainingStore
             Cv2.FillPoly(mask, {safePoly}, Scalar.White)
             source.CopyTo(solidFill, mask)
             Using crop As New Mat(solidFill, safeRoi)
-                Cv2.ImWrite(filePath, crop, {New ImageEncodingParam(ImwriteFlags.PngCompression, 3)})
+                ' 軟化邊界以消除邊緣輪廓特徵
+                Dim softened = SoftenCropBoundary(crop)
+                Cv2.ImWrite(filePath, softened, {New ImageEncodingParam(ImwriteFlags.PngCompression, 3)})
+                softened.Dispose()
             End Using
         End Using
 
@@ -163,6 +166,87 @@ Public Class TemplateTrainingStore
         SaveParams(groupRoot, params)
 
         Return indexFile.Samples.Count
+    End Function
+
+    ''' <summary>
+    ''' 軟化裁剪邊界以消除邊緣輪廓特徵
+    ''' 防止邊界被模板匹配算法識別為目標特徵
+    ''' </summary>
+    Private Shared Function SoftenCropBoundary(crop As Mat) As Mat
+        If crop Is Nothing OrElse crop.Empty() Then
+            Return crop.Clone()
+        End If
+
+        Const PAD_SIZE As Integer = 4
+
+        Dim result = crop.Clone()
+
+        ' 創建遮罩用於邊界漸變
+        Dim mask As New Mat(crop.Size(), MatType.CV_8UC1, Scalar.White)
+
+        ' 線性漸變：邊界 -> 內部
+        ' 左邊界漸變
+        For x As Integer = 0 To Math.Min(PAD_SIZE - 1, crop.Width - 1)
+            Dim alpha = CByte((CDbl(x) / CDbl(PAD_SIZE)) * 255)
+            For y As Integer = 0 To crop.Height - 1
+                mask.Set(Of Byte)(y, x, alpha)
+            Next
+        Next
+
+        ' 右邊界漸變
+        For x As Integer = Math.Max(0, crop.Width - PAD_SIZE) To crop.Width - 1
+            Dim alpha = CByte((CDbl(crop.Width - 1 - x) / CDbl(PAD_SIZE)) * 255)
+            For y As Integer = 0 To crop.Height - 1
+                mask.Set(Of Byte)(y, x, alpha)
+            Next
+        Next
+
+        ' 上邊界漸變
+        For y As Integer = 0 To Math.Min(PAD_SIZE - 1, crop.Height - 1)
+            Dim alpha = CByte((CDbl(y) / CDbl(PAD_SIZE)) * 255)
+            For x As Integer = 0 To crop.Width - 1
+                Dim existing = mask.At(Of Byte)(y, x)
+                mask.Set(Of Byte)(y, x, Math.Min(existing, alpha))
+            Next
+        Next
+
+        ' 下邊界漸變
+        For y As Integer = Math.Max(0, crop.Height - PAD_SIZE) To crop.Height - 1
+            Dim alpha = CByte((CDbl(crop.Height - 1 - y) / CDbl(PAD_SIZE)) * 255)
+            For x As Integer = 0 To crop.Width - 1
+                Dim existing = mask.At(Of Byte)(y, x)
+                mask.Set(Of Byte)(y, x, Math.Min(existing, alpha))
+            Next
+        Next
+
+        ' 將邊界區域與深色背景混合
+        Dim bg As New Mat(crop.Size(), crop.Type(), New Scalar(32, 32, 32))
+
+        ' 使用遮罩進行邊界軟化（邊界逐漸過渡到背景色）
+        For y As Integer = 0 To crop.Height - 1
+            For x As Integer = 0 To crop.Width - 1
+                Dim maskVal = CDbl(mask.At(Of Byte)(y, x)) / 255.0
+                If maskVal < 1.0 Then
+                    Dim pixel = crop.At(Of Vec3b)(y, x)
+                    Dim bgPixel = bg.At(Of Vec3b)(y, x)
+
+                    ' 線性插值
+                    pixel.Item0 = CByte(pixel.Item0 * maskVal + bgPixel.Item0 * (1 - maskVal))
+                    pixel.Item1 = CByte(pixel.Item1 * maskVal + bgPixel.Item1 * (1 - maskVal))
+                    pixel.Item2 = CByte(pixel.Item2 * maskVal + bgPixel.Item2 * (1 - maskVal))
+
+                    result.Set(Of Vec3b)(y, x, pixel)
+                End If
+            Next
+        Next
+
+        ' 輕微高斯模糊以進一步軟化邊界
+        Cv2.GaussianBlur(result, result, New Size(3, 3), 0.5)
+
+        mask.Dispose()
+        bg.Dispose()
+
+        Return result
     End Function
 
     Private Shared Function ResolveTemplateSize(groupRoot As String, fallback As Size) As Size

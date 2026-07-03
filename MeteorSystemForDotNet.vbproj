@@ -100,6 +100,12 @@
     <None Update="Voice\DecodeCompletedPleaseOCR.wav">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="Voice\DetectionPaused.wav">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="Voice\DetectionResumed.wav">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="Voice\Error.wav">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

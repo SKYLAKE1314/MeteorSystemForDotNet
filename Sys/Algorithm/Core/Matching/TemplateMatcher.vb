@@ -3,6 +3,11 @@ Imports System.Threading.Tasks
 
 Public Class TemplateMatcher
 
+    ''' <summary>
+    ''' 邊界填充寬度（像素），用於軟化 ROI 裁切邊界
+    ''' </summary>
+    Private Const BOUNDARY_PADDING As Integer = 4
+
     ' =========================================
     ' 生成模板
     ' =========================================
@@ -60,8 +65,92 @@ Public Class TemplateMatcher
 
         Next
 
-        Return roiMat.Clone()
+        ' 返回軟化邊界的模板
+        Return SoftenTemplateBoundary(roiMat)
 
+    End Function
+
+    ''' <summary>
+    ''' 對模板邊界進行軟化處理，防止邊界被識別為特徵
+    ''' 通過在邊界添加漸變過渡來消除清晰的邊緣
+    ''' </summary>
+    Private Shared Function SoftenTemplateBoundary(template As Mat) As Mat
+        If template Is Nothing OrElse template.Empty() Then
+            Return template.Clone()
+        End If
+
+        Dim result = template.Clone()
+        Dim padSize = BOUNDARY_PADDING
+
+        ' 邊界軟化策略：對邊界像素進行漸變填充
+        ' 左邊界
+        For x As Integer = 0 To Math.Min(padSize - 1, result.Width - 1)
+            Dim alpha = CDbl(x) / CDbl(padSize)
+            For y As Integer = 0 To result.Height - 1
+                Dim pixel = result.At(Of Vec3b)(y, x)
+                ' 與暗色背景混合
+                pixel.Item0 = CByte(pixel.Item0 * alpha + 32 * (1 - alpha))
+                pixel.Item1 = CByte(pixel.Item1 * alpha + 32 * (1 - alpha))
+                pixel.Item2 = CByte(pixel.Item2 * alpha + 32 * (1 - alpha))
+                result.Set(Of Vec3b)(y, x, pixel)
+            Next
+        Next
+
+        ' 右邊界
+        For x As Integer = Math.Max(0, result.Width - padSize) To result.Width - 1
+            Dim alpha = CDbl(result.Width - 1 - x) / CDbl(padSize)
+            For y As Integer = 0 To result.Height - 1
+                Dim pixel = result.At(Of Vec3b)(y, x)
+                pixel.Item0 = CByte(pixel.Item0 * alpha + 32 * (1 - alpha))
+                pixel.Item1 = CByte(pixel.Item1 * alpha + 32 * (1 - alpha))
+                pixel.Item2 = CByte(pixel.Item2 * alpha + 32 * (1 - alpha))
+                result.Set(Of Vec3b)(y, x, pixel)
+            Next
+        Next
+
+        ' 上邊界
+        For y As Integer = 0 To Math.Min(padSize - 1, result.Height - 1)
+            Dim alpha = CDbl(y) / CDbl(padSize)
+            For x As Integer = 0 To result.Width - 1
+                Dim pixel = result.At(Of Vec3b)(y, x)
+                pixel.Item0 = CByte(pixel.Item0 * alpha + 32 * (1 - alpha))
+                pixel.Item1 = CByte(pixel.Item1 * alpha + 32 * (1 - alpha))
+                pixel.Item2 = CByte(pixel.Item2 * alpha + 32 * (1 - alpha))
+                result.Set(Of Vec3b)(y, x, pixel)
+            Next
+        Next
+
+        ' 下邊界
+        For y As Integer = Math.Max(0, result.Height - padSize) To result.Height - 1
+            Dim alpha = CDbl(result.Height - 1 - y) / CDbl(padSize)
+            For x As Integer = 0 To result.Width - 1
+                Dim pixel = result.At(Of Vec3b)(y, x)
+                pixel.Item0 = CByte(pixel.Item0 * alpha + 32 * (1 - alpha))
+                pixel.Item1 = CByte(pixel.Item1 * alpha + 32 * (1 - alpha))
+                pixel.Item2 = CByte(pixel.Item2 * alpha + 32 * (1 - alpha))
+                result.Set(Of Vec3b)(y, x, pixel)
+            Next
+        Next
+
+        ' 輕微高斯模糊以進一步軟化邊界
+        Dim blurred As New Mat()
+        Cv2.GaussianBlur(result, blurred, New Size(3, 3), 0.5)
+
+        ' 只對邊界區域應用模糊
+        Dim mask As New Mat()
+        mask = Mat.Zeros(result.Size(), MatType.CV_8UC1)
+
+        ' 標記邊界區域
+        Cv2.Rectangle(mask, New Rect(0, 0, result.Width, padSize), Scalar.White, -1)
+        Cv2.Rectangle(mask, New Rect(0, result.Height - padSize, result.Width, padSize), Scalar.White, -1)
+        Cv2.Rectangle(mask, New Rect(0, 0, padSize, result.Height), Scalar.White, -1)
+        Cv2.Rectangle(mask, New Rect(result.Width - padSize, 0, padSize, result.Height), Scalar.White, -1)
+
+        blurred.CopyTo(result, mask)
+        blurred.Dispose()
+        mask.Dispose()
+
+        Return result
     End Function
 
     ' =========================================
