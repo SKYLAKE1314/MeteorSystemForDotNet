@@ -158,7 +158,7 @@ Class HomePage
                 ' 如果检测正在进行，设置暂停标志
                 Logger.Info("[FLOW] 检测流程已暂停")
                 ' 播报语音提示："检测已暂停"
-                ' PlayPromptVoice("DetectionPaused.wav")
+                PlayPromptVoice("DetectionPaused.wav")
             End SyncLock
         Catch ex As Exception
             Logger.Error("[FLOW] 暂停流程失敗: " & ex.Message)
@@ -174,7 +174,7 @@ Class HomePage
                 ' 恢复检测流程
                 Logger.Info("[FLOW] 检测流程已恢复")
                 ' 播报语音提示："检测已恢复"
-                ' PlayPromptVoice("DetectionResumed.wav")
+                PlayPromptVoice("DetectionResumed.wav")
             End SyncLock
         Catch ex As Exception
             Logger.Error("[FLOW] 恢复流程失敗: " & ex.Message)
