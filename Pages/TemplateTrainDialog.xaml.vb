@@ -586,38 +586,42 @@ Public Class TemplateTrainDialog
             Using mask As Mat = Mat.Zeros(_sourceMat.Size(), MatType.CV_8UC1)
                 Cv2.FillPoly(mask, {safePoly}, Scalar.White)
 
-                ' Dark background + ROI content
-                Using bg As New Mat(_sourceMat.Size(), _sourceMat.Type(), New Scalar(30, 30, 30))
-                    _sourceMat.CopyTo(bg, mask)
+                ' First, compute Canny edges on ORIGINAL image (before masking)
+                ' This prevents ROI border from being detected as contour
+                Using gray As New Mat(),
+                      edges As New Mat(),
+                      maskedEdge As New Mat()
+                    Cv2.CvtColor(_sourceMat, gray, ColorConversionCodes.BGR2GRAY)
+                    Cv2.Canny(gray, edges,
+                        CDbl(CannyLowSlider.Value),
+                        CDbl(CannyHighSlider.Value))
 
-                    ' Overlay Canny edges in cyan on top for quick visual check
-                    Using gray As New Mat(),
-                          edges As New Mat(),
-                          edgeColored As New Mat()
-                        Cv2.CvtColor(bg, gray, ColorConversionCodes.BGR2GRAY)
-                        Cv2.Canny(gray, edges,
-                            CDbl(CannyLowSlider.Value),
-                            CDbl(CannyHighSlider.Value))
-                        Cv2.CvtColor(edges, edgeColored, ColorConversionCodes.GRAY2BGR)
-                        ' Tint edges cyan
-                        Using cyan As New Mat(_sourceMat.Size(), _sourceMat.Type(), New Scalar(200, 180, 0))
-                            Cv2.BitwiseAnd(edgeColored, cyan, edgeColored)
-                            Cv2.Add(bg, edgeColored, bg)
+                    ' Mask edges to ROI only
+                    Cv2.BitwiseAnd(edges, mask, maskedEdge)
+
+                    ' Dark background + ROI content
+                    Using bg As New Mat(_sourceMat.Size(), _sourceMat.Type(), New Scalar(30, 30, 30))
+                        _sourceMat.CopyTo(bg, mask)
+
+                        ' Overlay masked edges in cyan
+                        Using edgeColored As New Mat()
+                            Cv2.CvtColor(maskedEdge, edgeColored, ColorConversionCodes.GRAY2BGR)
+                            ' Tint edges cyan
+                            Using cyan As New Mat(_sourceMat.Size(), _sourceMat.Type(), New Scalar(200, 180, 0))
+                                Cv2.BitwiseAnd(edgeColored, cyan, edgeColored)
+                                Cv2.Add(bg, edgeColored, bg)
+                            End Using
+
+                            ImgPreview.Source = BitmapSourceConverter.ToBitmapSource(bg)
+                            ResetPreviewView()
+
+                            ' Count edge pixels inside polygon as quality hint
+                            Dim edgePx = Cv2.CountNonZero(maskedEdge)
+                            Dim roiArea = Cv2.ContourArea(safePoly)
+                            Dim density = If(roiArea > 0, edgePx / roiArea, 0)
+                            Dim quality = If(density > 0.15, "✅ 豐富", If(density > 0.05, "🟡 適中", "🔴 稀疏"))
+                            TxtPreviewInfo.Text = $"邊緣密度\n{density:F3}\n{quality}"
                         End Using
-
-                        ImgPreview.Source = BitmapSourceConverter.ToBitmapSource(bg)
-                        ResetPreviewView()
-
-                        ' Count edge pixels inside polygon as quality hint
-                        Dim edgePx As Integer
-                        Using maskedEdge As New Mat()
-                            Cv2.BitwiseAnd(edges, mask, maskedEdge)
-                            edgePx = Cv2.CountNonZero(maskedEdge)
-                        End Using
-                        Dim roiArea = Cv2.ContourArea(safePoly)
-                        Dim density = If(roiArea > 0, edgePx / roiArea, 0)
-                        Dim quality = If(density > 0.15, "✅ 豐富", If(density > 0.05, "🟡 適中", "🔴 稀疏"))
-                        TxtPreviewInfo.Text = $"邊緣密度\n{density:F3}\n{quality}"
                     End Using
                 End Using
             End Using
