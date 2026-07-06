@@ -146,10 +146,10 @@ Partial Class HomePage
             Dim barcodeMatched As Boolean = True
             If Not barcodeSkipped AndAlso Not barcodeTimeout AndAlso
                Not String.IsNullOrWhiteSpace(barcodeExpected) Then
-                barcodeMatched = code.Contains(barcodeExpected) OrElse barcodeExpected.Contains(code)
-                If Not barcodeMatched Then
-                    Logger.Warn($"[RESULT] 條碼不匹配! 期望={barcodeExpected}, 實際={code}")
-                End If
+            barcodeMatched = code.Contains(barcodeExpected) OrElse barcodeExpected.Contains(code)
+            If Not barcodeMatched Then
+                Logger.Warn($"[RESULT] 條碼不匹配! 期望={barcodeExpected}, 實際={code}")
+            End If
             End If
 
             SyncLock _detectLock
@@ -158,34 +158,42 @@ Partial Class HomePage
                     If Not barcodeMatched Then _activeDetectionItem.resultType = "MISMATCH"
                 End If
             End SyncLock
+            SetFlowStage(DetectionFlowStage.Ocr) ' 重置 skip 標誌
 
             ' ← 在這裡設新階段（skip flag 此後不可再查 Barcode）
             SetFlowStage(DetectionFlowStage.Ocr)
 
             ' 條碼超時 → 結束流程
             If barcodeTimeout Then
-                Dim timeoutOutput As DetectionResult
-                SyncLock _detectLock
-                    If _activeDetectionItem IsNot Nothing Then
-                        _activeDetectionItem.resultType = "MISMATCH"
-                    End If
-                    timeoutOutput = _activeDetectionResult
-                    If timeoutOutput IsNot Nothing Then
-                        timeoutOutput.Mat = result.Mat
-                        timeoutOutput.IsFinal = True
-                        timeoutOutput.Stage = "BARCODE_TIMEOUT"
-                    End If
-                End SyncLock
+            Dim timeoutOutput As DetectionResult
+            SyncLock _detectLock
+                If _activeDetectionItem IsNot Nothing Then
+                    _activeDetectionItem.resultType = "MISMATCH"
+                End If
+                timeoutOutput = _activeDetectionResult
+                If timeoutOutput IsNot Nothing Then
+                    timeoutOutput.Mat = result.Mat
+                    timeoutOutput.IsFinal = True
+                    timeoutOutput.Stage = "BARCODE_TIMEOUT"
+                End If
+            End SyncLock
                 Logger.Warn("[RESULT] 條碼 - 超時")
                 Logger.Info("[SUMMARY] ============================")
                 Logger.Info($"[SUMMARY] 匹配: OK={result.IsOk} Score={result.Score:F3}")
                 Logger.Info("[SUMMARY] 條碼: 超時")
                 Logger.Info("[SUMMARY] OCR:  跳過 (無條碼)")
                 Logger.Info("[SUMMARY] ============================")
-                PlayPromptVoice(VoicePromptStageTimeout)
-                PlayPromptVoice(VoicePromptSingleFlowCompleted)
-                FinishDetection()
-                Return timeoutOutput
+            PlayPromptVoice(VoicePromptStageTimeout)
+            PlayPromptVoice(VoicePromptSingleFlowCompleted)
+            Logger.Info("[FLOW] 单次流程结束 (条码超时)")
+            Logger.Info("[SUMMARY] ===================")
+            Logger.Info($"[SUMMARY] 检测编号: {If(_activeDetectionItem IsNot Nothing, _activeDetectionItem.detectionNo, "N/A")}")
+            Logger.Info($"[SUMMARY] 匹配: {If(_activeDetectionItem IsNot Nothing, _activeDetectionItem.resultType, "N/A")} (Score={result.Score:F3})")
+            Logger.Info($"[SUMMARY] 条码: null (超时)")
+            Logger.Info($"[SUMMARY] OCR: 跳过 (无条码)")
+            Logger.Info("[SUMMARY] ===================")
+            FinishDetection()
+            Return timeoutOutput
             End If
 
             If barcodeSkipped Then
@@ -240,9 +248,9 @@ Partial Class HomePage
             If ocrSkipped Then
                 PlayPromptVoice(VoicePromptStageSkipped)
             ElseIf ocrTimeout Then
-                PlayPromptVoice(VoicePromptStageTimeout)
+            PlayPromptVoice(VoicePromptStageTimeout)
             Else
-                PlayPromptVoice(VoicePromptCorrect)
+            PlayPromptVoice(VoicePromptCorrect)
             End If
             PlayPromptVoice(VoicePromptSingleFlowCompleted)
 
