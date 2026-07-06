@@ -1,4 +1,4 @@
-﻿Imports System.IO
+Imports System.IO
 Imports System.Text
 Imports System.Threading
 Imports System.Windows
@@ -38,7 +38,11 @@ Partial Class HomePage
     Private Const VoicePromptMatchCompleteScan As String = "MatchCompletedPleaseScan.wav"
     Private Const VoicePromptDecodeCompleteOcr As String = "DecodeCompletedPleaseOCR.wav"
     Private Const VoicePromptSingleFlowCompleted As String = "SingleFlowCompleted.wav"
-    Private Const VoicePromptStageTimeout As String = "StageTimeout.wav"
+    Private Const VoicePromptStageTimeout As String = "StageTimeout.wav"                    ' 階段超時
+    Private Const VoicePromptStageSkipped As String = "StageSkipped.wav"                    ' 階段已跳過
+    Private Const VoicePromptCorrect As String = "Correct.wav"                              ' 正確（解碼/OCR 成功）
+    Private Const VoicePromptError As String = "Error.wav"
+    Private Const VoicePromptNoTemplate As String = "Error.wav"   ' 找不到供應商對應模板時播報
     Private Const StageTimeoutMs As Integer = 60000
     Private Const StageLoopDelayMs As Integer = 30
 

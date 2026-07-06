@@ -30,7 +30,16 @@ Class MainWindow
     Private Sub InitTrayIcon()
         _trayIcon = New System.Windows.Forms.NotifyIcon()
         _trayIcon.Text = "MeteorSystem"
-        _trayIcon.Icon = System.Drawing.SystemIcons.Application
+        Try
+            Dim sri = Application.GetResourceStream(New Uri("pack://application:,,,/54nkr-kmnbe-001.ico"))
+            If sri IsNot Nothing Then
+                _trayIcon.Icon = New System.Drawing.Icon(sri.Stream)
+            Else
+                _trayIcon.Icon = System.Drawing.SystemIcons.Application
+            End If
+        Catch
+            _trayIcon.Icon = System.Drawing.SystemIcons.Application
+        End Try
 
         Dim menu As New System.Windows.Forms.ContextMenuStrip()
         Dim openItem As New System.Windows.Forms.ToolStripMenuItem("開啟視窗")

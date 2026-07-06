@@ -46,9 +46,12 @@ Public Class SettingPage
         LoadingOverlay.Visibility = Visibility.Visible
         LoadingText.Text = "載入設定中..."
 
-        Await Task.Yield() ' let UI render overlay first
+        Await Task.Yield()
 
         Try
+            ' 相機列表刷新在背景執行緓（WMI 查詢 + DSHOW probe 很慢，不能附方在 UI 線程）
+            Await Task.Run(Sub() CameraManager.Refresh())
+
             LoadCameraRows()
             _isLoaded = True
             RefreshLanguageUI()
@@ -59,15 +62,15 @@ Public Class SettingPage
                 Case "zhCN"
                     LanguageComboBox.SelectedIndex = 1
                 Case "enUS"
-                LanguageComboBox.SelectedIndex = 2
-            Case "jaJP"
-                LanguageComboBox.SelectedIndex = 3
-            Case Else
-                LanguageComboBox.SelectedIndex = 0
-        End Select
+                    LanguageComboBox.SelectedIndex = 2
+                Case "jaJP"
+                    LanguageComboBox.SelectedIndex = 3
+                Case Else
+                    LanguageComboBox.SelectedIndex = 0
+            End Select
 
-        Dim savedId As String = My.Settings.CameraDeviceId
-        ' (removed duplicate LoadCameraRows call)
+            ' 訂閱相機變更事件，即時更新 ComboBox
+            AddHandler CameraManager.CameraChanged, AddressOf OnCameraChangedRefresh
         Finally
             LoadingOverlay.Visibility = Visibility.Collapsed
         End Try
@@ -78,8 +81,14 @@ Public Class SettingPage
     End Sub
 
     Private Sub SettingPage_Unloaded(sender As Object, e As RoutedEventArgs)
+        RemoveHandler CameraManager.CameraChanged, AddressOf OnCameraChangedRefresh
         RemoveHandler LanguageManager.LanguageChanged, AddressOf LanguageChanged_Handler
         RemoveHandler Me.Unloaded, AddressOf SettingPage_Unloaded
+    End Sub
+
+    Private Sub OnCameraChangedRefresh()
+        ' CameraChanged 在背景線程觸發；必須派送回 UI 線程再操作 ObservableCollection
+        Dispatcher.InvokeAsync(Sub() LoadCameraRows())
     End Sub
 
     Private Sub RefreshLanguageUI()

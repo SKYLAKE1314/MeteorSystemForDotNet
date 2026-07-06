@@ -18,11 +18,29 @@ Public Class CameraLink
     Public Sub StartCamera(deviceId As String)
 
         Dim index = CameraManager.FindIndexByDeviceId(deviceId)
-        If index < 0 Then Exit Sub
+        If index < 0 Then
+            Logger.Warn($"[CameraLink] 找不到裝置索引: {deviceId}")
+            Exit Sub
+        End If
 
+        ' 先嘗試 DSHOW；DSHOW 開啟失敗時回退到預設 API
         _capture = New VideoCapture(index, VideoCaptureAPIs.DSHOW)
 
-        ' 套用已儲存的分辨率設定
+        ' 若 DSHOW 未開啟，改用預設 API 再試
+        If Not _capture.IsOpened() Then
+            Logger.Warn($"[CameraLink] DSHOW 開啟失敗，改用預設 API (index={index})")
+            _capture.Dispose()
+            _capture = New VideoCapture(index)
+        End If
+
+        If Not _capture.IsOpened() Then
+            Logger.Error($"[CameraLink] 無法開啟相機: {deviceId}")
+            _capture.Dispose()
+            _capture = Nothing
+            Exit Sub
+        End If
+
+        ' 只有在相機確實開啟後才設定分辨率，避免 ExecutionEngineException
         Dim res = CameraSettingsHelper.GetCamResolutionByDeviceId(deviceId)
         If res IsNot Nothing Then
             _capture.Set(VideoCaptureProperties.FrameWidth, res.Width)

@@ -1,4 +1,4 @@
-﻿Imports System.IO
+Imports System.IO
 Imports System.Text
 Imports System.Threading
 Imports System.Windows
@@ -55,10 +55,14 @@ Partial Class HomePage
             Logger.Warn($"[VOICE] IOController尚未初始化，無法播報: {fileName}")
             Return
         End If
+        Dim voicePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Voice", fileName)
+        If Not File.Exists(voicePath) Then
+            Logger.Warn($"[VOICE] 語音檔案不存在: {voicePath}")
+            Return
+        End If
         Try
-            Logger.Info($"[VOICE] 播報開始: {fileName}")
+            Logger.Debug($"[VOICE] 播報: {fileName}")
             _io.PlayCustomVoice(fileName)
-            Logger.Info($"[VOICE] 播報完成: {fileName}")
         Catch ex As Exception
             Logger.Error($"[VOICE] 播報失敗: {ex.Message}")
         End Try

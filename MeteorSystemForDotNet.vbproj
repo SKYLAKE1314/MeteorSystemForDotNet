@@ -8,7 +8,12 @@
     <Platforms>AnyCPU;x64</Platforms>
     <UseWindowsForms>True</UseWindowsForms>
     <AppDesignerFolder>Meteor Project</AppDesignerFolder>
+    <ApplicationIcon>54nkr-kmnbe-001.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="54nkr-kmnbe-001.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <Import Include="System.Windows" />
@@ -118,6 +123,10 @@
     <None Update="Voice\StageTimeout.wav">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="54nkr-kmnbe-001.ico" />
   </ItemGroup>
 
   <ItemGroup>

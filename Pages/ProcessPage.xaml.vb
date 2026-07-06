@@ -31,6 +31,7 @@ Partial Public Class ProcessPage
     Private _detectionResults As New List(Of DetectionResult)()
     Private _currentArtifactFolder As String = ""
     Private _currentTaskStartTime As Long = 0
+    Private _recordingInfo As TaskVideoRecorder.RecordingInfo = Nothing
 
     Private _realtimeRunning As Boolean = False
 
@@ -402,6 +403,7 @@ Partial Public Class ProcessPage
                     _detectionResults.Clear()
                     _currentArtifactFolder = ""
                     _currentTaskStartTime = 0
+                    _recordingInfo = Nothing
                     If AppRuntime.Home IsNot Nothing Then
                         AppRuntime.Home.StopTaskFlow()
                     Else
@@ -499,25 +501,25 @@ Partial Public Class ProcessPage
         ' 發送檢測結果JSON
         Await _ws.Broadcast(JsonConvert.SerializeObject(json))
 
-        ' TaskStatus == 3 時發送視頻流元數據JSON
-        Dim streamJson As New Dictionary(Of String, Object)
-        streamJson("requestId") = t.RequestId
-        streamJson("stationId") = t.StationId
-        streamJson("streamUrl") = $"http://edge-server/videos/{t.RequestId}-live.mp4"
-        streamJson("streamStartTime") = DateTimeOffset.Now.ToUnixTimeMilliseconds()
-        streamJson("streamStatus") = "RUNNING"
-        streamJson("videoFormat") = "MP4"
-        streamJson("bitRate") = 1024
-        streamJson("metadata") = New With {
-            .resolution = "1920x1080",
-            .frameRate = 25
-        }
+        AddLog($"[WS] RESULT Sent : {t.RequestId} (总數={totalCount}, 匹配={matchCount}, 检测次數={results.Count})")
 
-        ' 發送視頻流元數據JSON
-        Await _ws.Broadcast(JsonConvert.SerializeObject(streamJson))
-
-        AddLog($"[WS] RESULT Sent : {t.RequestId} (总数={totalCount}, 匹配={matchCount}, 检测次数={results.Count})")
-        AddLog($"[WS] STREAM Sent : {t.RequestId}")
+        ' 收到 3 時發送錄影完成通知（使用錄影開始時記錄的資訊）
+        If _recordingInfo IsNot Nothing Then
+            Dim streamJson As New Dictionary(Of String, Object)
+            streamJson("requestId") = t.RequestId
+            streamJson("stationId") = t.StationId
+            streamJson("streamUrl") = _recordingInfo.StreamUrl
+            streamJson("streamStartTime") = _recordingInfo.StreamStartTime
+            streamJson("streamStatus") = "COMPLETED"
+            streamJson("videoFormat") = _recordingInfo.VideoFormat
+            streamJson("bitRate") = _recordingInfo.BitRate
+            streamJson("metadata") = New With {
+                .resolution = _recordingInfo.Resolution,
+                .frameRate = _recordingInfo.FrameRate
+            }
+            Await _ws.Broadcast(JsonConvert.SerializeObject(streamJson))
+            AddLog($"[WS] STREAM Sent : {t.RequestId} (COMPLETED)")
+        End If
 
     End Function
 
@@ -575,21 +577,8 @@ Partial Public Class ProcessPage
             Dim info = Await TaskVideoRecorder.Instance.StartRecordingAsync(cameraId, filePath)
             If info Is Nothing Then Return
 
-            Dim json As New Dictionary(Of String, Object)
-            json("requestId") = t.RequestId
-            json("stationId") = t.StationId
-            json("streamUrl") = info.StreamUrl
-            json("streamStartTime") = info.StreamStartTime
-            json("streamStatus") = info.StreamStatus
-            json("videoFormat") = info.VideoFormat
-            json("bitRate") = info.BitRate
-            json("metadata") = New With {
-                .resolution = info.Resolution,
-                .frameRate = info.FrameRate
-            }
-
-            Await _ws.Broadcast(JsonConvert.SerializeObject(json))
-            AddLog($"[VIDEO] START Sent : {t.RequestId}")
+            _recordingInfo = info   ' 保留供收到 3 時發送完成通知
+            AddLog($"[VIDEO] Recording started : {filePath}")
         Catch ex As Exception
             AddLog("[VIDEO] 啟動錄影失敗: " & ex.Message)
         End Try

@@ -1,4 +1,4 @@
-﻿Imports System.IO
+Imports System.IO
 Imports System.Text
 Imports System.Threading
 Imports System.Windows
@@ -137,12 +137,15 @@ Partial Class HomePage
             '
 
             Dim code = Await WaitBarcodeResultAsync(snapshot, StageTimeoutMs)
+            ' Nothing=跳過  /  ""=超時  /  非空=成功
+            Dim barcodeSkipped = (code Is Nothing)
+            Dim barcodeTimeout = (Not barcodeSkipped AndAlso String.IsNullOrEmpty(code))
 
-
-            ' 解碼結果 vs 期望文本檢查
+            ' 解碼結果 vs 期望文本（只在成功時比對）
             Dim barcodeExpected = snapshot?.BarcodeExpectedText?.Trim()
             Dim barcodeMatched As Boolean = True
-            If Not String.IsNullOrWhiteSpace(code) AndAlso Not String.IsNullOrWhiteSpace(barcodeExpected) Then
+            If Not barcodeSkipped AndAlso Not barcodeTimeout AndAlso
+               Not String.IsNullOrWhiteSpace(barcodeExpected) Then
                 barcodeMatched = code.Contains(barcodeExpected) OrElse barcodeExpected.Contains(code)
                 If Not barcodeMatched Then
                     Logger.Warn($"[RESULT] 條碼不匹配! 期望={barcodeExpected}, 實際={code}")
@@ -155,22 +158,12 @@ Partial Class HomePage
                     If Not barcodeMatched Then _activeDetectionItem.resultType = "MISMATCH"
                 End If
             End SyncLock
-            SetFlowStage(DetectionFlowStage.Ocr) ' 重置 skip 標誌
 
-            ' 如果跳过了条码扫描，记为null
-            If IsSkipRequested(DetectionFlowStage.Barcode) Then
-                Logger.Info("[RESULT] 条码 - 已跳过 (null)")
-                code = Nothing
-                SyncLock _detectLock
-                    If _activeDetectionItem IsNot Nothing Then
-                        _activeDetectionItem.recognizedPartCode = Nothing
-                    End If
-                End SyncLock
-            Else
-                Logger.Info($"[RESULT] 条码 - {If(String.IsNullOrWhiteSpace(code), "null (超时)", code)}")
-            End If
+            ' ← 切換至 OCR 階段（同時清除 Barcode skip 旗標）
+            SetFlowStage(DetectionFlowStage.Ocr)
 
-            If String.IsNullOrWhiteSpace(code) Then
+            ' 條碼超時 → 結束流程
+            If barcodeTimeout Then
                 Dim timeoutOutput As DetectionResult
                 SyncLock _detectLock
                     If _activeDetectionItem IsNot Nothing Then
@@ -183,45 +176,48 @@ Partial Class HomePage
                         timeoutOutput.Stage = "BARCODE_TIMEOUT"
                     End If
                 End SyncLock
-
+                Logger.Warn("[RESULT] 條碼 - 超時")
+                Logger.Info("[SUMMARY] ============================")
+                Logger.Info($"[SUMMARY] 匹配: OK={result.IsOk} Score={result.Score:F3}")
+                Logger.Info("[SUMMARY] 條碼: 超時")
+                Logger.Info("[SUMMARY] OCR:  跳過 (無條碼)")
+                Logger.Info("[SUMMARY] ============================")
                 PlayPromptVoice(VoicePromptStageTimeout)
                 PlayPromptVoice(VoicePromptSingleFlowCompleted)
-                Logger.Info("[FLOW] 单次流程结束 (条码超时)")
-                Logger.Info("[SUMMARY] ===================")
-                Logger.Info($"[SUMMARY] 检测编号: {If(_activeDetectionItem IsNot Nothing, _activeDetectionItem.detectionNo, "N/A")}")
-                Logger.Info($"[SUMMARY] 匹配: {If(_activeDetectionItem IsNot Nothing, _activeDetectionItem.resultType, "N/A")} (Score={result.Score:F3})")
-                Logger.Info($"[SUMMARY] 条码: null (超时)")
-                Logger.Info($"[SUMMARY] OCR: 跳过 (无条码)")
-                Logger.Info("[SUMMARY] ===================")
                 FinishDetection()
                 Return timeoutOutput
+            End If
+
+            If barcodeSkipped Then
+                Logger.Info("[RESULT] 條碼 - 已跳過")
+                PlayPromptVoice(VoicePromptStageSkipped)
+            Else
+                Logger.Info($"[RESULT] 條碼 - 成功: {code}")
+                PlayPromptVoice(VoicePromptCorrect)
             End If
 
             PlayPromptVoice(VoicePromptDecodeCompleteOcr)
             Logger.Info("[FLOW] 開始 OCR")
 
             Dim name = Await WaitOcrResultAsync(snapshot, StageTimeoutMs)
+            ' Nothing=跳過  /  ""=超時  /  非空=成功
+            Dim ocrSkipped = (name Is Nothing)
+            Dim ocrTimeout = (Not ocrSkipped AndAlso String.IsNullOrEmpty(name))
 
-            ' 如果跳过了OCR，记为null
-            If IsSkipRequested(DetectionFlowStage.Ocr) Then
-                Logger.Info("[RESULT] OCR - 已跳过 (null)")
-                name = Nothing
-                SyncLock _detectLock
-                    If _activeDetectionItem IsNot Nothing Then
-                        _activeDetectionItem.recognizedPartName = Nothing
-                    End If
-                End SyncLock
+            If ocrSkipped Then
+                Logger.Info("[RESULT] OCR - 已跳過")
+            ElseIf ocrTimeout Then
+                Logger.Warn("[RESULT] OCR - 超時")
             Else
-                Logger.Info($"[RESULT] OCR - {If(String.IsNullOrWhiteSpace(name), "null (超时)", name)}")
+                Logger.Info($"[RESULT] OCR - 成功: {name}")
             End If
 
             Dim finalOutput As DetectionResult
+            Dim ocrStage As String = If(ocrSkipped, "OCR_SKIPPED", If(ocrTimeout, "OCR_TIMEOUT", "OCR"))
             SyncLock _detectLock
                 If _activeDetectionItem IsNot Nothing Then
                     _activeDetectionItem.recognizedPartName = name
-                    If String.IsNullOrWhiteSpace(name) Then
-                        _activeDetectionItem.resultType = "MISMATCH"
-                    End If
+                    If ocrTimeout Then _activeDetectionItem.resultType = "MISMATCH"
                 End If
                 finalOutput = _activeDetectionResult
                 If finalOutput Is Nothing Then
@@ -232,22 +228,23 @@ Partial Class HomePage
                 End If
                 finalOutput.Mat = result.Mat
                 finalOutput.IsFinal = True
-                finalOutput.Stage = If(String.IsNullOrWhiteSpace(name), "OCR_TIMEOUT", "OCR")
+                finalOutput.Stage = ocrStage
             End SyncLock
 
-            ' 输出完整的流程结果日志
-            PlayPromptVoice(VoicePromptSingleFlowCompleted)
-            Logger.Info("[FLOW] 单次流程结束")
-            Logger.Info("[SUMMARY] ===================")
-            Logger.Info($"[SUMMARY] 检测编号: {If(_activeDetectionItem IsNot Nothing, _activeDetectionItem.detectionNo, "N/A")}")
-            Logger.Info($"[SUMMARY] 匹配: {If(_activeDetectionItem IsNot Nothing, _activeDetectionItem.resultType, "N/A")} (Score={result.Score:F3})")
-            Logger.Info($"[SUMMARY] 条码: {If(String.IsNullOrWhiteSpace(code), "null", code)}")
-            Logger.Info($"[SUMMARY] OCR: {If(String.IsNullOrWhiteSpace(name), "null", name)}")
-            Logger.Info("[SUMMARY] ===================")
+            Logger.Info("[SUMMARY] ============================")
+            Logger.Info($"[SUMMARY] 匹配: OK={result.IsOk} Score={result.Score:F3}")
+            Logger.Info($"[SUMMARY] 條碼: {If(barcodeSkipped, "跳過", If(barcodeTimeout, "超時", code))}")
+            Logger.Info($"[SUMMARY] OCR:  {If(ocrSkipped, "跳過", If(ocrTimeout, "超時", name))}")
+            Logger.Info("[SUMMARY] ============================")
 
-            If String.IsNullOrWhiteSpace(name) Then
+            If ocrSkipped Then
+                PlayPromptVoice(VoicePromptStageSkipped)
+            ElseIf ocrTimeout Then
                 PlayPromptVoice(VoicePromptStageTimeout)
+            Else
+                PlayPromptVoice(VoicePromptCorrect)
             End If
+            PlayPromptVoice(VoicePromptSingleFlowCompleted)
 
             FinishDetection()
             Return finalOutput

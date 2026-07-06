@@ -1,4 +1,4 @@
-﻿Imports OpenCvSharp
+Imports OpenCvSharp
 Imports OpenCvSharp.WpfExtensions
 Imports System.Windows
 Imports System.Windows.Input
@@ -26,6 +26,7 @@ Public Class AlgorithmPage
     Private _srcMat As Mat
     Private _templateMat As Mat
     Private _matchMat As Mat
+    Private _autoParamsApplied As Boolean = False
 
     ' =========================
     ' ROI
@@ -312,8 +313,11 @@ Public Class AlgorithmPage
 
             TemplateImage.Source = ImageConvertHelper.ToBitmap(result.Item2)
 
-            ' 將自動計算的參數同步到所有 UI 滑塊
-            ApplyAutoParams(result.Item3)
+            ' 第一次生成時才自動套用參數；之後由使用者手動調整
+            If Not _autoParamsApplied Then
+                ApplyAutoParams(result.Item3)
+                _autoParamsApplied = True
+            End If
 
             Dim ap = result.Item3
             TemplateStatusText.Text = $"✓ 金字塔={ap.Pyramid}  Canny={ap.CannyLow}/{ap.CannyHigh}  MinArea={ap.MinArea}"
@@ -631,6 +635,7 @@ Public Class AlgorithmPage
     ' =========================
     Private Sub ResetUI()
 
+        _autoParamsApplied = False
         RoiCanvas.Children.Clear()
         _roi = New CvRect()
 
