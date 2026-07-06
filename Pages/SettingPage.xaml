@@ -4,6 +4,7 @@
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
 
     <Grid>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel
             Margin="32"
             VerticalAlignment="Top"
@@ -73,6 +74,14 @@
                               SelectedItem="{Binding SelectedCamera}"
                               SelectionChanged="Camera_SelectionChanged"/>
 
+                            <!-- 分辨率選擇 -->
+                            <ComboBox Width="130"
+                              Margin="8,0,0,0"
+                              ItemsSource="{Binding ResolutionList}"
+                              DisplayMemberPath="DisplayName"
+                              SelectedItem="{Binding SelectedResolution}"
+                              SelectionChanged="Resolution_SelectionChanged"/>
+
                             <!-- + 按鈕（只最後一列顯示） -->
                             <Button Content="+"
                             Width="40"
@@ -139,9 +148,56 @@
                 <ComboBoxItem Content="OpenVino"/>
                 <ComboBoxItem Content="DML"/>
             </ComboBox>
-        </StackPanel>
-        
-        
-    </Grid>
 
+            <!-- 開機自啟 -->
+            <TextBlock
+                x:Name="TxtAutoStartupTitle"
+                Text="開機自啟"
+                FontSize="16"
+                FontWeight="SemiBold"
+                Foreground="White"
+                Margin="0,20,0,0"/>
+            <ComboBox x:Name="AutoStartupComboBox"
+                  Width="200"
+                  Margin="20,4,0,0"
+                  SelectionChanged="AutoStartupComboBox_SelectionChanged">
+                <ComboBoxItem Content="True"/>
+                <ComboBoxItem Content="False"/>
+            </ComboBox>
+
+            <!-- 靜默啟動 -->
+            <TextBlock
+                x:Name="TxtSilentStartTitle"
+                Text="靜默啟動（最小化至托盤）"
+                FontSize="16"
+                FontWeight="SemiBold"
+                Foreground="White"
+                Margin="0,20,0,0"/>
+            <ComboBox x:Name="SilentStartComboBox"
+                  Width="200"
+                  Margin="20,4,0,0"
+                  SelectionChanged="SilentStartComboBox_SelectionChanged">
+                <ComboBoxItem Content="True"/>
+                <ComboBoxItem Content="False"/>
+            </ComboBox>
+        </StackPanel>
+        </ScrollViewer>
+
+        <!-- Win11-style loading overlay -->
+        <Grid x:Name="LoadingOverlay"
+              Visibility="Collapsed"
+              Background="#CC0D0D1A">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <ui:ProgressRing IsIndeterminate="True" Width="48" Height="48"
+                                 Foreground="#7C5CDB"/>
+                <TextBlock x:Name="LoadingText"
+                           Text="載入中..."
+                           Foreground="#E0E0FF"
+                           FontSize="13"
+                           HorizontalAlignment="Center"
+                           Margin="0,14,0,0"/>
+            </StackPanel>
+        </Grid>
+
+    </Grid>
 </Page>

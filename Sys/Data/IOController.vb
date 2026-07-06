@@ -184,11 +184,9 @@ Public Class IOController
 
     Private Function ExecuteOkHardwareAsync() As Task
 
-        SetTowerLight(False, False, True) ' R=off, Y=off, G=on
+        GreenPulse(5000) ' 綠燈亮5秒，結束後自動返回黃燈待機
 
-        _buzzer?.SetCoil(0, True)   ' 綠燈
-        _buzzer?.SetCoil(1, False)  ' 紅燈
-        _buzzer?.SetCoil(3, False)  ' 黃燈 / buzzer off
+        _buzzer?.SetCoil(3, False)  ' 確保蜂鳴器靜音
 
         _log("收到OK")
 

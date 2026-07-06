@@ -3,7 +3,6 @@
 Public Class TaskRouter
 
     Public Property OnStart As Action(Of TaskData)
-    Public Property OnPause As Action(Of TaskData)
     Public Property OnResume As Action(Of TaskData)
     Public Property OnEnd As Action(Of TaskData)
 
@@ -19,7 +18,7 @@ Public Class TaskRouter
                 OnStart?.Invoke(t)
                 OnEnd?.Invoke(t)
             Case 1
-                OnPause?.Invoke(t)
+                ' 忽略 status=1，不觸發任何動作或狀態返回
 
             Case 2
                 OnResume?.Invoke(t)

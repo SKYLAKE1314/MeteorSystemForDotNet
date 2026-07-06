@@ -111,11 +111,11 @@
                     <DataTemplate>
 
                         <Border
-                            Margin="0,5"
-                            Padding="12"
-                            Height="156"
-                            CornerRadius="8"
-                            Background="#181A24">
+                           Margin="0,5"
+                           Padding="12"
+                           Height="186"
+                           CornerRadius="8"
+                           Background="#181A24">
 
                             <Grid>
                                 <Grid.RowDefinitions>
@@ -182,6 +182,13 @@
                                             Content="{Binding OpenFolderText}"
                                             Tag="{Binding FullPath}"
                                             Click="BtnOpenFolder_Click"/>
+                                    <Button Width="90"
+                                            Style="{StaticResource ActionButtonStyle}"
+                                            Background="#00695C"
+                                            Margin="8,0,0,0"
+                                            Content="{Binding EditParamsText}"
+                                            Tag="{Binding FullPath}"
+                                            Click="BtnEditParams_Click"/>
                                 </StackPanel>
                             </Grid>
 
