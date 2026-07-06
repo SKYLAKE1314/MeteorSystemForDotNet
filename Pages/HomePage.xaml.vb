@@ -146,11 +146,13 @@ Partial Class HomePage
 
         _isStreaming = False
     End Sub
-    Private Sub Page_Unloaded(sender As Object, e As RoutedEventArgs) Handles Me.Unloaded
-        RemoveHandler CameraService.Instance.FrameArrived, AddressOf OnFrameArrived
 
-    End Sub
-    Public Sub RefreshLanguageUI()
+    ' =========================================
+    ' Load Image
+    ' =========================================
+    Private Async Sub BtnLoadImage_Click(
+    sender As Object,
+    e As RoutedEventArgs)
 
         BtnLoadImage.Content = LanguageManager.T("Home_BtnLoadImage")
         BtnClear.Content = LanguageManager.T("Home_BtnClear")
@@ -159,20 +161,6 @@ Partial Class HomePage
         BtnGetImg.Content = LanguageManager.T("Home_BtnGetImg")
         BtnSave.Content = LanguageManager.T("Home_BtnSave")
         BtnLaplacian.Content = LanguageManager.T("Home_BtnLaplacian")
-
-    End Sub
-    Private Sub GlobalLogReceived(level As String, msg As String)
-
-        Dispatcher.Invoke(Sub()
-
-                              ' 這裡你可以：
-                              ' 1. 更新本頁 log
-                              ' 2. 或丟到共享 log window
-
-                              rtbLog.AppendText($"[{level}] {msg}" & Environment.NewLine)
-                              rtbLog.ScrollToEnd()
-
-                          End Sub)
 
     End Sub
     ' =========================================
@@ -258,15 +246,21 @@ Partial Class HomePage
         End Try
 
     End Sub
-    Private Sub UpdateFrame(sender As Object, e As EventArgs)
 
-        Dim frame = CameraService.Instance.GetFrame(GetCamId(1))
+    Private Sub GlobalLogReceived(level As String, msg As String)
 
-        If frame Is Nothing Then Return
+        Dispatcher.Invoke(Sub()
 
-        RenderImage.Source = frame
+                              ' 這裡你可以：
+                              ' 1. 更新本頁 log
+                              ' 2. 或丟到共享 log window
 
-    End Sub
+                              rtbLog.AppendText($"[{level}] {msg}" & Environment.NewLine)
+                              rtbLog.ScrollToEnd()
+
+                              RenderImage.Source = frame
+
+                          End Sub
     Private Sub OnCameraChanged()
 
         Task.Run(Sub()
