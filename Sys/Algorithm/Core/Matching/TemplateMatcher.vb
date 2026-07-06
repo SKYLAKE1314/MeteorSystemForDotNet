@@ -206,79 +206,40 @@ Public Class TemplateMatcher
     threshold As Double,
     methodIndex As Integer) As MatchResult
 
-        Dim srcWork = source.Clone()
-        Dim tplWork = template.Clone()
+        Dim mode As TemplateMatchModes = IndexToMode(methodIndex)
 
-        Dim result As New Mat()
-
-        Dim mode As TemplateMatchModes =
-            TemplateMatchModes.CCoeffNormed
-
-        Select Case methodIndex
-
-            Case 0
-                mode = TemplateMatchModes.CCoeffNormed
-
-            Case 1
-                mode = TemplateMatchModes.CCorrNormed
-
-            Case 2
-                mode = TemplateMatchModes.SqDiffNormed
-
-        End Select
-
-        Cv2.MatchTemplate(
-    srcWork,
-    tplWork,
-    result,
-    mode)
-
-        Dim minVal As Double
-        Dim maxVal As Double
-
-        Dim minLoc As Point
-        Dim maxLoc As Point
-
-        Cv2.MinMaxLoc(
-            result,
-            minVal,
-            maxVal,
-            minLoc,
-            maxLoc)
-
+        ' --- Normal polarity match ---
         Dim score As Double
         Dim matchPoint As Point
+        TrySingleMatch(source, template, mode, score, matchPoint)
 
-        If mode = TemplateMatchModes.SqDiffNormed Then
-
-            score = 1.0 - minVal
-            matchPoint = minLoc
-
-        Else
-
-            score = maxVal
-            matchPoint = maxLoc
-
+        ' --- Polarity check: if score is poor, try inverted source ---
+        ' Handles dark-on-light vs light-on-dark mismatch between template and source.
+        ' Skip for SqDiff (inversion semantics differ) and when already a strong match.
+        If mode <> TemplateMatchModes.SqDiffNormed AndAlso score < 0.5 Then
+            Using invSrc As New Mat()
+                Cv2.BitwiseNot(source, invSrc)
+                Dim score2 As Double
+                Dim matchPoint2 As Point
+                TrySingleMatch(invSrc, template, mode, score2, matchPoint2)
+                If score2 > score Then
+                    Logger.Debug($"[MATCH] 極性反轉改善分數: {score:F3} -> {score2:F3}")
+                    score = score2
+                    matchPoint = matchPoint2
+                End If
+            End Using
         End If
 
-        Dim display As Mat =
-            source.Clone()
-
-        Dim ok As Boolean =
-            score >= threshold
+        ' Draw result on original source
+        Dim display As Mat = source.Clone()
+        Dim ok As Boolean = score >= threshold
 
         If ok Then
-
             Cv2.Rectangle(
                 display,
-                New Rect(
-                    matchPoint.X,
-                    matchPoint.Y,
-                    template.Width,
-                    template.Height),
+                New Rect(matchPoint.X, matchPoint.Y, template.Width, template.Height),
                 Scalar.Lime,
                 3)
-
         End If
 
         Return New MatchResult With {
@@ -288,6 +249,32 @@ Public Class TemplateMatcher
             .ResultImage = display
         }
 
+    End Function
+
+    ''' <summary>執行單次 MatchTemplate 並返回最佳分數及位置。</summary>
+    Private Shared Sub TrySingleMatch(src As Mat, tpl As Mat, mode As TemplateMatchModes,
+                                      ByRef score As Double, ByRef matchPt As Point)
+        Using result As New Mat()
+            Cv2.MatchTemplate(src, tpl, result, mode)
+            Dim minVal As Double, maxVal As Double
+            Dim minLoc As Point, maxLoc As Point
+            Cv2.MinMaxLoc(result, minVal, maxVal, minLoc, maxLoc)
+            If mode = TemplateMatchModes.SqDiffNormed Then
+                score = 1.0 - minVal
+                matchPt = minLoc
+            Else
+                score = maxVal
+                matchPt = maxLoc
+            End If
+        End Using
+    End Sub
+
+    Private Shared Function IndexToMode(idx As Integer) As TemplateMatchModes
+        Select Case idx
+            Case 1 : Return TemplateMatchModes.CCorrNormed
+            Case 2 : Return TemplateMatchModes.SqDiffNormed
+            Case Else : Return TemplateMatchModes.CCoeffNormed
+        End Select
     End Function
 
 End Class

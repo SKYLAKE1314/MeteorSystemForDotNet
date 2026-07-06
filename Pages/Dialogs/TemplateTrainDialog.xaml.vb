@@ -33,26 +33,33 @@ Public Class TemplateTrainDialog
         ApplyMasterConfig()
         RefreshSampleCount()
 
-        ' 初始化相機列表
-        InitializeCameraList()
+        ' Camera init is deferred to Loaded (async) to avoid freezing the UI
+        AddHandler Me.Loaded, AddressOf TemplateTrainDialog_Loaded
     End Sub
 
-    ''' <summary>
-    ''' 初始化相機選擇列表
-    ''' </summary>
-    Private Sub InitializeCameraList()
+    Private Async Sub TemplateTrainDialog_Loaded(sender As Object, e As RoutedEventArgs)
+        RemoveHandler Me.Loaded, AddressOf TemplateTrainDialog_Loaded
+        SetLoading(True, "正在初始化相機...")
         Try
-            CameraManager.Initialize()
-            CameraManager.Refresh()
+            Await Task.Run(Sub()
+                               CameraManager.Initialize()
+                               CameraManager.Refresh()
+                           End Sub)
             Dim cameras = CameraManager.GetCachedCameras()
             If cameras IsNot Nothing AndAlso cameras.Count > 0 Then
                 CameraComboBox.ItemsSource = cameras
-                ' 預設選擇第一個相機
                 CameraComboBox.SelectedIndex = 0
             End If
         Catch ex As Exception
-            MessageBox.Show("初始化相機列表失敗: " & ex.Message)
+            Logger.Warn("[TrainDialog] 相機初始化失敗: " & ex.Message)
+        Finally
+            SetLoading(False)
         End Try
+    End Sub
+
+    Private Sub SetLoading(visible As Boolean, Optional message As String = "")
+        LoadingOverlay.Visibility = If(visible, Visibility.Visible, Visibility.Collapsed)
+        If Not String.IsNullOrEmpty(message) Then LoadingText.Text = message
     End Sub
 
     Private Sub ApplyMasterConfig()
@@ -78,7 +85,7 @@ Public Class TemplateTrainDialog
         AngleStepSlider.Value = Math.Max(AngleStepSlider.Minimum, Math.Min(AngleStepSlider.Maximum, compatibleStep))
     End Sub
 
-    Private Sub BtnLoadImage_Click(sender As Object, e As RoutedEventArgs)
+    Private Async Sub BtnLoadImage_Click(sender As Object, e As RoutedEventArgs)
         Try
             Dim dialog As New Microsoft.Win32.OpenFileDialog With {
                 .Filter = "Image|*.png;*.jpg;*.jpeg;*.bmp",
@@ -88,6 +95,9 @@ Public Class TemplateTrainDialog
             If dialog.ShowDialog() <> True Then Return
 
             LoadImageFromPath(dialog.FileName)
+            If _sourceMat IsNot Nothing Then
+                Await AutoAnalyzeParamsAsync(_sourceMat)
+            End If
         Catch ex As Exception
             MessageBox.Show("載入圖片失敗: " & ex.Message)
         End Try
@@ -138,6 +148,9 @@ Public Class TemplateTrainDialog
             End Using
 
             CameraService.Instance.StopCamera(cameraId)
+            If _sourceMat IsNot Nothing Then
+                Await AutoAnalyzeParamsAsync(_sourceMat)
+            End If
             BtnCaptureFromCamera.IsEnabled = True
             BtnCaptureFromCamera.Content = "📷 從相機采集圖像"
 
@@ -169,22 +182,20 @@ Public Class TemplateTrainDialog
     ''' </summary>
     Private Sub LoadImageFromPath(filePath As String)
         Try
-            _sourceMat?.Dispose()
-            _sourceMat = Cv2.ImRead(filePath)
-
-            If _sourceMat Is Nothing OrElse _sourceMat.Empty() Then
+            Dim loaded = Cv2.ImRead(filePath)
+            If loaded Is Nothing OrElse loaded.Empty() Then
+                loaded?.Dispose()
                 MessageBox.Show("圖片載入失敗")
                 Return
             End If
-
-            LoadImageFromMat(_sourceMat)
+            LoadImageFromMat(loaded)  ' ownership transfers; LoadImageFromMat sets _sourceMat
         Catch ex As Exception
             MessageBox.Show("載入圖片失敗: " & ex.Message)
         End Try
     End Sub
 
     ''' <summary>
-    ''' 從 Mat 對象加載圖像到 UI
+    ''' 從 Mat 對象加載圖像到 UI（取得 mat 的所有權）
     ''' </summary>
     Private Sub LoadImageFromMat(mat As Mat)
         Try
@@ -193,7 +204,10 @@ Public Class TemplateTrainDialog
                 Return
             End If
 
-            _sourceMat?.Dispose()
+            ' Only dispose the previous mat if it is a different object
+            If Not ReferenceEquals(_sourceMat, mat) Then
+                _sourceMat?.Dispose()
+            End If
             _sourceMat = mat
 
             ImgSource.Source = BitmapSourceConverter.ToBitmapSource(_sourceMat)
@@ -202,23 +216,23 @@ Public Class TemplateTrainDialog
             ResetPreviewView()
             TxtPreviewInfo.Text = "完成多邊形後" & vbCrLf & "自動生成"
             TxtRoiStatus.Text = "ROI：左鍵加點，右鍵撤銷，雙擊完成"
-            AutoAnalyzeParams(_sourceMat)
+            ' AutoAnalyzeParams is called by callers after this returns
         Catch ex As Exception
             MessageBox.Show("處理圖像失敗: " & ex.Message)
         End Try
     End Sub
 
-    Private Sub BtnAutoAnalyze_Click(sender As Object, e As RoutedEventArgs)
+    Private Async Sub BtnAutoAnalyze_Click(sender As Object, e As RoutedEventArgs)
         If _sourceMat Is Nothing OrElse _sourceMat.Empty() Then
             MessageBox.Show("請先載入圖片")
             Return
         End If
-        AutoAnalyzeParams(_sourceMat)
+        Await AutoAnalyzeParamsAsync(_sourceMat)
         TxtAutoInfo.Text = "已更新建議參數，可手動調整"
     End Sub
 
-    Private Sub BtnRefreshPreview_Click(sender As Object, e As RoutedEventArgs)
-        UpdatePreview()
+    Private Async Sub BtnRefreshPreview_Click(sender As Object, e As RoutedEventArgs)
+        Await UpdatePreviewAsync()
     End Sub
 
     Private Sub BtnClearPolygon_Click(sender As Object, e As RoutedEventArgs)
@@ -298,7 +312,7 @@ Public Class TemplateTrainDialog
         e.Handled = True
     End Sub
 
-    Private Sub CompletePolygon()
+    Private Async Sub CompletePolygon()
         If _polygonPoints.Count < 3 Then
             TxtRoiStatus.Text = "ROI：至少需要 3 個點"
             Return
@@ -307,7 +321,7 @@ Public Class TemplateTrainDialog
         _polygonClosed = True
         DrawPolygonOverlay(Nothing)
         TxtRoiStatus.Text = $"ROI：多邊形完成（{_polygonPoints.Count} 點）"
-        UpdatePreview()
+        Await UpdatePreviewAsync()
     End Sub
 
     Private Sub DrawPolygonOverlay(currentMouse As Nullable(Of WpfPoint))
@@ -418,7 +432,7 @@ Public Class TemplateTrainDialog
             imgRect.Y + ry * imgRect.Height)
     End Function
 
-    Private Sub LoadTrainingSampleIntoEditor(fileName As String, meta As TemplateTrainingStore.TrainingSampleMeta)
+    Private Async Function LoadTrainingSampleIntoEditor(fileName As String, meta As TemplateTrainingStore.TrainingSampleMeta) As Task
         If String.IsNullOrWhiteSpace(fileName) OrElse meta Is Nothing Then Return
 
         Try
@@ -455,11 +469,11 @@ Public Class TemplateTrainDialog
             DrawPolygonOverlay(Nothing)
             TxtRoiStatus.Text = If(_polygonClosed, $"ROI：已載入 {_polygonPoints.Count} 點", "ROI：樣本無多邊形")
             TxtPreviewInfo.Text = $"已載入樣本{Environment.NewLine}{fileName}"
-            UpdatePreview()
+            If _polygonClosed Then Await UpdatePreviewAsync()
         Catch ex As Exception
             MessageBox.Show("載入訓練樣本失敗: " & ex.Message)
         End Try
-    End Sub
+    End Function
 
     Private Async Sub BtnAddSample_Click(sender As Object, e As RoutedEventArgs)
         Try
@@ -515,120 +529,123 @@ Public Class TemplateTrainDialog
     End Sub
 
     ''' <summary>
-    ''' Analyze source image and suggest Canny/MinArea/Pyramid parameters.
-    ''' Uses Otsu threshold as a guide for Canny range, and image resolution for Pyramid.
+    ''' Analyze source image and suggest Canny/MinArea/Pyramid parameters (runs OpenCV in background).
     ''' </summary>
-    Private Sub AutoAnalyzeParams(src As Mat)
+    Private Async Function AutoAnalyzeParamsAsync(src As Mat) As Task
+        If src Is Nothing OrElse src.Empty() Then Return
+        TxtAutoInfo.Text = "分析中..."
+        Dim srcClone = src.Clone()
         Try
-            Using gray As New Mat()
-                Cv2.CvtColor(src, gray, ColorConversionCodes.BGR2GRAY)
+            Dim lo As Integer, hi As Integer, suggested As Integer, pyramid As Integer
+            Await Task.Run(Sub()
+                               Using gray As New Mat()
+                                   Cv2.CvtColor(srcClone, gray, ColorConversionCodes.BGR2GRAY)
+                                   Dim otsuThresh As Double
+                                   Using tmp As New Mat()
+                                       otsuThresh = Cv2.Threshold(gray, tmp, 0, 255,
+                                           ThresholdTypes.Binary Or ThresholdTypes.Otsu)
+                                   End Using
+                                   lo = CInt(Math.Max(20, Math.Min(120, otsuThresh * 0.5)))
+                                   hi = CInt(Math.Max(60, Math.Min(240, otsuThresh)))
+                                   If hi <= lo Then hi = lo + 40
 
-                ' Otsu thresholding to estimate optimal edge threshold
-                Dim otsuThresh As Double
-                Using tmp As New Mat()
-                    otsuThresh = Cv2.Threshold(gray, tmp, 0, 255,
-                        ThresholdTypes.Binary Or ThresholdTypes.Otsu)
-                End Using
-
-                ' Canny: low = 0.5x otsu, high = otsu, clamped
-                Dim lo = CInt(Math.Max(20, Math.Min(120, otsuThresh * 0.5)))
-                Dim hi = CInt(Math.Max(60, Math.Min(240, otsuThresh)))
-                If hi <= lo Then hi = lo + 40
-
-                CannyLowSlider.Value = lo
-                CannyHighSlider.Value = hi
-
-                ' Contour area estimation: count edges and estimate average contour
-                Using edges As New Mat()
-                    Cv2.Canny(gray, edges, lo, hi)
-                    Dim contours As Point()() = Nothing
-                    Cv2.FindContours(edges, contours, Nothing, RetrievalModes.External,
-                                    ContourApproximationModes.ApproxSimple)
-                    If contours IsNot Nothing AndAlso contours.Length > 0 Then
-                        Dim areas = contours.Select(Function(c) Cv2.ContourArea(c)).Where(Function(a) a > 1).ToArray()
-                        If areas.Length > 0 Then
-                            Dim medianArea = areas.OrderBy(Function(a) a).ElementAt(areas.Length \ 2)
-                            Dim suggested = CInt(Math.Max(10, Math.Min(500, medianArea * 0.1)))
-                            MinAreaSlider.Value = suggested
-                        End If
-                    End If
-                End Using
-
-                ' Pyramid level: based on image short side
-                Dim shortSide = Math.Min(src.Width, src.Height)
-                Dim pyramid = If(shortSide >= 800, 3, If(shortSide >= 400, 2, 1))
-                PyramidSlider.Value = pyramid
-
-                TxtAutoInfo.Text = $"Canny {lo}/{hi}  MinArea {CInt(MinAreaSlider.Value)}  Pyr {pyramid}"
-            End Using
+                                   suggested = 50
+                                   Using edges As New Mat()
+                                       Cv2.Canny(gray, edges, lo, hi)
+                                       Dim contours As Point()() = Nothing
+                                       Cv2.FindContours(edges, contours, Nothing, RetrievalModes.External,
+                                                       ContourApproximationModes.ApproxSimple)
+                                       If contours IsNot Nothing AndAlso contours.Length > 0 Then
+                                           Dim areas = contours.Select(Function(c) Cv2.ContourArea(c)).
+                                                        Where(Function(a) a > 1).ToArray()
+                                           If areas.Length > 0 Then
+                                               Dim medianArea = areas.OrderBy(Function(a) a).ElementAt(areas.Length \ 2)
+                                               suggested = CInt(Math.Max(10, Math.Min(500, medianArea * 0.1)))
+                                           End If
+                                       End If
+                                   End Using
+                                   Dim shortSide = Math.Min(srcClone.Width, srcClone.Height)
+                                   pyramid = If(shortSide >= 800, 3, If(shortSide >= 400, 2, 1))
+                               End Using
+                           End Sub)
+            CannyLowSlider.Value = lo
+            CannyHighSlider.Value = hi
+            MinAreaSlider.Value = suggested
+            PyramidSlider.Value = pyramid
+            TxtAutoInfo.Text = $"Canny {lo}/{hi}  MinArea {suggested}  Pyr {pyramid}"
         Catch ex As Exception
             TxtAutoInfo.Text = "自動分析失敗: " & ex.Message
+        Finally
+            srcClone.Dispose()
         End Try
-    End Sub
+    End Function
 
     ''' <summary>
-    ''' Render the polygon-masked + edge-overlay preview so user can verify the ROI content.
+    ''' Render the polygon-masked + edge-overlay preview (OpenCV runs in background).
     ''' </summary>
-    Private Sub UpdatePreview()
+    Private Async Function UpdatePreviewAsync() As Task
         If _sourceMat Is Nothing OrElse _sourceMat.Empty() Then Return
         If Not _polygonClosed OrElse _polygonPoints.Count < 3 Then Return
 
+        TxtPreviewInfo.Text = "渲染中..."
+        Dim srcClone = _sourceMat.Clone()
+        Dim lo = CDbl(CannyLowSlider.Value)
+        Dim hi = CDbl(CannyHighSlider.Value)
+        Dim imagePolygon = _polygonPoints.Select(Function(dp) DisplayToImagePoint(dp)).ToArray()
+
         Try
-            Dim imagePolygon = _polygonPoints.Select(Function(dp) DisplayToImagePoint(dp)).ToArray()
+            Dim resultBitmap As BitmapSource = Nothing
+            Dim infoText As String = ""
 
-            Dim safePoly = imagePolygon.
-                Select(Function(p) New Point(
-                    Math.Max(0, Math.Min(_sourceMat.Width - 1, p.X)),
-                    Math.Max(0, Math.Min(_sourceMat.Height - 1, p.Y)))).
-                ToArray()
+            Await Task.Run(Sub()
+                               Try
+                                   Dim safePoly = imagePolygon.
+                                       Select(Function(p) New Point(
+                                           Math.Max(0, Math.Min(srcClone.Width - 1, p.X)),
+                                           Math.Max(0, Math.Min(srcClone.Height - 1, p.Y)))).
+                                       ToArray()
 
-            ' Build filled mask
-            Using mask As Mat = Mat.Zeros(_sourceMat.Size(), MatType.CV_8UC1)
-                Cv2.FillPoly(mask, {safePoly}, Scalar.White)
+                                   Using mask As Mat = Mat.Zeros(srcClone.Size(), MatType.CV_8UC1)
+                                       Cv2.FillPoly(mask, {safePoly}, Scalar.White)
 
-                ' First, compute Canny edges on ORIGINAL image (before masking)
-                ' This prevents ROI border from being detected as contour
-                Using gray As New Mat(),
-                      edges As New Mat(),
-                      maskedEdge As New Mat()
-                    Cv2.CvtColor(_sourceMat, gray, ColorConversionCodes.BGR2GRAY)
-                    Cv2.Canny(gray, edges,
-                        CDbl(CannyLowSlider.Value),
-                        CDbl(CannyHighSlider.Value))
+                                       Using gray As New Mat(), edges As New Mat(), maskedEdge As New Mat()
+                                           Cv2.CvtColor(srcClone, gray, ColorConversionCodes.BGR2GRAY)
+                                           Cv2.Canny(gray, edges, lo, hi)
+                                           Cv2.BitwiseAnd(edges, mask, maskedEdge)
 
-                    ' Mask edges to ROI only
-                    Cv2.BitwiseAnd(edges, mask, maskedEdge)
+                                           Using bg As New Mat(srcClone.Size(), srcClone.Type(), New Scalar(30, 30, 30))
+                                               srcClone.CopyTo(bg, mask)
+                                               Using edgeColored As New Mat()
+                                                   Cv2.CvtColor(maskedEdge, edgeColored, ColorConversionCodes.GRAY2BGR)
+                                                   Using cyan As New Mat(srcClone.Size(), srcClone.Type(), New Scalar(200, 180, 0))
+                                                       Cv2.BitwiseAnd(edgeColored, cyan, edgeColored)
+                                                       Cv2.Add(bg, edgeColored, bg)
+                                                   End Using
+                                                   resultBitmap = BitmapSourceConverter.ToBitmapSource(bg)
+                                                   resultBitmap.Freeze()
+                                               End Using
+                                               Dim edgePx = Cv2.CountNonZero(maskedEdge)
+                                               Dim roiArea = Cv2.ContourArea(safePoly)
+                                               Dim density = If(roiArea > 0, edgePx / roiArea, 0)
+                                               Dim quality = If(density > 0.15, "✅ 豐富", If(density > 0.05, "🟡 適中", "🔴 稀疏"))
+                                               infoText = $"邊緣密度{vbCrLf}{density:F3}{vbCrLf}{quality}"
+                                           End Using
+                                       End Using
+                                   End Using
+                               Catch
+                                   infoText = "預覽失敗"
+                               End Try
+                           End Sub)
 
-                    ' Dark background + ROI content
-                    Using bg As New Mat(_sourceMat.Size(), _sourceMat.Type(), New Scalar(30, 30, 30))
-                        _sourceMat.CopyTo(bg, mask)
-
-                        ' Overlay masked edges in cyan
-                        Using edgeColored As New Mat()
-                            Cv2.CvtColor(maskedEdge, edgeColored, ColorConversionCodes.GRAY2BGR)
-                            ' Tint edges cyan
-                            Using cyan As New Mat(_sourceMat.Size(), _sourceMat.Type(), New Scalar(200, 180, 0))
-                                Cv2.BitwiseAnd(edgeColored, cyan, edgeColored)
-                                Cv2.Add(bg, edgeColored, bg)
-                            End Using
-
-                            ImgPreview.Source = BitmapSourceConverter.ToBitmapSource(bg)
-                            ResetPreviewView()
-
-                            ' Count edge pixels inside polygon as quality hint
-                            Dim edgePx = Cv2.CountNonZero(maskedEdge)
-                            Dim roiArea = Cv2.ContourArea(safePoly)
-                            Dim density = If(roiArea > 0, edgePx / roiArea, 0)
-                            Dim quality = If(density > 0.15, "✅ 豐富", If(density > 0.05, "🟡 適中", "🔴 稀疏"))
-                            TxtPreviewInfo.Text = $"邊緣密度\n{density:F3}\n{quality}"
-                        End Using
-                    End Using
-                End Using
-            End Using
-        Catch ex As Exception
-            TxtPreviewInfo.Text = "預覽失敗"
+            If resultBitmap IsNot Nothing Then
+                ImgPreview.Source = resultBitmap
+                ResetPreviewView()
+            End If
+            TxtPreviewInfo.Text = infoText
+        Finally
+            srcClone.Dispose()
         End Try
-    End Sub
+    End Function
 
     Private Sub PreviewBorder_MouseWheel(sender As Object, e As System.Windows.Input.MouseWheelEventArgs)
         If ImgPreview.Source Is Nothing Then Return
@@ -682,14 +699,13 @@ Public Class TemplateTrainDialog
         _previewIsPanning = False
     End Sub
 
-    Private Sub BtnManageTemplates_Click(sender As Object, e As RoutedEventArgs)
+    Private Async Sub BtnManageTemplates_Click(sender As Object, e As RoutedEventArgs)
         Try
-            ' Open template management dialog for the current training group
             Dim dlg As New TemplateManageDialog(_groupPath)
             dlg.Owner = Application.Current?.MainWindow
             Dim res = dlg.ShowDialog()
             If res = True AndAlso Not String.IsNullOrWhiteSpace(dlg.SelectedSampleFileName) Then
-                LoadTrainingSampleIntoEditor(dlg.SelectedSampleFileName, dlg.SelectedSampleMeta)
+                Await LoadTrainingSampleIntoEditor(dlg.SelectedSampleFileName, dlg.SelectedSampleMeta)
             End If
             RefreshSampleCount()
         Catch ex As Exception

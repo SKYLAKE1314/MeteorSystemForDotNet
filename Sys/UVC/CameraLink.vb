@@ -21,6 +21,15 @@ Public Class CameraLink
         If index < 0 Then Exit Sub
 
         _capture = New VideoCapture(index, VideoCaptureAPIs.DSHOW)
+
+        ' 套用已儲存的分辨率設定
+        Dim res = CameraSettingsHelper.GetCamResolutionByDeviceId(deviceId)
+        If res IsNot Nothing Then
+            _capture.Set(VideoCaptureProperties.FrameWidth, res.Width)
+            _capture.Set(VideoCaptureProperties.FrameHeight, res.Height)
+            Logger.Info($"[CameraLink] {deviceId} 設定分辨率 {res.Width}x{res.Height}")
+        End If
+
         _running = True
 
         _thread = New Thread(AddressOf LoopCapture)

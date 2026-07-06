@@ -1,7 +1,6 @@
 ﻿Imports System.Reflection.Metadata
 Imports System.IO
 Imports System.Windows
-Imports MetroSystemForDotNet.HomePage
 Imports Newtonsoft.Json
 Imports System.Linq
 Imports VAT.Common
@@ -29,7 +28,7 @@ Partial Public Class ProcessPage
     Private _currentTask As TaskData
 
     Private _allowDetection As Boolean = False
-    Private _detectionResults As New List(Of HomePage.DetectionResult)()
+    Private _detectionResults As New List(Of DetectionResult)()
     Private _currentArtifactFolder As String = ""
     Private _currentTaskStartTime As Long = 0
 
@@ -44,7 +43,6 @@ Partial Public Class ProcessPage
         AddHandler _ws.MessageReceived,
         AddressOf OnMessageReceived
         _router.OnStart = AddressOf StartTask
-        _router.OnPause = AddressOf PauseTask
         _router.OnResume = AddressOf ResumeTask
         _router.OnEnd = AddressOf EndTask
 
@@ -206,10 +204,64 @@ Partial Public Class ProcessPage
     Private Sub StartTask(t As TaskData)
 
         AddLog($"START {t.RequestId}")
-
         AddLog($"Part={t.PartCode}, Supplier={t.SupplierCode}, Count={t.PartCount}")
-
         AddLog($"BatchNo={t.BatchNo}")
+
+        ' 依 SupplierCode 查找對應模板並自動載入
+        If Not String.IsNullOrWhiteSpace(t.SupplierCode) Then
+            Dim groupPath = TemplateManager.FindGroupBySupplierCode(t.SupplierCode)
+            If String.IsNullOrWhiteSpace(groupPath) Then
+                AddLog($"[WARN] 找不到 SupplierCode='{t.SupplierCode}' 的模板，語音告警")
+                Logger.Warn($"[StartTask] 找不到 SupplierCode='{t.SupplierCode}' 的模板")
+                ' 播報告警音
+                If AppRuntime.Home IsNot Nothing Then
+                    Dispatcher.Invoke(Sub() AppRuntime.Home.PlayAlert())
+                End If
+            Else
+                AddLog($"[INFO] 找到模板：{IO.Path.GetFileName(groupPath)}，自動載入")
+                Logger.Info($"[StartTask] 載入模板 {groupPath}")
+                ' 在 UI 執行緒載入模板快照
+                Dispatcher.Invoke(Sub()
+                                      Try
+                                          Dim camDirs = IO.Directory.GetDirectories(groupPath, "cam*").
+                                              Where(Function(d) IO.File.Exists(IO.Path.Combine(d, "template.png"))).
+                                              ToList()
+                                          Dim firstCam = If(camDirs.Count > 0, camDirs(0), groupPath)
+                                          Dim data = TemplateManager.LoadTemplate(firstCam)
+                                          If data IsNot Nothing Then
+                                              Dim snap As New TemplateSnapshot With {
+                                                  .TemplatePath = firstCam,
+                                                  .CameraDeviceId = data.Config.CameraDeviceId,
+                                                  .Threshold = data.Config.Threshold,
+                                                  .MatchMethod = data.Config.MatchMethod,
+                                                  .RoiX = data.Config.RoiX,
+                                                  .RoiY = data.Config.RoiY,
+                                                  .RoiW = data.Config.RoiW,
+                                                  .RoiH = data.Config.RoiH,
+                                                  .EnableOcr = data.Config.EnableOcr,
+                                                  .OcrExpectedText = data.Config.OcrExpectedText,
+                                                  .EnableBarcode = data.Config.EnableBarcode,
+                                                  .BarcodeExpectedText = data.Config.BarcodeExpectedText,
+                                                  .PyramidLevel = data.Config.PyramidLevel,
+                                                  .MinArea = data.Config.MinArea,
+                                                  .CannyLow = data.Config.CannyLow,
+                                                  .CannyHigh = data.Config.CannyHigh,
+                                                  .AngleMin = data.Config.AngleMin,
+                                                  .AngleMax = data.Config.AngleMax,
+                                                  .AngleStep = data.Config.AngleStep
+                                              }
+                                              TemplateSnapshotStore.Save(snap)
+                                              LastTemplateStore.Save(firstCam)
+                                              AddLog($"[INFO] 模板快照已更新：{IO.Path.GetFileName(groupPath)}")
+                                          End If
+                                      Catch ex As Exception
+                                          AddLog($"[ERROR] 載入模板失敗: {ex.Message}")
+                                      End Try
+                                  End Sub)
+            End If
+        Else
+            AddLog("[INFO] SupplierCode 為空，不自動查找模板")
+        End If
 
     End Sub
 
@@ -364,24 +416,6 @@ Partial Public Class ProcessPage
                 AddLog("[TASK] 0 -> ARM (等待物理按鈕或即時檢測)")
                 Await StartTaskRecordingAsync(t)
 
-            Case 1
-                '==============================
-                ' 状态 1: 暂停检测倒计时和录制
-                '==============================
-                AddLog("[TASK] 1 -> PAUSE (暂停检测倒计时和录制)")
-
-                ' 暂停录制
-                Await TaskVideoRecorder.Instance.PauseRecordingAsync()
-                Logger.Info("[VideoRecorder] 录制已暂停")
-
-                ' 播报语音提示："检测已暂停"
-                ' PlayPromptVoice("DetectionPaused.wav")
-
-                ' 在 HomePage 中也暂停检测流程
-                If AppRuntime.Home IsNot Nothing Then
-                    AppRuntime.Home.PauseDetectionFlow()
-                End If
-
             Case 2
                 '==============================
                 ' 状态 2: 恢复检测倒计时和录制
@@ -459,7 +493,7 @@ Partial Public Class ProcessPage
     ' 收到3結束 但有結果
 
     Private Async Function SendDetectionResult(t As TaskData,
-                                           results As List(Of HomePage.DetectionResult)) As Task
+                                           results As List(Of DetectionResult)) As Task
 
         Dim list As New List(Of Object)
 
@@ -468,10 +502,10 @@ Partial Public Class ProcessPage
         Dim totalCount As Integer = 0
 
         ' 累積所有檢測結果中的所有零件
-        For Each result As HomePage.DetectionResult In results
+        For Each result As DetectionResult In results
 
             Dim itemIndex As Integer = 1
-            For Each item As HomePage.DetectionItem In result.List
+            For Each item As DetectionItem In result.List
 
                 If item.resultType = "MATCH" Then
                     matchCount += 1
@@ -519,25 +553,23 @@ Partial Public Class ProcessPage
         ' 發送檢測結果JSON
         Await _ws.Broadcast(JsonConvert.SerializeObject(json))
 
-        ' TaskStatus == 3 時發送視頻流元數據JSON
-        Dim streamJson As New Dictionary(Of String, Object)
-        streamJson("requestId") = t.RequestId
-        streamJson("stationId") = t.StationId
-        streamJson("streamUrl") = $"http://edge-server/videos/{t.RequestId}-live.mp4"
-        streamJson("streamStartTime") = DateTimeOffset.Now.ToUnixTimeMilliseconds()
-        streamJson("streamStatus") = "RUNNING"
-        streamJson("videoFormat") = "MP4"
-        streamJson("bitRate") = 1024
-        streamJson("metadata") = New With {
-            .resolution = "1920x1080",
-            .frameRate = 25
-        }
-
-        ' 發送視頻流元數據JSON
-        Await _ws.Broadcast(JsonConvert.SerializeObject(streamJson))
-
         AddLog($"[WS] RESULT Sent : {t.RequestId} (总数={totalCount}, 匹配={matchCount}, 检测次数={results.Count})")
-        AddLog($"[WS] STREAM Sent : {t.RequestId}")
+
+        ' 發送視頻流元數據JSON（使用實際錄影資訊）
+        Dim recInfo = TaskVideoRecorder.Instance.GetCurrentInfo()
+        If recInfo IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(recInfo.StreamUrl) Then
+            Dim streamJson As New Dictionary(Of String, Object)
+            streamJson("requestId") = t.RequestId
+            streamJson("stationId") = t.StationId
+            streamJson("streamUrl") = recInfo.StreamUrl
+            streamJson("streamStartTime") = recInfo.StreamStartTime
+            streamJson("streamStatus") = recInfo.StreamStatus
+            streamJson("videoFormat") = recInfo.VideoFormat
+            streamJson("bitRate") = recInfo.BitRate
+            streamJson("metadata") = New With {.resolution = recInfo.Resolution, .frameRate = recInfo.FrameRate}
+            Await _ws.Broadcast(JsonConvert.SerializeObject(streamJson))
+            AddLog($"[WS] STREAM Sent : {t.RequestId} -> {recInfo.StreamUrl}")
+        End If
 
     End Function
 
@@ -595,21 +627,19 @@ Partial Public Class ProcessPage
             Dim info = Await TaskVideoRecorder.Instance.StartRecordingAsync(cameraId, filePath)
             If info Is Nothing Then Return
 
-            Dim json As New Dictionary(Of String, Object)
-            json("requestId") = t.RequestId
-            json("stationId") = t.StationId
-            json("streamUrl") = info.StreamUrl
-            json("streamStartTime") = info.StreamStartTime
-            json("streamStatus") = info.StreamStatus
-            json("videoFormat") = info.VideoFormat
-            json("bitRate") = info.BitRate
-            json("metadata") = New With {
-                .resolution = info.Resolution,
-                .frameRate = info.FrameRate
-            }
-
-            Await _ws.Broadcast(JsonConvert.SerializeObject(json))
-            AddLog($"[VIDEO] START Sent : {t.RequestId}")
+            ' [DISABLED] Stream start notification removed — do not send stream JSON to client
+            'Dim json As New Dictionary(Of String, Object)
+            'json("requestId") = t.RequestId
+            'json("stationId") = t.StationId
+            'json("streamUrl") = info.StreamUrl
+            'json("streamStartTime") = info.StreamStartTime
+            'json("streamStatus") = info.StreamStatus
+            'json("videoFormat") = info.VideoFormat
+            'json("bitRate") = info.BitRate
+            'json("metadata") = New With {.resolution = info.Resolution, .frameRate = info.FrameRate}
+            'Await _ws.Broadcast(JsonConvert.SerializeObject(json))
+            'AddLog($"[VIDEO] START Sent : {t.RequestId}")
+            AddLog($"[VIDEO] Recording started (suppressed broadcast): {t.RequestId}")
         Catch ex As Exception
             AddLog("[VIDEO] 啟動錄影失敗: " & ex.Message)
         End Try
@@ -657,7 +687,7 @@ Partial Public Class ProcessPage
 
     End Function
     ' 公開方法：供外部（如"即時檢測"按鈕）呼叫來設置檢測結果
-    Public Sub SetDetectionResult(result As HomePage.DetectionResult)
+    Public Sub SetDetectionResult(result As DetectionResult)
 
         If Not _allowDetection Then
             AddLog("[DETECT] ARM未啟用，忽略結果")
@@ -700,7 +730,7 @@ Partial Public Class ProcessPage
 
         AddLog("[DETECT] Finished")
 
-        For Each item As HomePage.DetectionItem In result.List
+        For Each item As DetectionItem In result.List
 
             AddLog(
             $"No={item.detectionNo}, " &

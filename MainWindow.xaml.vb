@@ -4,8 +4,8 @@ Imports System.Windows.Controls
 Class MainWindow
 
     Private PageCache As New Dictionary(Of String, Page)
-
     Private _windowdesigner As WindowDesigner
+    Private _trayIcon As System.Windows.Forms.NotifyIcon
 
     Public Sub New()
 
@@ -17,8 +17,55 @@ Class MainWindow
         _windowdesigner.EnableDrag(TitleBar)
         _windowdesigner.SetButtonActions(MinButton, MaxButton, CloseButton)
 
-        AddHandler Me.Loaded, AddressOf MainWindow_Loaded
+        InitTrayIcon()
 
+        AddHandler Me.Loaded, AddressOf MainWindow_Loaded
+        AddHandler Me.StateChanged, AddressOf MainWindow_StateChanged
+
+    End Sub
+
+    ' =========================
+    ' 托盤圖示初始化
+    ' =========================
+    Private Sub InitTrayIcon()
+        _trayIcon = New System.Windows.Forms.NotifyIcon()
+        _trayIcon.Text = "MeteorSystem"
+
+        ' 使用專案內嵌的 ICO 圖示（與應用程式圖示共用同一資源）
+        Try
+            Dim icoPath = IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "54nkr-kmnbe-001.ico")
+            If IO.File.Exists(icoPath) Then
+                _trayIcon.Icon = New System.Drawing.Icon(icoPath)
+            Else
+                _trayIcon.Icon = System.Drawing.SystemIcons.Application
+            End If
+        Catch
+            _trayIcon.Icon = System.Drawing.SystemIcons.Application
+        End Try
+
+        Dim menu As New System.Windows.Forms.ContextMenuStrip()
+        Dim openItem As New System.Windows.Forms.ToolStripMenuItem("開啟視窗")
+        Dim exitItem As New System.Windows.Forms.ToolStripMenuItem("退出")
+        AddHandler openItem.Click, Sub(s, e) RestoreFromTray()
+        AddHandler exitItem.Click, Sub(s, e) Application.Current.Shutdown()
+        menu.Items.Add(openItem)
+        menu.Items.Add(exitItem)
+        _trayIcon.ContextMenuStrip = menu
+        AddHandler _trayIcon.DoubleClick, Sub(s, e) RestoreFromTray()
+    End Sub
+
+    Private Sub MainWindow_StateChanged(sender As Object, e As EventArgs)
+        If WindowState = WindowState.Minimized AndAlso My.Settings.SilentStart Then
+            Me.ShowInTaskbar = False
+            _trayIcon.Visible = True
+        End If
+    End Sub
+
+    Private Sub RestoreFromTray()
+        Me.Show()
+        Me.WindowState = WindowState.Normal
+        Me.ShowInTaskbar = True
+        _trayIcon.Visible = False
     End Sub
 
     Private Sub MainWindow_Loaded(sender As Object, e As RoutedEventArgs)
@@ -29,19 +76,14 @@ Class MainWindow
             NavList.SelectedIndex = 0
         End If
 
-        'Try
-        '    Dim kawaiiWindow As New KawaiiJK()
-        '    kawaiiWindow.Show()
-        'Catch ex As Exception
-        '    MessageBox.Show($"開啟live2d失敗: {ex.Message}")
-        'End Try
-
-        ' 相機訂閲
-        'AddHandler Me.Loaded, Sub()
-        '                          CameraService.Instance.StartAll()
-        '                      End Sub
-        ' ⭐ 加這個
         RefreshLanguageUI()
+
+        ' 靜默啟動：自動最小化至托盤
+        If My.Settings.SilentStart Then
+            Me.WindowState = WindowState.Minimized
+            Me.ShowInTaskbar = False
+            _trayIcon.Visible = True
+        End If
 
     End Sub
 

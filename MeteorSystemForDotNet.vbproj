@@ -6,9 +6,16 @@
     <RootNamespace>MetroSystemForDotNet</RootNamespace>
     <UseWPF>true</UseWPF>
     <Platforms>AnyCPU;x64</Platforms>
-    <UseWindowsForms>False</UseWindowsForms>
+    <UseWindowsForms>True</UseWindowsForms>
     <AppDesignerFolder>Meteor Project</AppDesignerFolder>
+    <ApplicationIcon>54nkr-kmnbe-001.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="54nkr-kmnbe-001.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
 
   <ItemGroup>
     <Import Include="System.Windows" />
@@ -112,7 +119,13 @@
     <None Update="Voice\MatchCompletedPleaseScan.wav">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="Voice\NoTemplate.wav">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="Voice\SingleFlowCompleted.wav">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="Voice\StageSkipped.wav">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="Voice\StageTimeout.wav">
