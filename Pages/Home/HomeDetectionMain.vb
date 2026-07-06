@@ -158,6 +158,7 @@ Partial Class HomePage
                     If Not barcodeMatched Then _activeDetectionItem.resultType = "MISMATCH"
                 End If
             End SyncLock
+            SetFlowStage(DetectionFlowStage.Ocr) ' 重置 skip 標誌
 
             ' ← 切換至 OCR 階段（同時清除 Barcode skip 旗標）
             SetFlowStage(DetectionFlowStage.Ocr)
@@ -184,6 +185,13 @@ Partial Class HomePage
                 Logger.Info("[SUMMARY] ============================")
                 PlayPromptVoice(VoicePromptStageTimeout)
                 PlayPromptVoice(VoicePromptSingleFlowCompleted)
+                Logger.Info("[FLOW] 单次流程结束 (条码超时)")
+                Logger.Info("[SUMMARY] ===================")
+                Logger.Info($"[SUMMARY] 检测编号: {If(_activeDetectionItem IsNot Nothing, _activeDetectionItem.detectionNo, "N/A")}")
+                Logger.Info($"[SUMMARY] 匹配: {If(_activeDetectionItem IsNot Nothing, _activeDetectionItem.resultType, "N/A")} (Score={result.Score:F3})")
+                Logger.Info($"[SUMMARY] 条码: null (超时)")
+                Logger.Info($"[SUMMARY] OCR: 跳过 (无条码)")
+                Logger.Info("[SUMMARY] ===================")
                 FinishDetection()
                 Return timeoutOutput
             End If

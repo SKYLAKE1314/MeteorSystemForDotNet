@@ -20,37 +20,6 @@ Class MainWindow
         InitTrayIcon()
 
         AddHandler Me.Loaded, AddressOf MainWindow_Loaded
-        AddHandler Me.StateChanged, AddressOf MainWindow_StateChanged
-
-    End Sub
-
-    ' =========================
-    ' 托盤圖示初始化
-    ' =========================
-    Private Sub InitTrayIcon()
-        _trayIcon = New System.Windows.Forms.NotifyIcon()
-        _trayIcon.Text = "MeteorSystem"
-        Try
-            Dim sri = Application.GetResourceStream(New Uri("pack://application:,,,/54nkr-kmnbe-001.ico"))
-            If sri IsNot Nothing Then
-                _trayIcon.Icon = New System.Drawing.Icon(sri.Stream)
-            Else
-                _trayIcon.Icon = System.Drawing.SystemIcons.Application
-            End If
-        Catch
-            _trayIcon.Icon = System.Drawing.SystemIcons.Application
-        End Try
-
-        Dim menu As New System.Windows.Forms.ContextMenuStrip()
-        Dim openItem As New System.Windows.Forms.ToolStripMenuItem("開啟視窗")
-        Dim exitItem As New System.Windows.Forms.ToolStripMenuItem("退出")
-        AddHandler openItem.Click, Sub(s, e) RestoreFromTray()
-        AddHandler exitItem.Click, Sub(s, e) Application.Current.Shutdown()
-        menu.Items.Add(openItem)
-        menu.Items.Add(exitItem)
-        _trayIcon.ContextMenuStrip = menu
-        AddHandler _trayIcon.DoubleClick, Sub(s, e) RestoreFromTray()
-    End Sub
 
     Private Sub MainWindow_StateChanged(sender As Object, e As EventArgs)
         If WindowState = WindowState.Minimized AndAlso My.Settings.SilentStart Then

@@ -1,6 +1,7 @@
 ﻿Public Class TemplateConfig
 
     Public Property CameraDeviceId As String ' 建模時使用的相機 DeviceId
+    Public Property SupplierCode As String   ' 供應商代碼（用於 StartTask 自動查找模板）
     Public Property Threshold As Double
     Public Property MatchMethod As Integer
 

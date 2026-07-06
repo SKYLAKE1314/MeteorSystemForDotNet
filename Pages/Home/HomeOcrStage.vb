@@ -48,7 +48,6 @@ Partial Class HomePage
         While sw.ElapsedMilliseconds < timeoutMs
             If IsSkipRequested(DetectionFlowStage.Ocr) Then
                 Logger.Info("[FLOW] OCR 已跳過")
-                Return Nothing  ' Nothing=跳過 / ""=超時 / 非空=成功
             End If
 
             Dim frame = CameraService.Instance.GetFrame(cameraId)

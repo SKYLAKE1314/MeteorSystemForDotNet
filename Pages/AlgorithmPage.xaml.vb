@@ -47,6 +47,9 @@ Public Class AlgorithmPage
     Private _currentTemplateName As String = ""
     Private _templateCameraId As String = ""
 
+    ' 自動參數只在每次載入新原圖後的第一次生成時套用，之後不複寫使用者手動調整的值
+    Private _autoParamsAppliedOnce As Boolean = False
+
     ' =========================
     ' Loaded
     ' =========================
@@ -127,6 +130,7 @@ Public Class AlgorithmPage
                     SrcImage.Source = ImageConvertHelper.ToBitmap(_srcMat)
                     SrcImage.UpdateLayout()
 
+                    _autoParamsAppliedOnce = False  ' 新圖：下次生成才套用自動參數
                     ResetUI()
 
                 End Sub)
@@ -148,6 +152,7 @@ Public Class AlgorithmPage
 
                     _roiCtrl = New RoiController(RoiCanvas, SrcImage, _srcMat)
 
+                    _autoParamsAppliedOnce = False  ' 新圖：下次生成才套用自動參數
                     ResetUI()
 
                 End Sub)
@@ -308,7 +313,11 @@ Public Class AlgorithmPage
                                             Return (mat, preview, autoP)
                                         End Function)
 
+            ' Dispose old template mat before replacing
+            Dim oldTpl = _templateMat
             _templateMat = result.Item1
+            oldTpl?.Dispose()
+
             _templateCameraId = _selectedCameraId
 
             TemplateImage.Source = ImageConvertHelper.ToBitmap(result.Item2)

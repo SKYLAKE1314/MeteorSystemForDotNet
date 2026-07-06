@@ -52,7 +52,6 @@ Partial Class HomePage
     Private Sub PlayPromptVoice(fileName As String)
         If String.IsNullOrWhiteSpace(fileName) Then Return
         If _io Is Nothing Then
-            Logger.Warn($"[VOICE] IOController尚未初始化，無法播報: {fileName}")
             Return
         End If
         Dim voicePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Voice", fileName)
@@ -63,6 +62,7 @@ Partial Class HomePage
         Try
             Logger.Debug($"[VOICE] 播報: {fileName}")
             _io.PlayCustomVoice(fileName)
+            Logger.Info($"[VOICE] 播報完成: {fileName}")
         Catch ex As Exception
             Logger.Error($"[VOICE] 播報失敗: {ex.Message}")
         End Try

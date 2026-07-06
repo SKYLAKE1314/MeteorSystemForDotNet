@@ -205,10 +205,64 @@ Partial Public Class ProcessPage
     Private Sub StartTask(t As TaskData)
 
         AddLog($"START {t.RequestId}")
-
         AddLog($"Part={t.PartCode}, Supplier={t.SupplierCode}, Count={t.PartCount}")
-
         AddLog($"BatchNo={t.BatchNo}")
+
+        ' 依 SupplierCode 查找對應模板並自動載入
+        If Not String.IsNullOrWhiteSpace(t.SupplierCode) Then
+            Dim groupPath = TemplateManager.FindGroupBySupplierCode(t.SupplierCode)
+            If String.IsNullOrWhiteSpace(groupPath) Then
+                AddLog($"[WARN] 找不到 SupplierCode='{t.SupplierCode}' 的模板，語音告警")
+                Logger.Warn($"[StartTask] 找不到 SupplierCode='{t.SupplierCode}' 的模板")
+                ' 播報告警音
+                If AppRuntime.Home IsNot Nothing Then
+                    Dispatcher.Invoke(Sub() AppRuntime.Home.PlayAlert())
+                End If
+            Else
+                AddLog($"[INFO] 找到模板：{IO.Path.GetFileName(groupPath)}，自動載入")
+                Logger.Info($"[StartTask] 載入模板 {groupPath}")
+                ' 在 UI 執行緒載入模板快照
+                Dispatcher.Invoke(Sub()
+                                      Try
+                                          Dim camDirs = IO.Directory.GetDirectories(groupPath, "cam*").
+                                              Where(Function(d) IO.File.Exists(IO.Path.Combine(d, "template.png"))).
+                                              ToList()
+                                          Dim firstCam = If(camDirs.Count > 0, camDirs(0), groupPath)
+                                          Dim data = TemplateManager.LoadTemplate(firstCam)
+                                          If data IsNot Nothing Then
+                                              Dim snap As New TemplateSnapshot With {
+                                                  .TemplatePath = firstCam,
+                                                  .CameraDeviceId = data.Config.CameraDeviceId,
+                                                  .Threshold = data.Config.Threshold,
+                                                  .MatchMethod = data.Config.MatchMethod,
+                                                  .RoiX = data.Config.RoiX,
+                                                  .RoiY = data.Config.RoiY,
+                                                  .RoiW = data.Config.RoiW,
+                                                  .RoiH = data.Config.RoiH,
+                                                  .EnableOcr = data.Config.EnableOcr,
+                                                  .OcrExpectedText = data.Config.OcrExpectedText,
+                                                  .EnableBarcode = data.Config.EnableBarcode,
+                                                  .BarcodeExpectedText = data.Config.BarcodeExpectedText,
+                                                  .PyramidLevel = data.Config.PyramidLevel,
+                                                  .MinArea = data.Config.MinArea,
+                                                  .CannyLow = data.Config.CannyLow,
+                                                  .CannyHigh = data.Config.CannyHigh,
+                                                  .AngleMin = data.Config.AngleMin,
+                                                  .AngleMax = data.Config.AngleMax,
+                                                  .AngleStep = data.Config.AngleStep
+                                              }
+                                              TemplateSnapshotStore.Save(snap)
+                                              LastTemplateStore.Save(firstCam)
+                                              AddLog($"[INFO] 模板快照已更新：{IO.Path.GetFileName(groupPath)}")
+                                          End If
+                                      Catch ex As Exception
+                                          AddLog($"[ERROR] 載入模板失敗: {ex.Message}")
+                                      End Try
+                                  End Sub)
+            End If
+        Else
+            AddLog("[INFO] SupplierCode 為空，不自動查找模板")
+        End If
 
     End Sub
 
@@ -538,7 +592,7 @@ Partial Public Class ProcessPage
             Dim imageBytes = Convert.FromBase64String(normalizedBase64)
             Dim folderPath = _currentArtifactFolder
             If String.IsNullOrWhiteSpace(folderPath) Then
-                folderPath = BuildTaskArtifactFolder(New TaskData With {.RequestId = requestId, .PartCode = requestId}, DateTimeOffset.Now.ToUnixTimeMilliseconds())
+                folderPath = BuildTaskArtifactFolder(New TaskData With {.requestId = requestId, .PartCode = requestId}, DateTimeOffset.Now.ToUnixTimeMilliseconds())
             End If
 
             Directory.CreateDirectory(folderPath)

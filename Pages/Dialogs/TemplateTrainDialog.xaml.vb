@@ -182,22 +182,20 @@ Public Class TemplateTrainDialog
     ''' </summary>
     Private Sub LoadImageFromPath(filePath As String)
         Try
-            _sourceMat?.Dispose()
-            _sourceMat = Cv2.ImRead(filePath)
-
-            If _sourceMat Is Nothing OrElse _sourceMat.Empty() Then
+            Dim loaded = Cv2.ImRead(filePath)
+            If loaded Is Nothing OrElse loaded.Empty() Then
+                loaded?.Dispose()
                 MessageBox.Show("圖片載入失敗")
                 Return
             End If
-
-            LoadImageFromMat(_sourceMat)
+            LoadImageFromMat(loaded)  ' ownership transfers; LoadImageFromMat sets _sourceMat
         Catch ex As Exception
             MessageBox.Show("載入圖片失敗: " & ex.Message)
         End Try
     End Sub
 
     ''' <summary>
-    ''' 從 Mat 對象加載圖像到 UI
+    ''' 從 Mat 對象加載圖像到 UI（取得 mat 的所有權）
     ''' </summary>
     Private Sub LoadImageFromMat(mat As Mat)
         Try
@@ -206,7 +204,10 @@ Public Class TemplateTrainDialog
                 Return
             End If
 
-            _sourceMat?.Dispose()
+            ' Only dispose the previous mat if it is a different object
+            If Not ReferenceEquals(_sourceMat, mat) Then
+                _sourceMat?.Dispose()
+            End If
             _sourceMat = mat
 
             ImgSource.Source = BitmapSourceConverter.ToBitmapSource(_sourceMat)
