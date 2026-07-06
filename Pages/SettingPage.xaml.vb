@@ -18,14 +18,13 @@ Public Class SettingPage
 
         CameraRows = New ObservableCollection(Of CameraRow)
 
-        Me.DataContext = Me   ' ⭐ 讀settings
+        Me.DataContext = Me
 
         _isLoaded = False
         _ioMode = IoBoardModeHelper.Parse(My.Settings.IoMode)
         AppRuntime.IoMode = _ioMode
 
-        LoadCameraRows()
-
+        ' Camera rows deferred to Loaded (async) — avoids UI freeze on first navigation
         Select Case _ioMode
             Case IoBoardMode.IO
                 IoBoardComboBox.SelectedIndex = 0
@@ -35,8 +34,6 @@ Public Class SettingPage
                 IoBoardComboBox.SelectedIndex = 2
         End Select
 
-        _isLoaded = True
-
         AddHandler Me.Loaded, AddressOf SettingPage_Loaded
         AddHandler LanguageManager.LanguageChanged, AddressOf LanguageChanged_Handler
         AddHandler Me.Unloaded, AddressOf SettingPage_Unloaded
@@ -45,20 +42,23 @@ Public Class SettingPage
     ' =========================
     ' Page Loaded
     ' =========================
-    Private Sub SettingPage_Loaded(
-    sender As Object,
-    e As RoutedEventArgs)
+    Private Async Sub SettingPage_Loaded(sender As Object, e As RoutedEventArgs)
+        LoadingOverlay.Visibility = Visibility.Visible
+        LoadingText.Text = "載入設定中..."
 
-        _isLoaded = True
+        Await Task.Yield() ' let UI render overlay first
 
-        RefreshLanguageUI()
+        Try
+            LoadCameraRows()
+            _isLoaded = True
+            RefreshLanguageUI()
 
-        Select Case LanguageManager.CurrentLanguage
-            Case "zhTW"
-                LanguageComboBox.SelectedIndex = 0
-            Case "zhCN"
-                LanguageComboBox.SelectedIndex = 1
-            Case "enUS"
+            Select Case LanguageManager.CurrentLanguage
+                Case "zhTW"
+                    LanguageComboBox.SelectedIndex = 0
+                Case "zhCN"
+                    LanguageComboBox.SelectedIndex = 1
+                Case "enUS"
                 LanguageComboBox.SelectedIndex = 2
             Case "jaJP"
                 LanguageComboBox.SelectedIndex = 3
@@ -66,9 +66,11 @@ Public Class SettingPage
                 LanguageComboBox.SelectedIndex = 0
         End Select
 
-        LoadCameraRows()
-
         Dim savedId As String = My.Settings.CameraDeviceId
+        ' (removed duplicate LoadCameraRows call)
+        Finally
+            LoadingOverlay.Visibility = Visibility.Collapsed
+        End Try
     End Sub
 
     Private Sub LanguageChanged_Handler(sender As Object, e As EventArgs)
@@ -159,6 +161,35 @@ If(My.Settings.AutoRun, 0, 1)
 
     End Sub
 
+    Private Async Sub Resolution_SelectionChanged(sender As Object, e As SelectionChangedEventArgs)
+
+        If Not _isLoaded Then Return
+
+        Dim cb = DirectCast(sender, ComboBox)
+        Dim row = DirectCast(cb.DataContext, CameraRow)
+        Dim res = TryCast(cb.SelectedItem, CameraResolutionOption)
+
+        If res Is Nothing OrElse row.SelectedCamera Is Nothing Then Return
+
+        row.SelectedResolution = res
+        SaveResolutionRows()
+
+        ' 重啟相機以套用新分辨率（在背景執行緒，避免 UI 凍結）
+        Dim deviceId = row.SelectedCamera.DeviceId
+        LoadingOverlay.Visibility = Visibility.Visible
+        LoadingText.Text = $"套用分辨率 {res.Width}×{res.Height}..."
+        Try
+            Await Task.Run(Sub()
+                               CameraService.Instance.StopCamera(deviceId)
+                               CameraService.Instance.StartCamera(deviceId)
+                           End Sub)
+            Logger.Info($"[Setting] 相機 {row.Title} 分辨率更改為 {res.Width}x{res.Height}，已重啟相機")
+        Finally
+            LoadingOverlay.Visibility = Visibility.Collapsed
+        End Try
+
+    End Sub
+
     Private Sub LoadCameraRows()
 
         Dim list = CameraManager.GetCachedCameras()
@@ -171,18 +202,29 @@ If(My.Settings.AutoRun, 0, 1)
         CameraRows.Clear()
 
         Dim savedIds = My.Settings.CameraDeviceIds
+        Dim savedResolutions = My.Settings.CameraResolutions
 
         If savedIds IsNot Nothing AndAlso savedIds.Count > 0 Then
 
-            For Each id In savedIds
+            For i = 0 To savedIds.Count - 1
+                Dim id = savedIds(i)
 
                 Dim camRow = New CameraRow With {
-                .Title = $"相機 {CameraRows.Count + 1}",
-                .CameraList = list
-            }
+                    .Title = $"相機 {CameraRows.Count + 1}",
+                    .CameraList = list
+                }
 
                 camRow.SelectedCamera =
-                list.FirstOrDefault(Function(c) c.DeviceId = id)
+                    list.FirstOrDefault(Function(c) c.DeviceId = id)
+
+                ' 載入已儲存的分辨率
+                Dim resList = CameraResolutionOption.CommonResolutions()
+                camRow.ResolutionList = resList
+                If savedResolutions IsNot Nothing AndAlso savedResolutions.Count > i Then
+                    Dim savedRes = CameraResolutionOption.FromTag(savedResolutions(i))
+                    camRow.SelectedResolution =
+                        resList.FirstOrDefault(Function(r) r.Equals(savedRes))
+                End If
 
                 CameraRows.Add(camRow)
             Next
@@ -190,9 +232,10 @@ If(My.Settings.AutoRun, 0, 1)
         Else
             ' fallback
             CameraRows.Add(New CameraRow With {
-            .Title = "相機 1",
-            .CameraList = list
-        })
+                .Title = "相機 1",
+                .CameraList = list,
+                .ResolutionList = CameraResolutionOption.CommonResolutions()
+            })
         End If
 
         UpdateCameraButtons()
@@ -210,6 +253,12 @@ If(My.Settings.AutoRun, 0, 1)
         Else
             AutoRun.SelectedIndex = 1      'False
         End If
+
+        ' 開機自啟
+        AutoStartupComboBox.SelectedIndex = If(My.Settings.AutoStartup, 0, 1)
+
+        ' 靜默啟動
+        SilentStartComboBox.SelectedIndex = If(My.Settings.SilentStart, 0, 1)
 
     End Sub
 
@@ -301,6 +350,17 @@ If(My.Settings.AutoRun, 0, 1)
         My.Settings.Save()
     End Sub
 
+    Private Sub SaveResolutionRows()
+        Dim resolutions As New System.Collections.Specialized.StringCollection()
+
+        For Each row In CameraRows
+            resolutions.Add(If(row.SelectedResolution?.Tag, ""))
+        Next
+
+        My.Settings.CameraResolutions = resolutions
+        My.Settings.Save()
+    End Sub
+
     Private Sub RefreshAllCameraLists()
 
         For Each row In CameraRows
@@ -335,5 +395,46 @@ If(My.Settings.AutoRun, 0, 1)
         Dim cam = TryCast(RecordingCameraComboBox.SelectedItem, CameraInfo)
         My.Settings.RecordingCameraId = cam?.DeviceId
         My.Settings.Save()
+    End Sub
+
+    Private Sub AutoStartupComboBox_SelectionChanged(sender As Object, e As SelectionChangedEventArgs)
+        If Not _isLoaded Then Return
+        Dim enabled = (AutoStartupComboBox.SelectedIndex = 0)
+        My.Settings.AutoStartup = enabled
+        My.Settings.Save()
+        ApplyAutoStartup(enabled)
+    End Sub
+
+    Private Sub SilentStartComboBox_SelectionChanged(sender As Object, e As SelectionChangedEventArgs)
+        If Not _isLoaded Then Return
+        My.Settings.SilentStart = (SilentStartComboBox.SelectedIndex = 0)
+        My.Settings.Save()
+    End Sub
+
+    ''' <summary>
+    ''' 向 Windows 登錄檔增加/移除開機自啟項目
+    ''' </summary>
+    Private Sub ApplyAutoStartup(enable As Boolean)
+        Try
+            Dim appName = "MeteorSystem"
+            Dim exePath = System.Reflection.Assembly.GetExecutingAssembly().Location
+            ' .dll → .exe for publish scenarios
+            If exePath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) Then
+                exePath = IO.Path.ChangeExtension(exePath, ".exe")
+            End If
+
+            Using key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(
+                "SOFTWARE\Microsoft\Windows\CurrentVersion\Run", writable:=True)
+                If enable Then
+                    key.SetValue(appName, $"""{exePath}""")
+                Else
+                    If key.GetValue(appName) IsNot Nothing Then
+                        key.DeleteValue(appName)
+                    End If
+                End If
+            End Using
+        Catch ex As Exception
+            Logger.Warn($"[Setting] 開機自啟設定失敗: {ex.Message}")
+        End Try
     End Sub
 End Class

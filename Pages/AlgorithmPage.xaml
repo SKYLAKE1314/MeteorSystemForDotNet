@@ -473,7 +473,9 @@
                     <TextBlock Text="模板狀態" Foreground="White"/>
                     <TextBlock x:Name="TemplateStatusText"
                                Foreground="Orange"
-                               FontSize="24"/>
+                               FontSize="13"
+                               TextWrapping="Wrap"
+                               VerticalAlignment="Center"/>
                 </StackPanel>
 
                 <StackPanel Grid.Column="3">

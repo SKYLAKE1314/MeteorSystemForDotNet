@@ -160,6 +160,41 @@ Namespace My
                 Me("RecordingCameraId") = value
             End Set
         End Property
+        
+        <Global.System.Configuration.UserScopedSettingAttribute(),  _
+         Global.System.Diagnostics.DebuggerNonUserCodeAttribute()>  _
+        Public Property CameraResolutions() As Global.System.Collections.Specialized.StringCollection
+            Get
+                Return CType(Me("CameraResolutions"),Global.System.Collections.Specialized.StringCollection)
+            End Get
+            Set
+                Me("CameraResolutions") = value
+            End Set
+        End Property
+
+        <Global.System.Configuration.UserScopedSettingAttribute(),
+         Global.System.Diagnostics.DebuggerNonUserCodeAttribute(),
+         Global.System.Configuration.DefaultSettingValueAttribute("False")>
+        Public Property AutoStartup() As Boolean
+            Get
+                Return CType(Me("AutoStartup"), Boolean)
+            End Get
+            Set
+                Me("AutoStartup") = Value
+            End Set
+        End Property
+
+        <Global.System.Configuration.UserScopedSettingAttribute(),
+         Global.System.Diagnostics.DebuggerNonUserCodeAttribute(),
+         Global.System.Configuration.DefaultSettingValueAttribute("False")>
+        Public Property SilentStart() As Boolean
+            Get
+                Return CType(Me("SilentStart"), Boolean)
+            End Get
+            Set
+                Me("SilentStart") = Value
+            End Set
+        End Property
     End Class
 End Namespace
 

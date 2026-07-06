@@ -95,7 +95,8 @@ Class ModelEditPage
             .TrainText = LanguageManager.T("ModelEdit_Train"),
             .ReviseText = LanguageManager.T("ModelEdit_Revise"),
             .DeleteText = LanguageManager.T("ModelEdit_Delete"),
-            .OpenFolderText = LanguageManager.T("ModelEdit_OpenFolder")
+            .OpenFolderText = LanguageManager.T("ModelEdit_OpenFolder"),
+            .EditParamsText = "編輯參數"
         }
     End Function
 
@@ -287,6 +288,26 @@ Class ModelEditPage
         End Try
     End Sub
 
+    Private Sub BtnEditParams_Click(sender As Object, e As RoutedEventArgs)
+        Dim btn = TryCast(sender, Button)
+        If btn Is Nothing Then Return
+
+        Dim groupPath = TryCast(btn.Tag, String)
+        If String.IsNullOrWhiteSpace(groupPath) OrElse Not IO.Directory.Exists(groupPath) Then Return
+
+        Try
+            Dim dlg As New TemplateParamEditDialog(groupPath)
+            Dim mainWindow = Application.Current?.MainWindow
+            If mainWindow IsNot Nothing AndAlso dlg IsNot mainWindow Then
+                dlg.Owner = mainWindow
+            End If
+            dlg.ShowDialog()
+            ReloadTemplateList()
+        Catch ex As Exception
+            MessageBox.Show("編輯參數失敗: " & ex.Message)
+        End Try
+    End Sub
+
     Private Sub RefreshLanguageUI()
         TxtTitle.Text = LanguageManager.T("ModelEdit_Title")
         TbSearch.PlaceholderText = LanguageManager.T("ModelEdit_SearchPlaceholder")
@@ -341,6 +362,7 @@ Class ModelEditPage
         Public Property ReviseText As String
         Public Property DeleteText As String
         Public Property OpenFolderText As String
+        Public Property EditParamsText As String
     End Class
 
     Private Class SortIndexEntry

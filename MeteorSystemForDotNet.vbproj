@@ -6,7 +6,7 @@
     <RootNamespace>MetroSystemForDotNet</RootNamespace>
     <UseWPF>true</UseWPF>
     <Platforms>AnyCPU;x64</Platforms>
-    <UseWindowsForms>False</UseWindowsForms>
+    <UseWindowsForms>True</UseWindowsForms>
     <AppDesignerFolder>Meteor Project</AppDesignerFolder>
   </PropertyGroup>
 

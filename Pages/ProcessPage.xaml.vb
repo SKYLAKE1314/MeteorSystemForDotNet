@@ -1,7 +1,6 @@
 ﻿Imports System.Reflection.Metadata
 Imports System.IO
 Imports System.Windows
-Imports MetroSystemForDotNet.HomePage
 Imports Newtonsoft.Json
 Imports System.Linq
 Imports VAT.Common
@@ -29,7 +28,7 @@ Partial Public Class ProcessPage
     Private _currentTask As TaskData
 
     Private _allowDetection As Boolean = False
-    Private _detectionResults As New List(Of HomePage.DetectionResult)()
+    Private _detectionResults As New List(Of DetectionResult)()
     Private _currentArtifactFolder As String = ""
     Private _currentTaskStartTime As Long = 0
 
@@ -44,7 +43,6 @@ Partial Public Class ProcessPage
         AddHandler _ws.MessageReceived,
         AddressOf OnMessageReceived
         _router.OnStart = AddressOf StartTask
-        _router.OnPause = AddressOf PauseTask
         _router.OnResume = AddressOf ResumeTask
         _router.OnEnd = AddressOf EndTask
 
@@ -364,24 +362,6 @@ Partial Public Class ProcessPage
                 AddLog("[TASK] 0 -> ARM (等待物理按鈕或即時檢測)")
                 Await StartTaskRecordingAsync(t)
 
-            Case 1
-                '==============================
-                ' 状态 1: 暂停检测倒计时和录制
-                '==============================
-                AddLog("[TASK] 1 -> PAUSE (暂停检测倒计时和录制)")
-
-                ' 暂停录制
-                Await TaskVideoRecorder.Instance.PauseRecordingAsync()
-                Logger.Info("[VideoRecorder] 录制已暂停")
-
-                ' 播报语音提示："检测已暂停"
-                ' PlayPromptVoice("DetectionPaused.wav")
-
-                ' 在 HomePage 中也暂停检测流程
-                If AppRuntime.Home IsNot Nothing Then
-                    AppRuntime.Home.PauseDetectionFlow()
-                End If
-
             Case 2
                 '==============================
                 ' 状态 2: 恢复检测倒计时和录制
@@ -459,7 +439,7 @@ Partial Public Class ProcessPage
     ' 收到3結束 但有結果
 
     Private Async Function SendDetectionResult(t As TaskData,
-                                           results As List(Of HomePage.DetectionResult)) As Task
+                                           results As List(Of DetectionResult)) As Task
 
         Dim list As New List(Of Object)
 
@@ -468,10 +448,10 @@ Partial Public Class ProcessPage
         Dim totalCount As Integer = 0
 
         ' 累積所有檢測結果中的所有零件
-        For Each result As HomePage.DetectionResult In results
+        For Each result As DetectionResult In results
 
             Dim itemIndex As Integer = 1
-            For Each item As HomePage.DetectionItem In result.List
+            For Each item As DetectionItem In result.List
 
                 If item.resultType = "MATCH" Then
                     matchCount += 1
@@ -657,7 +637,7 @@ Partial Public Class ProcessPage
 
     End Function
     ' 公開方法：供外部（如"即時檢測"按鈕）呼叫來設置檢測結果
-    Public Sub SetDetectionResult(result As HomePage.DetectionResult)
+    Public Sub SetDetectionResult(result As DetectionResult)
 
         If Not _allowDetection Then
             AddLog("[DETECT] ARM未啟用，忽略結果")
@@ -700,7 +680,7 @@ Partial Public Class ProcessPage
 
         AddLog("[DETECT] Finished")
 
-        For Each item As HomePage.DetectionItem In result.List
+        For Each item As DetectionItem In result.List
 
             AddLog(
             $"No={item.detectionNo}, " &

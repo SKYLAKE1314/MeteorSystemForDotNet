@@ -290,36 +290,33 @@ Public Class AlgorithmPage
             TemplateStatusText.Text = "生成中..."
 
             Dim safeRoi = New CvRect(_roi.X, _roi.Y, _roi.Width, _roi.Height)
-
-            Dim options As New TemplateMatchOptions With {
-            .CannyLow = CannyLowSlider.Value,
-            .CannyHigh = CannyHighSlider.Value,
-            .MinContourArea = MinAreaSlider.Value
-        }
+            Dim srcCopy = _srcMat
 
             Dim result = Await Task.Run(Function()
+                                            ' 在背景執行緒中計算自動參數（基於圖像統計）
+                                            Dim autoP = ComputeAutoParams(srcCopy, safeRoi)
+
+                                            Dim opts As New TemplateMatchOptions With {
+                                                .CannyLow = autoP.CannyLow,
+                                                .CannyHigh = autoP.CannyHigh,
+                                                .MinContourArea = autoP.MinArea
+                                            }
 
                                             Dim preview As Mat = Nothing
-
-                                            Dim mat = TemplateMatcher.CreateTemplate(
-                                             _srcMat,
-                                             safeRoi,
-                                             options,
-                                             preview)
-
-                                            Return (mat, preview)
-
+                                            Dim mat = TemplateMatcher.CreateTemplate(srcCopy, safeRoi, opts, preview)
+                                            Return (mat, preview, autoP)
                                         End Function)
 
             _templateMat = result.Item1
             _templateCameraId = _selectedCameraId
 
-            TemplateImage.Source =
-            ImageConvertHelper.ToBitmap(result.Item2)
+            TemplateImage.Source = ImageConvertHelper.ToBitmap(result.Item2)
 
-            ApplyAutoTemplateParameters(safeRoi)
+            ' 將自動計算的參數同步到所有 UI 滑塊
+            ApplyAutoParams(result.Item3)
 
-            TemplateStatusText.Text = $"模板生成完成 (自動參數：金字塔={CInt(PyramidSlider.Value)}, 閾值={ThresholdSlider.Value:F2})"
+            Dim ap = result.Item3
+            TemplateStatusText.Text = $"✓ 金字塔={ap.Pyramid}  Canny={ap.CannyLow}/{ap.CannyHigh}  MinArea={ap.MinArea}"
         Catch ex As Exception
             MessageBox.Show(ex.ToString())
         End Try
@@ -721,32 +718,72 @@ Public Class AlgorithmPage
     End Sub
 #End Region
 
-    Private Sub ApplyAutoTemplateParameters(roi As CvRect)
-        If _srcMat Is Nothing Then Return
-        If roi.Width <= 0 OrElse roi.Height <= 0 Then Return
+    ' ========================= Auto Params =========================
+    Private Structure AutoTemplateParams
+        Public Pyramid As Integer
+        Public CannyLow As Integer
+        Public CannyHigh As Integer
+        Public MinArea As Integer
+    End Structure
 
-        Dim srcArea As Double = CDbl(_srcMat.Width) * CDbl(_srcMat.Height)
-        If srcArea <= 0 Then Return
+    ''' <summary>
+    ''' 依 ROI 圖像統計自動計算最佳匹配參數（在背景執行緒呼叫）。
+    ''' Canny 閾值採用中位數 sigma 規則（lower=0.67×v, upper=1.33×v）。
+    ''' </summary>
+    Private Function ComputeAutoParams(src As Mat, roi As CvRect) As AutoTemplateParams
+        Dim p As New AutoTemplateParams()
 
+        Dim srcArea As Double = CDbl(src.Width) * CDbl(src.Height)
         Dim roiArea As Double = CDbl(roi.Width) * CDbl(roi.Height)
-        Dim ratio As Double = roiArea / srcArea
+        Dim ratio As Double = If(srcArea > 0, roiArea / srcArea, 0.1)
 
-        Dim autoPyramid As Integer
-        Dim autoThreshold As Double
-
+        ' Pyramid from ROI-to-source area ratio
         If ratio < 0.03 Then
-            autoPyramid = 3
-            autoThreshold = 0.75
+            p.Pyramid = 3
         ElseIf ratio < 0.1 Then
-            autoPyramid = 2
-            autoThreshold = 0.8
+            p.Pyramid = 2
         Else
-            autoPyramid = 1
-            autoThreshold = 0.85
+            p.Pyramid = 1
         End If
 
-        PyramidSlider.Value = Math.Max(PyramidSlider.Minimum, Math.Min(PyramidSlider.Maximum, autoPyramid))
-        ThresholdSlider.Value = Math.Max(ThresholdSlider.Minimum, Math.Min(ThresholdSlider.Maximum, autoThreshold))
+        ' Canny from image median pixel (0.33-sigma rule)
+        p.CannyLow = 80
+        p.CannyHigh = 160
+        Try
+            Using gray As New Mat()
+                Cv2.CvtColor(src, gray, ColorConversionCodes.BGR2GRAY)
+                Using roiGray As New Mat(gray, roi)
+                    Using roiClone = roiGray.Clone()
+                        Dim total = CInt(roiClone.Total())
+                        If total > 0 Then
+                            Dim bytes(total - 1) As Byte
+                            System.Runtime.InteropServices.Marshal.Copy(roiClone.Data, bytes, 0, total)
+                            Array.Sort(bytes)
+                            Dim median As Integer = bytes(total \ 2)
+                            If median > 10 Then
+                                p.CannyLow = CInt(Math.Max(0, Math.Min(200, 0.67 * median)))
+                                p.CannyHigh = CInt(Math.Max(p.CannyLow + 40, Math.Min(255, 1.33 * median)))
+                            End If
+                        End If
+                    End Using
+                End Using
+            End Using
+        Catch ex As Exception
+            Logger.Warn("[AutoParams] Canny計算失敗，使用預設值: " & ex.Message)
+        End Try
+
+        ' MinArea: 0.1% of ROI pixel count, clamped 30~500
+        p.MinArea = CInt(Math.Max(30, Math.Min(500, roiArea * 0.001)))
+
+        Return p
+    End Function
+
+    ''' <summary>將自動計算的參數同步到 UI 滑塊（不更動閾值，保持使用者設定值）。</summary>
+    Private Sub ApplyAutoParams(ap As AutoTemplateParams)
+        PyramidSlider.Value = Math.Max(PyramidSlider.Minimum, Math.Min(PyramidSlider.Maximum, ap.Pyramid))
+        CannyLowSlider.Value = Math.Max(CannyLowSlider.Minimum, Math.Min(CannyLowSlider.Maximum, ap.CannyLow))
+        CannyHighSlider.Value = Math.Max(CannyHighSlider.Minimum, Math.Min(CannyHighSlider.Maximum, ap.CannyHigh))
+        MinAreaSlider.Value = Math.Max(MinAreaSlider.Minimum, Math.Min(MinAreaSlider.Maximum, ap.MinArea))
     End Sub
     ' =========================
     ' Safe run
