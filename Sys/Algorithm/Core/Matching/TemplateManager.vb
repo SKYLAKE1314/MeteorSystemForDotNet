@@ -252,6 +252,50 @@ Public Class TemplateManager
 
     End Function
 
+    ''' <summary>
+    ''' 依 SupplierCode（供應商代碼）搜尋模板組名稱（大小寫不敏感）。
+    ''' 規則：模板組資料夾名稱等於 supplierCode，或任一 cam*/config.json 中的 supplierCode 欄位符合。
+    ''' </summary>
+    Public Shared Function FindGroupBySupplierCode(supplierCode As String) As String
+        If String.IsNullOrWhiteSpace(supplierCode) Then Return Nothing
+        EnsureRoot()
+        If Not IO.Directory.Exists(TemplateRoot) Then Return Nothing
+
+        Dim sc = supplierCode.Trim()
+
+        For Each groupDir In IO.Directory.GetDirectories(TemplateRoot)
+            ' 1. Folder name matches directly
+            Dim folderName = IO.Path.GetFileName(groupDir)
+            If String.Equals(folderName, sc, StringComparison.OrdinalIgnoreCase) Then
+                Return groupDir
+            End If
+
+            ' 2. Any cam*/config.json has SupplierCode field matching
+            For Each camDir In IO.Directory.GetDirectories(groupDir, "cam*")
+                Dim cfgPath = IO.Path.Combine(camDir, "config.json")
+                If IO.File.Exists(cfgPath) Then
+                    Dim cfg = LoadConfig(cfgPath)
+                    If cfg IsNot Nothing AndAlso
+                       String.Equals(cfg.SupplierCode, sc, StringComparison.OrdinalIgnoreCase) Then
+                        Return groupDir
+                    End If
+                End If
+            Next
+
+            ' 3. Legacy root-level config.json
+            Dim rootCfg = IO.Path.Combine(groupDir, "config.json")
+            If IO.File.Exists(rootCfg) Then
+                Dim cfg = LoadConfig(rootCfg)
+                If cfg IsNot Nothing AndAlso
+                   String.Equals(cfg.SupplierCode, sc, StringComparison.OrdinalIgnoreCase) Then
+                    Return groupDir
+                End If
+            End If
+        Next
+
+        Return Nothing
+    End Function
+
     Public Shared Function LoadGroupBaseConfig(groupPath As String) As TemplateConfig
 
         If String.IsNullOrWhiteSpace(groupPath) Then Return Nothing

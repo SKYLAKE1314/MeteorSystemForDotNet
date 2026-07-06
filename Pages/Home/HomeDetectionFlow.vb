@@ -77,6 +77,10 @@ Partial Class HomePage
         End Try
     End Sub
 
+    Public Sub PlayNoTemplateAlert()
+        PlayPromptVoice(VoicePromptNoTemplate)
+    End Sub
+
     ''' <summary>
     ''' 暂停检测流程和倒计时
     ''' </summary>

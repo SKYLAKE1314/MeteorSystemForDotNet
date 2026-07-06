@@ -117,7 +117,13 @@
     <None Update="Voice\MatchCompletedPleaseScan.wav">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="Voice\NoTemplate.wav">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="Voice\SingleFlowCompleted.wav">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="Voice\StageSkipped.wav">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="Voice\StageTimeout.wav">
