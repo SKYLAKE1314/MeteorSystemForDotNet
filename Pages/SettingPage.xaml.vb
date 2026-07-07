@@ -6,6 +6,7 @@ Imports System.Collections.ObjectModel
 Public Class SettingPage
 
     Private _isLoaded As Boolean = False
+    Private _suppressEvents As Boolean = False  ' 防止 LoadCameraRows 期間觸發連鎖事件
 
     Private _ioMode As IoBoardMode = IoBoardMode.NONE
     Private _cameraList As New List(Of CameraInfo)
@@ -151,7 +152,7 @@ If(My.Settings.AutoRun, 0, 1)
 
     Private Sub Camera_SelectionChanged(sender As Object, e As SelectionChangedEventArgs)
 
-        If Not _isLoaded Then Return
+        If Not _isLoaded OrElse _suppressEvents Then Return
 
         Dim cb = DirectCast(sender, ComboBox)
         Dim row = DirectCast(cb.DataContext, CameraRow)
@@ -165,14 +166,14 @@ If(My.Settings.AutoRun, 0, 1)
         My.Settings.CameraDeviceId = cam?.DeviceId
         My.Settings.Save()
 
-        ' 通知其他頁面相機設定已變更，立即生效
+        ' 通知其他頁面相機設定已變更，不展開 SettingPage 自己的 reload
         CameraManager.NotifyCameraChanged()
 
     End Sub
 
     Private Async Sub Resolution_SelectionChanged(sender As Object, e As SelectionChangedEventArgs)
 
-        If Not _isLoaded Then Return
+        If Not _isLoaded OrElse _suppressEvents Then Return
 
         Dim cb = DirectCast(sender, ComboBox)
         Dim row = DirectCast(cb.DataContext, CameraRow)
@@ -201,73 +202,79 @@ If(My.Settings.AutoRun, 0, 1)
 
     Private Sub LoadCameraRows()
 
-        Dim list = CameraManager.GetCachedCameras()
-        _cameraList = list
-        RecordingCameraList.Clear()
-        For Each camera In list
-            RecordingCameraList.Add(camera)
-        Next
-
-        CameraRows.Clear()
-
-        Dim savedIds = My.Settings.CameraDeviceIds
-        Dim savedResolutions = My.Settings.CameraResolutions
-
-        If savedIds IsNot Nothing AndAlso savedIds.Count > 0 Then
-
-            For i = 0 To savedIds.Count - 1
-                Dim id = savedIds(i)
-
-                Dim camRow = New CameraRow With {
-                    .Title = $"相機 {CameraRows.Count + 1}",
-                    .CameraList = list
-                }
-
-                camRow.SelectedCamera =
-                    list.FirstOrDefault(Function(c) c.DeviceId = id)
-
-                ' 載入已儲存的分辨率
-                Dim resList = CameraResolutionOption.CommonResolutions()
-                camRow.ResolutionList = resList
-                If savedResolutions IsNot Nothing AndAlso savedResolutions.Count > i Then
-                    Dim savedRes = CameraResolutionOption.FromTag(savedResolutions(i))
-                    camRow.SelectedResolution =
-                        resList.FirstOrDefault(Function(r) r.Equals(savedRes))
-                End If
-
-                CameraRows.Add(camRow)
+        _suppressEvents = True
+        Try
+            Dim camList = CameraManager.GetCachedCameras()
+            _cameraList = camList
+            RecordingCameraList.Clear()
+            For Each camera In camList
+                RecordingCameraList.Add(camera)
             Next
 
-        Else
-            ' fallback
-            CameraRows.Add(New CameraRow With {
+            CameraRows.Clear()
+
+            Dim savedIds = My.Settings.CameraDeviceIds
+            Dim savedResolutions = My.Settings.CameraResolutions
+
+            If savedIds IsNot Nothing AndAlso savedIds.Count > 0 Then
+
+                For i = 0 To savedIds.Count - 1
+                    Dim id = savedIds(i)
+
+                    Dim camRow = New CameraRow With {
+                    .Title = $"相機 {CameraRows.Count + 1}",
+                    .CameraList = camList
+                }
+
+                    camRow.SelectedCamera =
+                    camList.FirstOrDefault(Function(c) c.DeviceId = id)
+
+                    ' 載入已儲存的分辨率
+                    Dim resList = CameraResolutionOption.CommonResolutions()
+                    camRow.ResolutionList = resList
+                    If savedResolutions IsNot Nothing AndAlso savedResolutions.Count > i Then
+                        Dim savedRes = CameraResolutionOption.FromTag(savedResolutions(i))
+                        camRow.SelectedResolution =
+                        resList.FirstOrDefault(Function(r) r.Equals(savedRes))
+                    End If
+
+                    CameraRows.Add(camRow)
+                Next
+
+            Else
+                ' fallback
+                CameraRows.Add(New CameraRow With {
                 .Title = "相機 1",
-                .CameraList = list,
+                .CameraList = camList,
                 .ResolutionList = CameraResolutionOption.CommonResolutions()
             })
-        End If
+            End If
 
-        UpdateCameraButtons()
-        RefreshAllCameraLists()
+            UpdateCameraButtons()
+            RefreshAllCameraLists()
 
-        Dim recordingId = My.Settings.RecordingCameraId
-        If String.IsNullOrWhiteSpace(recordingId) AndAlso CameraRows.Count > 0 AndAlso CameraRows(0).SelectedCamera IsNot Nothing Then
-            recordingId = CameraRows(0).SelectedCamera.DeviceId
-        End If
-        RecordingCameraComboBox.SelectedItem = RecordingCameraList.FirstOrDefault(Function(c) c.DeviceId = recordingId)
+            Dim recordingId = My.Settings.RecordingCameraId
+            If String.IsNullOrWhiteSpace(recordingId) AndAlso CameraRows.Count > 0 AndAlso CameraRows(0).SelectedCamera IsNot Nothing Then
+                recordingId = CameraRows(0).SelectedCamera.DeviceId
+            End If
+            RecordingCameraComboBox.SelectedItem = RecordingCameraList.FirstOrDefault(Function(c) c.DeviceId = recordingId)
 
-        ' 自動化
-        If My.Settings.AutoRun Then
-            AutoRun.SelectedIndex = 0      'True
-        Else
-            AutoRun.SelectedIndex = 1      'False
-        End If
+            ' 自動化
+            If My.Settings.AutoRun Then
+                AutoRun.SelectedIndex = 0      'True
+            Else
+                AutoRun.SelectedIndex = 1      'False
+            End If
 
-        ' 開機自啟
-        AutoStartupComboBox.SelectedIndex = If(My.Settings.AutoStartup, 0, 1)
+            ' 開機自啟
+            AutoStartupComboBox.SelectedIndex = If(My.Settings.AutoStartup, 0, 1)
 
-        ' 靜默啟動
-        SilentStartComboBox.SelectedIndex = If(My.Settings.SilentStart, 0, 1)
+            ' 靜默啟動
+            SilentStartComboBox.SelectedIndex = If(My.Settings.SilentStart, 0, 1)
+
+        Finally
+            _suppressEvents = False
+        End Try
 
     End Sub
 
