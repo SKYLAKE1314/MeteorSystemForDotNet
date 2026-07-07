@@ -67,6 +67,7 @@ Public Class Draw_opencv
 
     ' =========================================
     ' 重載：直接使用已加載的模板 Mat 和配置（繞過 TemplateCache）
+    ' 若 config 含有效 ROI，則只在 ROI 區域（含容差）搜尋，避免全幀虛假高分
     ' =========================================
     Public Shared Async Function ProcessAsync(
         input As Cv.Mat,
@@ -75,8 +76,32 @@ Public Class Draw_opencv
 
         If input Is Nothing OrElse templateMat Is Nothing OrElse config Is Nothing Then Return Nothing
 
+        ' ── ROI 限制搜尋 ──────────────────────────────────────
+        ' 若模板建立時記錄了 ROI，在 ROI 範圍（±30% margin）內搜尋
+        Dim searchRect As Cv.Rect
+        Dim hasRoi = (config.RoiW > 0 AndAlso config.RoiH > 0 AndAlso
+                      config.RoiX >= 0 AndAlso config.RoiY >= 0)
+        If hasRoi Then
+            Dim marginX = CInt(config.RoiW * 0.35)
+            Dim marginY = CInt(config.RoiH * 0.35)
+            Dim sx = Math.Max(0, config.RoiX - marginX)
+            Dim sy = Math.Max(0, config.RoiY - marginY)
+            Dim sw = Math.Min(input.Width - sx, config.RoiW + marginX * 2)
+            Dim sh = Math.Min(input.Height - sy, config.RoiH + marginY * 2)
+            ' 搜尋區域至少要比模板大才有意義
+            If sw > templateMat.Width AndAlso sh > templateMat.Height Then
+                searchRect = New Cv.Rect(sx, sy, sw, sh)
+                Logger.Debug($"[MATCH] ROI 限制搜尋: ({sx},{sy}) {sw}x{sh} (原圖 {input.Width}x{input.Height})")
+            Else
+                hasRoi = False ' fallback 到全幀
+            End If
+        End If
+
+        ' 截取搜尋區域（或用全幀）
+        Dim searchSrc As Cv.Mat = If(hasRoi, New Cv.Mat(input, searchRect), input)
+
         ' 動態增強：對 source 和 template 套用相同的 CLAHE + 金字塔
-        Dim srcWork = EnhanceForMatching(input, config)
+        Dim srcWork = EnhanceForMatching(searchSrc, config)
         Dim tplWork = EnhanceForMatching(templateMat, config)
 
         Dim result = Await TemplateMatcher.MatchAsync(
@@ -87,70 +112,47 @@ Public Class Draw_opencv
 
         srcWork.Dispose()
         tplWork.Dispose()
+        If hasRoi Then searchSrc.Dispose()
+
+        ' 將匹配點轉回原圖坐標
+        Dim absMatchX = result.MatchPoint.X + If(hasRoi, searchRect.X, 0)
+        Dim absMatchY = result.MatchPoint.Y + If(hasRoi, searchRect.Y, 0)
 
         Dim display = input.Clone()
 
         If result.IsOk Then
+            Dim rect As New Cv.Rect(absMatchX, absMatchY, templateMat.Width, templateMat.Height)
 
-            Dim rect As New Cv.Rect(
-                result.MatchPoint.X,
-                result.MatchPoint.Y,
-                templateMat.Width,
-                templateMat.Height)
+            ' 防止 rect 超出邊界
+            rect = New Cv.Rect(
+                Math.Max(0, Math.Min(rect.X, input.Width - 1)),
+                Math.Max(0, Math.Min(rect.Y, input.Height - 1)),
+                Math.Min(rect.Width, input.Width - rect.X),
+                Math.Min(rect.Height, input.Height - rect.Y))
 
-            ' =========================
-            ' Draw box
-            ' =========================
             Cv.Cv2.Rectangle(display, rect, Cv.Scalar.Lime, 3)
 
-            ' =========================
-            ' ROI contour
-            ' =========================
             Dim roi As New Cv.Mat(input, rect)
-
             Dim gray As New Cv.Mat()
             Cv.Cv2.CvtColor(roi, gray, Cv.ColorConversionCodes.BGR2GRAY)
-
             Dim edges As New Cv.Mat()
             Cv.Cv2.Canny(gray, edges, 80, 160)
-
             Dim contours As Cv.Point()() = Nothing
             Dim hierarchy As Cv.HierarchyIndex() = Nothing
-
-            Cv.Cv2.FindContours(
-                edges,
-                contours,
-                hierarchy,
-                Cv.RetrievalModes.External,
-                Cv.ContourApproximationModes.ApproxSimple)
-
+            Cv.Cv2.FindContours(edges, contours, hierarchy,
+                Cv.RetrievalModes.External, Cv.ContourApproximationModes.ApproxSimple)
             If contours IsNot Nothing Then
-
-                Dim contourList =
-                    contours.Select(Function(c) c.AsEnumerable())
-
-                Cv.Cv2.DrawContours(
-                    display(rect),
-                    contourList,
-                    -1,
-                    Cv.Scalar.Lime,
-                    2)
-
+                Cv.Cv2.DrawContours(display(rect), contours.Select(Function(c) c.AsEnumerable()), -1, Cv.Scalar.Lime, 2)
             End If
-
         End If
 
-        ' =========================
-        ' Score text
-        ' =========================
-        Cv.Cv2.PutText(
-            display,
-            $"Score: {result.Score:F3}",
-            New Cv.Point(20, 40),
-            Cv.HersheyFonts.HersheySimplex,
-            1.0,
-            Cv.Scalar.Yellow,
-            2)
+        ' 若使用 ROI 限制，在畫面上也標示搜尋區域（橙色虛框方便 debug）
+        If hasRoi Then
+            Cv.Cv2.Rectangle(display, searchRect, Cv.Scalar.Orange, 1)
+        End If
+
+        Cv.Cv2.PutText(display, $"Score: {result.Score:F3}", New Cv.Point(20, 40),
+            Cv.HersheyFonts.HersheySimplex, 1.0, Cv.Scalar.Yellow, 2)
 
         Return New ResultPack With {
             .Mat = display,

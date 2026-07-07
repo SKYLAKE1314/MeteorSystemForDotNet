@@ -28,6 +28,28 @@ Public Class TaskVideoRecorder
     Private _currentFilePath As String
     Private _isPaused As Boolean = False
 
+    ''' <summary>
+    ''' 獲取錄製是否當前處於暫停狀態
+    ''' </summary>
+    Public ReadOnly Property IsPaused As Boolean
+        Get
+            SyncLock _syncRoot
+                Return _isPaused
+            End SyncLock
+        End Get
+    End Property
+
+    ''' <summary>
+    ''' 獲取錄製是否當前處於運行狀態（已啟動且未暫停）
+    ''' </summary>
+    Public ReadOnly Property IsRunning As Boolean
+        Get
+            SyncLock _syncRoot
+                Return _currentInfo IsNot Nothing AndAlso Not _isPaused
+            End SyncLock
+        End Get
+    End Property
+
     Private Sub New()
     End Sub
 

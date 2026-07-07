@@ -79,11 +79,7 @@ Partial Class HomePage
 
             Logger.Debug($"[FLOW] Current stage={stage}, EnableBarcode={If(snapshot IsNot Nothing, snapshot.EnableBarcode, False)}, EnableOcr={If(snapshot IsNot Nothing, snapshot.EnableOcr, False)}")
 
-            ' 匹配多次，在3秒內每秒尝试一次（傳遞完整路徑以直接加載模板）
-            ' 臨時
-            _detectCameraId = GetCamId(0)      ' 相機1
-            CameraService.Instance.StartCamera(_detectCameraId)
-            '
+            ' 匹配多次，在3秒內每秒嘗試一次（傳遞完整路徑以直接加載模板）
             Logger.Info("===== Before Match =====")
             Dim matchResult = Await WaitMultipleMatchAsync(templatePath, snapshot, 3000)
             Logger.Info("===== After Match =====")

@@ -1,4 +1,4 @@
-﻿Imports System.IO
+Imports System.IO
 Imports System.Text
 Imports System.Threading
 Imports System.Windows
@@ -41,13 +41,23 @@ Partial Class HomePage
         End If
 
         'Dim cameraId = ResolveDetectCameraId()
-        '臨時
-        Dim cameraId = GetCamId(0)
 
-        CameraService.Instance.StopAll()
-        Thread.Sleep(100)
-        CameraService.Instance.StartCamera(cameraId)
-        '
+        ' 如果相機已在運行且有畫面，直接使用；否則重啟
+        Dim cameraId = GetCamId(0)
+        If CameraService.Instance.GetFrame(cameraId) Is Nothing Then
+            CameraService.Instance.StopAll()
+            CameraService.Instance.StartCamera(cameraId)
+            ' 等待相機產生第一幀，最多等 2 秒
+            Dim warmupSw As New Stopwatch()
+            warmupSw.Start()
+            While CameraService.Instance.GetFrame(cameraId) Is Nothing AndAlso warmupSw.ElapsedMilliseconds < 2000
+                Await Task.Delay(50)
+            End While
+            Logger.Debug($"[MATCH] 相機沖熱完成 ({warmupSw.ElapsedMilliseconds}ms)")
+        Else
+            Logger.Debug("[MATCH] 相機已有畫面，跳過沖熱")
+        End If
+
         Dim bestResultMat As Cv.Mat = Nothing
         Dim bestScore As Double = 0
         Dim bestThreshold As Double = masterData.Config.Threshold ' 追蹤最高分對應的閾值
@@ -58,11 +68,6 @@ Partial Class HomePage
         Dim groupPath = IO.Path.GetDirectoryName(templatePath)
         Dim subTemplateMetas = TemplateTrainingStore.GetTrainingSamples(groupPath)
         Logger.Debug($"[MATCH] 子模板數量={If(subTemplateMetas IsNot Nothing, subTemplateMetas.Count, 0)}, groupPath={groupPath}")
-
-        ' 相機啟動一次（在迴圈開始前）
-        If Not String.IsNullOrWhiteSpace(cameraId) Then
-            CameraService.Instance.StartCamera(cameraId)
-        End If
 
         ' 每200ms嘗試一次（3秒內最多約15次）
         Const AttemptIntervalMs As Long = 200
@@ -129,21 +134,10 @@ Partial Class HomePage
                             bestThreshold = masterData.Config.Threshold
                             bestResultMat = masterResult.Mat
                             Logger.Debug($"[MATCH] #{matchAttempt} 母版 Score={masterResult.Score:F3} (閾值={masterData.Config.Threshold:F3})")
-                            Dim stableCount As Integer = 0
-                            Dim lastScore As Double = 0
                             ' 即時渲染匹配結果（含框線和分數）
-                            If masterResult.Score > bestScore Then
-                                If Math.Abs(masterResult.Score - lastScore) < 0.02 Then
-                                    stableCount += 1
-                                Else
-                                    stableCount = 0
-                                End If
-
-                                If stableCount >= 2 Then
-                                    bestScore = masterResult.Score
-                                End If
-
-                                lastScore = masterResult.Score
+                            If masterResult.Mat IsNot Nothing Then
+                                Dim wb = masterResult.Mat.ToWriteableBitmap()
+                                Dispatcher.Invoke(Sub() RenderImage.Source = wb)
                             End If
                         End If
 

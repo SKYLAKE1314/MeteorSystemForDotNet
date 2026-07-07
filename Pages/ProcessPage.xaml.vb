@@ -414,21 +414,50 @@ Partial Public Class ProcessPage
                 _currentTaskStartTime = DateTimeOffset.Now.ToUnixTimeMilliseconds()
                 _currentArtifactFolder = BuildTaskArtifactFolder(t, _currentTaskStartTime)
 
+                ' 提前啟動匹配相機，避免按下按鈕時相機尚未就緒
+                If AppRuntime.Home IsNot Nothing Then
+                    Dispatcher.Invoke(Sub() AppRuntime.Home.PreWarmMatchCamera())
+                End If
+
                 AddLog("[TASK] 0 -> ARM (等待物理按鈕或即時檢測)")
                 Await StartTaskRecordingAsync(t)
+
+            Case 1
+                '==============================
+                ' 状态 1: 暂停检测倒计时和录制
+                '==============================
+                ' 只有在已啟動的情況下才允許暫停
+                If Not _allowDetection Then
+                    AddLog("[TASK] 1 -> PAUSE 失敗：檢測未啟動")
+                    Return
+                End If
+
+                AddLog("[TASK] 1 -> PAUSE (暂停检测倒计时和录制)")
+
+                ' 暂停录制
+                Await TaskVideoRecorder.Instance.PauseRecordingAsync()
+                Logger.Info("[VideoRecorder] 录制已暂停")
+
+                ' 暂停检测流程
+                If AppRuntime.Home IsNot Nothing Then
+                    AppRuntime.Home.PauseDetectionFlow()
+                End If
 
             Case 2
                 '==============================
                 ' 状态 2: 恢复检测倒计时和录制
                 '==============================
+                ' 只有在已暫停的情況下才允許恢復
+                If Not TaskVideoRecorder.Instance.IsPaused Then
+                    AddLog("[TASK] 2 -> RESUME 失敗：錄製未暫停")
+                    Return
+                End If
+
                 AddLog("[TASK] 2 -> RESUME (恢复检测倒计时和录制)")
 
                 ' 恢复录制
                 Await TaskVideoRecorder.Instance.ResumeRecordingAsync()
                 Logger.Info("[VideoRecorder] 录制已恢复")
-
-                ' 播报语音提示："检测已恢复"
-                ' PlayPromptVoice("DetectionResumed.wav")
 
                 ' 在 HomePage 中也恢复检测流程
                 If AppRuntime.Home IsNot Nothing Then

@@ -22,6 +22,7 @@ Partial Class HomePage
 
     Private _detectLock As New Object()
     Private _isDetecting As Boolean = False
+    Private _isPaused As Boolean = False
 
     Private Enum DetectionFlowStage
         Idle = 0
@@ -64,63 +65,58 @@ Partial Class HomePage
         AddHandler LanguageManager.LanguageChanged, AddressOf RefreshLanguageUI
 
         If _initialized Then
-            ' ⭐ 回來時補訂閱（關鍵）
             If _isStreaming Then
                 AddHandler CameraService.Instance.FrameArrived, AddressOf OnFrameArrived
             End If
-
             Return
         End If
 
         _initialized = True
 
-        Logger.SetWpfRichTextBox(rtbLog)
+        ' ─── 顯示載入遮罩 ─────────────────────────
+        HomeLoadingOverlay.Visibility = Visibility.Visible
+        Await Task.Yield()   ' 讓 UI 先渲染遮罩
 
-        _io = New IOController(
-        "192.168.1.117",
-        502,
-        1,
-        0,
-        AppRuntime.IoMode,
-        Sub(msg) Logger.Info(msg)
-        )
-
-        Await _io.InitializeAsync()
-
-        If AppRuntime.IoMode = IoBoardMode.NONE Then
-            Logger.Info("IO 已停用，保留語音播報")
-        Else
-            Logger.Info("IO 初始化完成")
-        End If
-        ' 數據交互訂閲
-
-        AddHandler ProcessPage.OnRealtimeTrigger, AddressOf RunDetection
-
-        AddHandler Logger.LogReceived, AddressOf GlobalLogReceived
-
-        ' 啟用並訂閱物理按鈕（單一按鈕）
         Try
-            _io.StartDIListener(0) ' DI index 可根據硬體配置調整
-            AddHandler _io.ButtonChanged, AddressOf IoButtonChanged
-            Logger.Info("物理按鈕監聽已啟用")
-        Catch ex As Exception
-            Logger.Error("啟用物理按鈕監聽失敗: " & ex.Message)
-        End Try
+            Logger.SetWpfRichTextBox(rtbLog)
 
-        Logger.Info("HomePage 已載入")
+            ' IO 初始化
+            _io = New IOController(
+                "192.168.1.117",
+                502,
+                1,
+                0,
+                AppRuntime.IoMode,
+                Sub(msg) Logger.Info(msg)
+            )
+            Await _io.InitializeAsync()
 
-        ' =========================
-        ' 初始化相機選擇 ComboBox
-        ' =========================
-        Try
-            CameraManager.Initialize()
-            CameraManager.Refresh()
+            If AppRuntime.IoMode = IoBoardMode.NONE Then
+                Logger.Info("IO 已停用，保留語音播報")
+            Else
+                Logger.Info("IO 初始化完成")
+            End If
+
+            AddHandler ProcessPage.OnRealtimeTrigger, AddressOf RunDetection
+            AddHandler Logger.LogReceived, AddressOf GlobalLogReceived
+
+            Try
+                _io.StartDIListener(0)
+                AddHandler _io.ButtonChanged, AddressOf IoButtonChanged
+                Logger.Info("物理按鈕監聽已啟用")
+            Catch ex As Exception
+                Logger.Error("啟用物理按鈕監聽失敗: " & ex.Message)
+            End Try
+
+            ' 相機列表：WMI + DSHOW probe 非常慢，必須在背景執行緒
+            Await Task.Run(Sub() CameraManager.Refresh())
+
             Dim cameras = CameraManager.GetCachedCameras()
             If cameras IsNot Nothing AndAlso cameras.Count > 0 Then
                 CameraComboBox.ItemsSource = cameras
                 If Not String.IsNullOrWhiteSpace(_detectCameraId) Then
                     CameraComboBox.SelectedValue = _detectCameraId
-                ElseIf cameras.Count > 0 Then
+                Else
                     CameraComboBox.SelectedIndex = 0
                     _detectCameraId = cameras(0).DeviceId
                 End If
@@ -128,23 +124,14 @@ Partial Class HomePage
             Else
                 Logger.Warn("未找到可用的相機設備")
             End If
+
         Catch ex As Exception
-            Logger.Error($"初始化相機列表失敗: {ex.Message}")
+            Logger.Error($"HomePage 初始化失敗: {ex.Message}")
+        Finally
+            HomeLoadingOverlay.Visibility = Visibility.Collapsed
+            _isStreaming = False
+            Logger.Info("HomePage 已載入")
         End Try
-
-        ' =========================
-        ' Live2D Path
-        ' =========================
-        'Dim live2dPath As String =
-        '    Path.Combine(
-        '        AppDomain.CurrentDomain.BaseDirectory,
-        '        "UI",
-        '        "live2d")
-
-        'Logger.Info(
-        '    "Live2D SubSysPath: " & live2dPath)
-
-        _isStreaming = False
     End Sub
     Private Sub Page_Unloaded(sender As Object, e As RoutedEventArgs) Handles Me.Unloaded
         RemoveHandler CameraService.Instance.FrameArrived, AddressOf OnFrameArrived

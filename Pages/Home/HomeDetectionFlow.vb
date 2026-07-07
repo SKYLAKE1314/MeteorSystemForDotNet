@@ -11,11 +11,11 @@ Imports OpenCvSharp.WpfExtensions
 Imports Cv = OpenCvSharp
 
 Partial Class HomePage
-
     Private Function TryBeginDetectionSession(triggerSource As String, ByRef stage As DetectionFlowStage) As Boolean
         SyncLock _detectLock
             If Not _isDetecting Then
                 _isDetecting = True
+                _isPaused = False
                 _skipCurrentStageRequested = False
                 _flowStage = DetectionFlowStage.Matching
                 _activeDetectionResult = New DetectionResult With {
@@ -50,9 +50,10 @@ Partial Class HomePage
     End Function
 
     Private Sub FinishDetection()
-        _io.SetLightYellow() ' 流程結束後黃燈常亮待機
+        _io.SetLightYellow()
         SyncLock _detectLock
             _isDetecting = False
+            _isPaused = False
             _skipCurrentStageRequested = False
             _flowStage = DetectionFlowStage.Idle
             _activeDetectionResult = Nothing
@@ -77,6 +78,20 @@ Partial Class HomePage
         End Try
     End Sub
 
+    ''' <summary>
+    ''' 收到 status 0 時提前啟動匹配相機，確保按鈕觸發時相機已有畫面
+    ''' </summary>
+    Public Sub PreWarmMatchCamera()
+        Try
+            Dim camId = GetCamId(0)
+            If String.IsNullOrWhiteSpace(camId) Then Return
+            CameraService.Instance.StartCamera(camId)
+            Logger.Info($"[MATCH] 預熱匹配相機: {camId}")
+        Catch ex As Exception
+            Logger.Error("[MATCH] 預熱相機失敗: " & ex.Message)
+        End Try
+    End Sub
+
     Public Sub PlayNoTemplateAlert()
         PlayPromptVoice(VoicePromptNoTemplate)
     End Sub
@@ -87,13 +102,12 @@ Partial Class HomePage
     Public Sub PauseDetectionFlow()
         Try
             SyncLock _detectLock
-                ' 如果检测正在进行，设置暂停标志
-                Logger.Info("[FLOW] 检测流程已暂停")
-                ' 播报语音提示："检测已暂停"
+                _isPaused = True
+                Logger.Info("[FLOW] 檢測流程已暫停")
                 PlayPromptVoice("DetectionPaused.wav")
             End SyncLock
         Catch ex As Exception
-            Logger.Error("[FLOW] 暂停流程失敗: " & ex.Message)
+            Logger.Error("[FLOW] 暫停流程失敗: " & ex.Message)
         End Try
     End Sub
 
