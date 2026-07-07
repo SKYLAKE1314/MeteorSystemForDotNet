@@ -177,41 +177,62 @@ If(My.Settings.AutoRun, 0, 1)
 
     Private Async Sub Resolution_SelectionChanged(sender As Object, e As SelectionChangedEventArgs)
 
+        ' 【防禦 1】如果是程式自動載入、或是防護網開啟中，絕對不執行
         If Not _isLoaded OrElse _suppressEvents Then Return
 
         Dim cb = TryCast(sender, ComboBox)
         If cb Is Nothing Then Return
+
+        ' 【防禦 2】致命關鍵點：如果使用者沒有打開下拉選單，也沒有點擊它，代表這是 UI 載入時的自動綁定事件，直接攔截！
+        If Not cb.IsDropDownOpen AndAlso Not cb.IsFocused Then Return
+
         Dim row = TryCast(cb.DataContext, CameraRow)
         If row Is Nothing Then Return
 
         Dim res = TryCast(cb.SelectedItem, CameraResolutionOption)
         If res Is Nothing OrElse row.SelectedCamera Is Nothing Then Return
 
+        ' ────────────────── 以下為真正手動觸發時的套用邏輯 ──────────────────
         row.SelectedResolution = res
         SaveResolutionRows()
 
-        ' 重啟相機以套用新分辨率（在背景執行緒，避免 UI 凍結）
         Dim deviceId = row.SelectedCamera.DeviceId
-        LoadingOverlay.Visibility = Visibility.Visible
-        LoadingText.Text = $"套用分辨率 {res.Width}×{res.Height}..."
-        Try
-            Await Task.Run(Sub()
-                               ' 先停止相機，等待足夠時間讓資源完全釋放
-                               CameraService.Instance.StopCamera(deviceId)
-                               System.Threading.Thread.Sleep(500)
 
-                               ' 重新啟動相機以套用新分辨率
-                               CameraService.Instance.StartCamera(deviceId)
+        ' 用 Dispatcher 確保遮罩控制在 UI 執行緒上安全執行
+        Dispatcher.Invoke(Sub()
+                              LoadingOverlay.Visibility = Visibility.Visible
+                              LoadingText.Text = $"套用分辨率 {res.Width}×{res.Height}..."
+                          End Sub)
+
+        Try
+            CameraManager.NotifyCameraChanged() ' 通知首頁先斷開相機，防止存取違規
+
+            Await Task.Run(Sub()
+                               Try
+                                   Logger.Info($"[Setting] 開始重啟相機以變更解析度: {row.Title}")
+                                   CameraService.Instance.StopCamera(deviceId)
+                                   System.Threading.Thread.Sleep(600) ' 給予充足時間釋放硬體
+
+                                   CameraService.Instance.StartCamera(deviceId)
+                                   Logger.Info($"[Setting] 相機 {row.Title} 分辨率更改為 {res.Width}x{res.Height}，重啟成功")
+                               Catch ex As Exception
+                                   Logger.Error($"[Setting] 背景線程重啟相機失敗: {ex.Message}")
+                                   Throw
+                               End Try
                            End Sub)
-            Logger.Info($"[Setting] 相機 {row.Title} 分辨率更改為 {res.Width}x{res.Height}，已重啟相機")
+
+            CameraManager.NotifyCameraChanged() ' 重新通知首頁綁定新解析度的畫面
+
         Catch ex As Exception
             Logger.Error($"[Setting] 套用分辨率失敗: {ex.Message}")
             Dispatcher.Invoke(Sub()
-                                  MessageBox.Show($"套用分辨率失敗: {ex.Message}" & vbCrLf & vbCrLf & "建議先停止相機使用再變更分辨率",
-                                                  "錯誤", MessageBoxButton.OK, MessageBoxImage.Error)
+                                  MessageBox.Show($"套用分辨率失敗: {ex.Message}" & vbCrLf & vbCrLf & "建議先返回首頁停止相機流，再變更分辨率。",
+                                              "錯誤", MessageBoxButton.OK, MessageBoxImage.Error)
                               End Sub)
         Finally
-            LoadingOverlay.Visibility = Visibility.Collapsed
+            Dispatcher.Invoke(Sub()
+                                  LoadingOverlay.Visibility = Visibility.Collapsed
+                              End Sub)
         End Try
 
     End Sub

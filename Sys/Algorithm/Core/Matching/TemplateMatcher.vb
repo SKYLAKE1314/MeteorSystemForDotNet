@@ -178,27 +178,37 @@ Public Class TemplateMatcher
     ' =========================================
     ' 異步匹配
     ' =========================================
+    ' =================================================================
+    ' 異步匹配 (安全修正版：防範跨執行緒 Disposed 異常)
+    ' =================================================================
     Public Shared Async Function MatchAsync(
     source As Mat,
     template As Mat,
     threshold As Double,
     methodIndex As Integer) As Task(Of MatchResult)
 
+        ' 【核心修復】如果傳入的物件已經不合法，直接返回
+        If source Is Nothing OrElse source.IsDisposed OrElse template Is Nothing OrElse template.IsDisposed Then
+            Return Nothing
+        End If
+
+        ' 【核心修復】必須在「呼叫 Task.Run 之前（主執行緒）」先完成 Clone！
+        ' 這樣能確保傳進背景執行緒的 Mat 擁有獨立生命週期，絕不會被外部 UI 循環提前銷毀
+        Dim srcCopyForThread As Mat = source.Clone()
+        Dim tplCopyForThread As Mat = template.Clone()
+
         Return Await Task.Run(
             Function()
-
-                ' 避免跨執行緒Mat問題
-                Using srcCopy = source.Clone(),
-                      tplCopy = template.Clone()
+                ' 背景執行緒專用 Using，確保不論成功失敗，此安全副本都會被乾淨釋放
+                Using srcCopy = srcCopyForThread,
+                      tplCopy = tplCopyForThread
 
                     Return MatchCore(
                         srcCopy,
                         tplCopy,
                         threshold,
                         methodIndex)
-
                 End Using
-
             End Function)
 
     End Function
@@ -206,6 +216,9 @@ Public Class TemplateMatcher
     ' =========================================
     ' Match Core
     ' =========================================
+    ' =================================================================
+    ' Match Core (工業級防盲增強版：徹底封殺純色與無特徵虛假高分)
+    ' =================================================================
     Private Shared Function MatchCore(
     source As Mat,
     template As Mat,
@@ -214,47 +227,114 @@ Public Class TemplateMatcher
 
         Dim mode As TemplateMatchModes = IndexToMode(methodIndex)
 
-        ' --- Normal polarity match ---
-        Dim score As Double
-        Dim matchPoint As Point
-        TrySingleMatch(source, template, mode, score, matchPoint)
+        Using graySrc As New Mat(), grayTpl As New Mat()
 
-        ' --- Polarity check: if score is poor, try inverted source ---
-        ' Handles dark-on-light vs light-on-dark mismatch between template and source.
-        ' Skip for SqDiff (inversion semantics differ) and when already a strong match.
-        If mode <> TemplateMatchModes.SqDiffNormed AndAlso score < 0.5 Then
-            Using invSrc As New Mat()
-                Cv2.BitwiseNot(source, invSrc)
-                Dim score2 As Double
-                Dim matchPoint2 As Point
-                TrySingleMatch(invSrc, template, mode, score2, matchPoint2)
-                If score2 > score Then
-                    Logger.Debug($"[MATCH] 極性反轉改善分數: {score:F3} -> {score2:F3}")
-                    score = score2
-                    matchPoint = matchPoint2
+            ' 1. 強制轉換為單通道灰階圖
+            If source.Channels() > 1 Then
+                Cv2.CvtColor(source, graySrc, ColorConversionCodes.BGR2GRAY)
+            Else
+                source.CopyTo(graySrc)
+            End If
+
+            If template.Channels() > 1 Then
+                Cv2.CvtColor(template, grayTpl, ColorConversionCodes.BGR2GRAY)
+            Else
+                template.CopyTo(grayTpl)
+            End If
+
+            ' =================================================================
+            ' 【核心防禦：大圖質量與紋理檢驗】
+            ' =================================================================
+            ' 計算搜尋大圖的平均值與標準差。標準差 (StdDev) 代表圖像紋理的複雜度。
+            ' 如果大圖是純黑、純白、純色或幾乎沒紋理的雜訊，標準差會極低（通常 < 8）。
+            Dim meanSrc As Scalar = Nothing
+            Dim stdDevSrc As Scalar = Nothing
+            Cv2.MeanStdDev(graySrc, meanSrc, stdDevSrc)
+
+            ' 如果影像幾乎沒有紋理，直接判定不匹配，強制將分數歸零，徹底封殺 OpenCV 數學幻覺！
+            If stdDevSrc.Val0 < 5.0 Then
+                Logger.Debug($"[MATCH] 拒絕匹配：搜尋區域影像標準差過低 ({stdDevSrc.Val0:F2})，判定為無紋理純色畫面。")
+                Return New MatchResult With {
+                    .Score = 0,
+                    .MatchPoint = New Point(0, 0),
+                    .IsOk = False,
+                    .ResultImage = source.Clone()
+                }
+            End If
+
+            ' =================================================================
+            ' 執行匹配運算
+            ' =================================================================
+            ' --- 正常極性匹配 ---
+            Dim score As Double = 0
+            Dim matchPoint As Point
+
+            TrySingleMatch(graySrc, grayTpl, mode, score, matchPoint)
+
+            ' --- 極性反轉匹配 分支 ---
+            If mode <> TemplateMatchModes.SqDiffNormed AndAlso score < 0.5 Then
+                Using invTpl As New Mat()
+                    Cv2.BitwiseNot(grayTpl, invTpl)
+
+                    Dim score2 As Double = 0
+                    Dim matchPoint2 As Point
+
+                    TrySingleMatch(graySrc, invTpl, mode, score2, matchPoint2)
+
+                    If score2 > score Then
+                        Logger.Debug($"[MATCH] 極性反轉改善分數: {score:F3} -> {score2:F3}")
+                        score = score2
+                        matchPoint = matchPoint2
+                    End If
+                End Using
+            End If
+
+            ' 2. 建立返回結果
+            Dim display As Mat = source.Clone()
+
+            ' 【加強防禦】如果算出來的高分依然大於閾值，但此時分數恰好是踩中 CCorrNormed 的純色陷阱
+            ' 我們做二次安全檢查：確保匹配到的區域 (ROI)，其標準差不能跟模板天壤地別
+            Dim ok As Boolean = score >= threshold
+
+            If ok Then
+                ' 裁切出大圖上被匹配到的那一塊區域
+                Dim matchedRect As New Rect(matchPoint.X, matchPoint.Y, template.Width, template.Height)
+
+                ' 防止邊界溢出安全保護
+                If matchedRect.X >= 0 AndAlso matchedRect.Y >= 0 AndAlso
+                   (matchedRect.X + matchedRect.Width) <= graySrc.Width AndAlso
+                   (matchedRect.Y + matchedRect.Height) <= graySrc.Height Then
+
+                    Using matchedRoi As New Mat(graySrc, matchedRect)
+                        Dim mMean As Scalar = Nothing, mStd As Scalar = Nothing
+                        Cv2.MeanStdDev(matchedRoi, mMean, mStd)
+
+                        ' 如果匹配到的地方其實是死黑一片或完全沒特徵，強行拉倒
+                        If mStd.Val0 < 3.0 Then
+                            ok = False
+                            score = 0
+                            Logger.Debug($"[MATCH] 判定攔截：匹配區域標準差過低 ({mStd.Val0:F2})，此為虛假高分點。")
+                        End If
+                    End Using
                 End If
-            End Using
-        End If
+            End If
 
-        ' Draw result on original source
-        Dim display As Mat = source.Clone()
-        Dim ok As Boolean = score >= threshold
+            ' 真正過關才畫綠框
+            If ok Then
+                Cv2.Rectangle(
+                    display,
+                    New Rect(matchPoint.X, matchPoint.Y, template.Width, template.Height),
+                    Scalar.Lime,
+                    3)
+            End If
 
-        If ok Then
-            Cv2.Rectangle(
-                display,
-                New Rect(matchPoint.X, matchPoint.Y, template.Width, template.Height),
-                Scalar.Lime,
-                3)
-        End If
-
-        Return New MatchResult With {
-            .Score = score,
-            .MatchPoint = matchPoint,
-            .IsOk = ok,
-            .ResultImage = display
-        }
-
+            Return New MatchResult With {
+                .Score = score,
+                .MatchPoint = matchPoint,
+                .IsOk = ok,
+                .ResultImage = display
+            }
+        End Using
     End Function
 
     ''' <summary>執行單次 MatchTemplate 並返回最佳分數及位置。</summary>

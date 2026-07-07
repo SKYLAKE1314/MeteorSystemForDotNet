@@ -21,30 +21,63 @@ Public Class CameraManager
         RaiseEvent CameraChanged()
     End Sub
 
+    ' =================================================================
+    ' 【核心修復】取得相機清單（加入 WMI 安全防卡死防禦機制）
+    ' =================================================================
+    ' =================================================================
+    ' 【核心修復】取得相機清單（精確對接 DsDeviceInfo 型態）
+    ' =================================================================
     Public Shared Function GetCameras() As List(Of CameraInfo)
 
         Dim result As New List(Of CameraInfo)
-
-        ' ── WMI：取得每個相機裝置的唯一 PNPDeviceID ──────────────
-        Dim searcher As New ManagementObjectSearcher(
-            "SELECT * FROM Win32_PnPEntity WHERE PNPClass='Camera' OR PNPClass='Image'")
-
         Dim wmiDevices As New List(Of CameraInfo)
 
-        For Each obj As ManagementObject In searcher.Get()
-            wmiDevices.Add(New CameraInfo With {
-                .Name = obj("Name")?.ToString(),
-                .DeviceId = obj("PNPDeviceID")?.ToString(),
-                .Index = -1
-            })
-        Next
+        Try
+            ' ── WMI 防卡死安全設定 ──────────────────────────────
+            Dim options As New EnumerationOptions With {
+                .ReturnImmediately = True,
+                .Rewindable = False,
+                .DirectRead = True,
+                .Timeout = New TimeSpan(0, 0, 5) ' 超過 5 秒未回應強行逾時，不卡死系統啟動
+            }
 
-        ' ── DirectShow：取得與 OpenCvSharp(DSHOW) index 順序完全一致的裝置清單 ──
-        ' 每個裝置附帶 DevicePath，與 WMI PNPDeviceID 內含相同的 VID/PID/序號片段，
-        ' 可精確配對，取代舊有「依猜測順序對應」的錯誤作法（那正是相機錯亂/串線的根因）。
-        Dim dsDevices = DirectShowDeviceEnumerator.GetDevices()
+            Dim searcher As New ManagementObjectSearcher(
+                "root\CIMV2",
+                "SELECT Name, PNPDeviceID FROM Win32_PnPEntity WHERE PNPClass='Camera' OR PNPClass='Image'",
+                options)
 
-        If dsDevices.Count = 0 Then
+            ' 遍歷 WMI 結果
+            For Each obj As ManagementObject In searcher.Get()
+                Try
+                    Dim nameStr = obj("Name")?.ToString()
+                    Dim devIdStr = obj("PNPDeviceID")?.ToString()
+
+                    If Not String.IsNullOrWhiteSpace(devIdStr) Then
+                        wmiDevices.Add(New CameraInfo With {
+                            .Name = If(String.IsNullOrWhiteSpace(nameStr), "未知相機", nameStr),
+                            .DeviceId = devIdStr,
+                            .Index = -1
+                        })
+                    End If
+                Catch ex As Exception
+                    System.Diagnostics.Debug.WriteLine($"[WMI Device Parse Error] {ex.Message}")
+                End Try
+            Next
+        Catch ex As Exception
+            Logger.Error($"[CameraManager] WMI 查詢發生嚴重錯誤或逾時: {ex.Message}，將直接啟用 DirectShow 列舉。")
+        End Try
+
+        ' ── DirectShow：精確對接您的 DirectShowDeviceEnumerator.DsDeviceInfo ──
+        ' 【核心修復】型態變更為 DirectShowDeviceEnumerator.DsDeviceInfo 解決編譯錯誤
+        Dim dsDevices As List(Of DirectShowDeviceEnumerator.DsDeviceInfo) = Nothing
+        Try
+            dsDevices = DirectShowDeviceEnumerator.GetDevices()
+        Catch ex As Exception
+            Logger.Error($"[CameraManager] DirectShow 列舉發生致命異常: {ex.Message}")
+            dsDevices = New List(Of DirectShowDeviceEnumerator.DsDeviceInfo)()
+        End Try
+
+        If dsDevices Is Nothing OrElse dsDevices.Count = 0 Then
             Logger.Warn("[CameraManager] DirectShow 未列舉到任何視訊裝置，改用 OpenCV 探測作為備援")
             Return GetCamerasByProbing(wmiDevices)
         End If
@@ -52,18 +85,16 @@ Public Class CameraManager
         Dim usedWmi As New HashSet(Of CameraInfo)
 
         For Each ds In dsDevices
-
             Dim dsInstanceId = DirectShowDeviceEnumerator.ExtractInstanceId(ds.DevicePath)
             Dim dsKey = DirectShowDeviceEnumerator.NormalizeForMatch(ds.DevicePath)
 
-            ' 優先以「裝置實例序號」精確比對——即使兩台相機是相同型號（VID/PID 相同），
-            ' 實例序號仍是唯一的，可避免舊有「整串 Contains 雙向比對」在同型號多相機時的誤配對。
+            ' 優先以「裝置實例序號」精確比對
             Dim matched = wmiDevices.FirstOrDefault(
                 Function(w) Not usedWmi.Contains(w) AndAlso
                             Not String.IsNullOrWhiteSpace(dsInstanceId) AndAlso
                             String.Equals(DirectShowDeviceEnumerator.ExtractInstanceId(w.DeviceId), dsInstanceId, StringComparison.OrdinalIgnoreCase))
 
-            ' 退而求其次：實例序號比對不到時，才用寬鬆的整串包含比對（僅作為最後防線）
+            ' 退而求其次：實例序號比對不到時，才用寬鬆的整串包含比對
             If matched Is Nothing Then
                 matched = wmiDevices.FirstOrDefault(
                     Function(w) Not usedWmi.Contains(w) AndAlso
@@ -73,7 +104,7 @@ Public Class CameraManager
                                  dsKey.Contains(DirectShowDeviceEnumerator.NormalizeForMatch(w.DeviceId))))
 
                 If matched IsNot Nothing Then
-                    Logger.Warn($"[CameraManager] 裝置 index={ds.Index} ({ds.Name}) 未找到精確的實例序號配對，改用寬鬆比對（可能不準確）")
+                    Logger.Warn($"[CameraManager] 裝置 index={ds.Index} ({ds.Name}) 未找到精確的實例序號配對，改用寬鬆比對")
                 End If
             End If
 
@@ -83,7 +114,7 @@ Public Class CameraManager
                 If String.IsNullOrWhiteSpace(matched.Name) Then matched.Name = ds.Name
                 result.Add(matched)
             Else
-                ' WMI 找不到對應資料時，仍以 DirectShow 資訊建立一筆記錄（DeviceId 用 DevicePath 頂替，確保唯一）
+                ' WMI 找不到對應資料時，仍以 DirectShow 資訊建立一筆記錄
                 Logger.Warn($"[CameraManager] DirectShow 裝置 index={ds.Index} ({ds.Name}) 找不到對應的 WMI 記錄，改用 DevicePath 作為唯一碼")
                 result.Add(New CameraInfo With {
                     .Name = ds.Name,
@@ -91,14 +122,11 @@ Public Class CameraManager
                     .Index = ds.Index
                 })
             End If
-
         Next
 
-        ' 依 Index 排序，確保清單順序穩定、可預期
+        ' 依 Index 排序，確保清單順序穩定
         Return result.OrderBy(Function(c) c.Index).ToList()
-
     End Function
-
     ''' <summary>
     ''' 備援方案：當 DirectShow COM 列舉失敗（例如環境不支援）時，
     ''' 退回舊的「依序探測 OpenCV index」方式，至少確保相機清單不會完全空白。
