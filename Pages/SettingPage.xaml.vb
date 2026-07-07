@@ -11,13 +11,11 @@ Public Class SettingPage
     Private _ioMode As IoBoardMode = IoBoardMode.NONE
     Private _cameraList As New List(Of CameraInfo)
 
-    Public Property CameraRows As New ObservableCollection(Of CameraRow)
-    Public Property RecordingCameraList As New ObservableCollection(Of CameraInfo)
+    Public ReadOnly Property CameraRows As ObservableCollection(Of CameraRow) = New ObservableCollection(Of CameraRow)()
+    Public ReadOnly Property RecordingCameraList As ObservableCollection(Of CameraInfo) = New ObservableCollection(Of CameraInfo)()
 
     Public Sub New()
         InitializeComponent()
-
-        CameraRows = New ObservableCollection(Of CameraRow)
 
         Me.DataContext = Me
 
@@ -44,14 +42,17 @@ Public Class SettingPage
     ' Page Loaded
     ' =========================
     Private Async Sub SettingPage_Loaded(sender As Object, e As RoutedEventArgs)
+        ' 防止重複加載（Loaded 事件可能被觸發多次）
+        If _isLoaded Then Return
+
         LoadingOverlay.Visibility = Visibility.Visible
         LoadingText.Text = "載入設定中..."
 
         Await Task.Yield()
 
         Try
-            ' 相機列表刷新在背景執行緓（WMI 查詢 + DSHOW probe 很慢，不能附方在 UI 線程）
-            Await Task.Run(Sub() CameraManager.Refresh())
+            ' 相機列表已在應用啟動時刷新完成（CameraManager.Refresh()），
+            ' 這裡直接加載 UI 而不需要再次刷新
 
             LoadCameraRows()
             _isLoaded = True
@@ -70,7 +71,8 @@ Public Class SettingPage
                     LanguageComboBox.SelectedIndex = 0
             End Select
 
-            ' 訂閱相機變更事件，即時更新 ComboBox
+            ' 訂閱相機變更事件，即時更新 ComboBox（只訂閱一次）
+            RemoveHandler CameraManager.CameraChanged, AddressOf OnCameraChangedRefresh
             AddHandler CameraManager.CameraChanged, AddressOf OnCameraChangedRefresh
         Finally
             LoadingOverlay.Visibility = Visibility.Collapsed
@@ -154,8 +156,10 @@ If(My.Settings.AutoRun, 0, 1)
 
         If Not _isLoaded OrElse _suppressEvents Then Return
 
-        Dim cb = DirectCast(sender, ComboBox)
-        Dim row = DirectCast(cb.DataContext, CameraRow)
+        Dim cb = TryCast(sender, ComboBox)
+        If cb Is Nothing Then Return
+        Dim row = TryCast(cb.DataContext, CameraRow)
+        If row Is Nothing Then Return
 
         Dim cam = TryCast(cb.SelectedItem, CameraInfo)
         row.SelectedCamera = cam
@@ -175,10 +179,12 @@ If(My.Settings.AutoRun, 0, 1)
 
         If Not _isLoaded OrElse _suppressEvents Then Return
 
-        Dim cb = DirectCast(sender, ComboBox)
-        Dim row = DirectCast(cb.DataContext, CameraRow)
-        Dim res = TryCast(cb.SelectedItem, CameraResolutionOption)
+        Dim cb = TryCast(sender, ComboBox)
+        If cb Is Nothing Then Return
+        Dim row = TryCast(cb.DataContext, CameraRow)
+        If row Is Nothing Then Return
 
+        Dim res = TryCast(cb.SelectedItem, CameraResolutionOption)
         If res Is Nothing OrElse row.SelectedCamera Is Nothing Then Return
 
         row.SelectedResolution = res
@@ -190,10 +196,20 @@ If(My.Settings.AutoRun, 0, 1)
         LoadingText.Text = $"套用分辨率 {res.Width}×{res.Height}..."
         Try
             Await Task.Run(Sub()
+                               ' 先停止相機，等待足夠時間讓資源完全釋放
                                CameraService.Instance.StopCamera(deviceId)
+                               System.Threading.Thread.Sleep(500)
+
+                               ' 重新啟動相機以套用新分辨率
                                CameraService.Instance.StartCamera(deviceId)
                            End Sub)
             Logger.Info($"[Setting] 相機 {row.Title} 分辨率更改為 {res.Width}x{res.Height}，已重啟相機")
+        Catch ex As Exception
+            Logger.Error($"[Setting] 套用分辨率失敗: {ex.Message}")
+            Dispatcher.Invoke(Sub()
+                                  MessageBox.Show($"套用分辨率失敗: {ex.Message}" & vbCrLf & vbCrLf & "建議先停止相機使用再變更分辨率",
+                                                  "錯誤", MessageBoxButton.OK, MessageBoxImage.Error)
+                              End Sub)
         Finally
             LoadingOverlay.Visibility = Visibility.Collapsed
         End Try
@@ -229,7 +245,7 @@ If(My.Settings.AutoRun, 0, 1)
                     camRow.SelectedCamera =
                     camList.FirstOrDefault(Function(c) c.DeviceId = id)
 
-                    ' 載入已儲存的分辨率
+                    ' 載入已儲存的分辨率（在 suppressEvents 期間，不觸發 Resolution_SelectionChanged）
                     Dim resList = CameraResolutionOption.CommonResolutions()
                     camRow.ResolutionList = resList
                     If savedResolutions IsNot Nothing AndAlso savedResolutions.Count > i Then
@@ -406,7 +422,7 @@ If(My.Settings.AutoRun, 0, 1)
     End Sub
 
     Private Sub RecordingCameraComboBox_SelectionChanged(sender As Object, e As SelectionChangedEventArgs)
-        If Not _isLoaded Then Return
+        If Not _isLoaded OrElse _suppressEvents Then Return
 
         Dim cam = TryCast(RecordingCameraComboBox.SelectedItem, CameraInfo)
         My.Settings.RecordingCameraId = cam?.DeviceId

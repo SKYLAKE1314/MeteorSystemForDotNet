@@ -44,7 +44,8 @@ Partial Public Class ProcessPage
         AddHandler _ws.MessageReceived,
         AddressOf OnMessageReceived
         _router.OnStart = AddressOf StartTask
-        _router.OnResume = AddressOf ResumeTask
+        _router.OnPause = AddressOf PauseTaskExec
+        _router.OnResume = AddressOf ResumeTaskExec
         _router.OnEnd = AddressOf EndTask
 
 
@@ -274,12 +275,31 @@ Partial Public Class ProcessPage
 
     End Sub
 
-    Private Sub PauseTask(t As TaskData)
+    Private _pauseTaskRunning As Boolean = False
+    Private _resumeTaskRunning As Boolean = False
+
+    Private Async Sub PauseTaskExec(t As TaskData)
         AddLog("PAUSE: " & t.RequestId)
+
+        If _pauseTaskRunning Then Return
+        _pauseTaskRunning = True
+        Try
+            Await ExecuteTask(t)
+        Finally
+            _pauseTaskRunning = False
+        End Try
     End Sub
 
-    Private Sub ResumeTask(t As TaskData)
+    Private Async Sub ResumeTaskExec(t As TaskData)
         AddLog("RESUME: " & t.RequestId)
+
+        If _resumeTaskRunning Then Return
+        _resumeTaskRunning = True
+        Try
+            Await ExecuteTask(t)
+        Finally
+            _resumeTaskRunning = False
+        End Try
     End Sub
     Private Async Sub EndTask(t As TaskData)
 
@@ -668,13 +688,16 @@ Partial Public Class ProcessPage
     End Function
 
     Private Function ResolveRecordingCameraId() As String
+        ' 首先嘗試使用用戶在設定頁中選擇的相機
         If Not String.IsNullOrWhiteSpace(My.Settings.RecordingCameraId) Then
             Return My.Settings.RecordingCameraId
         End If
 
-        Dim fallback = GetCamId(1)
+        ' 回退到第一個相機
+        Dim fallback = GetCamId(0)
         If String.IsNullOrWhiteSpace(fallback) Then
-            fallback = GetCamId(0)
+            ' 如果第一個相機也不存在，嘗試第二個
+            fallback = GetCamId(1)
         End If
         Return fallback
     End Function

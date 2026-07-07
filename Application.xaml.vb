@@ -76,7 +76,8 @@ Class Application
 
         AppProgress.Report(60, "初始化相機")
 
-        CameraManager.Initialize()
+        ' Refresh() 已包含 GetCameras()，不需要再 Initialize()（避免重複枚舉）
+        CameraManager.Refresh()
 
         AppProgress.Report(70, "初始化相機")
 

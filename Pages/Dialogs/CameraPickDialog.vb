@@ -42,22 +42,36 @@ Public Class CameraPickDialog
         ' 先設定 DisplayMemberPath 再加 Items
         _combo.DisplayMemberPath = "Label"
 
-        Dim ids = My.Settings.CameraDeviceIds
-        Dim cameras = CameraManager.GetCachedCameras()
+        ' 與設定頁相同：顯示所有可用的相機，已配置的標示槽號
+        Dim savedIds = My.Settings.CameraDeviceIds
+        Dim allCameras = CameraManager.GetCachedCameras()
+        If allCameras Is Nothing Then allCameras = New List(Of CameraInfo)
 
-        If ids IsNot Nothing Then
-            For i = 0 To ids.Count - 1
-                Dim id = ids(i)
-                Dim camInfo = cameras.FirstOrDefault(Function(c) c.DeviceId = id)
-                Dim lbl As String
-                If camInfo IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(camInfo.Name) Then
-                    lbl = $"相機 {i + 1} — {camInfo.Name}"
-                Else
-                    lbl = $"相機 {i + 1}"
-                End If
-                _combo.Items.Add(New CameraItem() With {.Label = lbl, .DeviceId = id, .Slot = i})
-            Next
-        End If
+        For Each cam In allCameras
+            ' 查找該相機是否在設定中已配置，並取得槽號
+            Dim slot As Integer = -1
+            If savedIds IsNot Nothing Then
+                For i = 0 To savedIds.Count - 1
+                    If String.Equals(savedIds(i), cam.DeviceId, StringComparison.OrdinalIgnoreCase) Then
+                        slot = i
+                        Exit For
+                    End If
+                Next
+            End If
+
+            Dim lbl As String
+            If slot >= 0 Then
+                lbl = $"相機 {slot + 1} — {cam.DisplayName}"
+            Else
+                lbl = cam.DisplayName  ' 未配置的相機直接顯示名稱
+            End If
+
+            _combo.Items.Add(New CameraItem() With {
+                .Label = lbl,
+                .DeviceId = cam.DeviceId,
+                .Slot = If(slot >= 0, slot, _combo.Items.Count)
+            })
+        Next
 
         If _combo.Items.Count > 0 Then _combo.SelectedIndex = 0
 

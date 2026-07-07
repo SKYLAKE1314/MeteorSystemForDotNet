@@ -34,10 +34,12 @@ Partial Class HomePage
 
             If _isStreaming Then Return
 
-            ' 從 ComboBox 獲取選定的相機
-            If CameraComboBox.SelectedValue IsNot Nothing Then
-                _detectCameraId = CameraComboBox.SelectedValue.ToString()
-                Logger.Info($"選定相機: {_detectCameraId}")
+            ' 從 ComboBox 獲取選定的相機（直接取 CameraInfo.DeviceId 避免型別轉換問題）
+            Dim selectedCam = TryCast(CameraComboBox.SelectedItem, CameraInfo)
+            If selectedCam IsNot Nothing Then
+                _detectCameraId = selectedCam.DeviceId
+                _ocrCameraId = selectedCam.DeviceId
+                Logger.Info($"選定相機: {selectedCam.DisplayName}")
             ElseIf String.IsNullOrWhiteSpace(_detectCameraId) Then
                 Logger.Error("未選擇相機設備")
                 MessageBox.Show("請先選擇相機設備")
@@ -65,9 +67,16 @@ Partial Class HomePage
     ' =========================================
     Private Sub CameraComboBox_SelectionChanged(sender As Object, e As SelectionChangedEventArgs)
         Try
-            If CameraComboBox.SelectedValue IsNot Nothing Then
-                _detectCameraId = CameraComboBox.SelectedValue.ToString()
-                Logger.Info($"相機選擇已改變: {_detectCameraId}")
+            Dim cam = TryCast(CameraComboBox.SelectedItem, CameraInfo)
+            If cam IsNot Nothing Then
+                _detectCameraId = cam.DeviceId
+                _ocrCameraId = cam.DeviceId
+
+                ' 儲存選擇的相機到設定中，讓其他頁面可以同步
+                My.Settings.CameraDeviceId = cam.DeviceId
+                My.Settings.Save()
+
+                Logger.Info($"相機選擇已改變: {cam.DisplayName} ({cam.DeviceId})")
             End If
         Catch ex As Exception
             Logger.Error($"相機選擇變更失敗: {ex.Message}")

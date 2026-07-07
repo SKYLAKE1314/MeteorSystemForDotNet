@@ -41,14 +41,16 @@ Partial Class HomePage
     Private Const VoicePromptSingleFlowCompleted As String = "SingleFlowCompleted.wav"
     Private Const VoicePromptStageTimeout As String = "StageTimeout.wav"                    ' 階段超時
     Private Const VoicePromptStageSkipped As String = "StageSkipped.wav"                    ' 階段已跳過
+    Private Const VoicePromptStageRecover As String = "StageRecover.wav"                    ' 階段已恢復
     Private Const VoicePromptCorrect As String = "Correct.wav"                              ' 正確（解碼/OCR 成功）
     Private Const VoicePromptError As String = "NoTemplate.wav"
     Private Const VoicePromptNoTemplate As String = "Error.wav"   ' 找不到供應商對應模板時播報
     Private Const StageTimeoutMs As Integer = 60000
     Private Const StageLoopDelayMs As Integer = 30
 
-    Private _detectCameraId As String = GetCamId(1)
-    Private _ocrCameraId As String = GetCamId(1)
+    ' 優先使用設定中儲存的相機，否則使用第一個相機
+    Private _detectCameraId As String = If(String.IsNullOrWhiteSpace(My.Settings.CameraDeviceId), GetCamId(0), My.Settings.CameraDeviceId)
+    Private _ocrCameraId As String = If(String.IsNullOrWhiteSpace(My.Settings.CameraDeviceId), GetCamId(0), My.Settings.CameraDeviceId)
 
     Private _io As IOController
 
@@ -108,22 +110,12 @@ Partial Class HomePage
                 Logger.Error("啟用物理按鈕監聽失敗: " & ex.Message)
             End Try
 
-            ' 相機列表：WMI + DSHOW probe 非常慢，必須在背景執行緒
-            Await Task.Run(Sub() CameraManager.Refresh())
+            ' 顯示與設定頁相同的完整相機列表（GetCachedCameras 的所有相機）
+            RefreshCameraComboBox()
 
-            Dim cameras = CameraManager.GetCachedCameras()
-            If cameras IsNot Nothing AndAlso cameras.Count > 0 Then
-                CameraComboBox.ItemsSource = cameras
-                If Not String.IsNullOrWhiteSpace(_detectCameraId) Then
-                    CameraComboBox.SelectedValue = _detectCameraId
-                Else
-                    CameraComboBox.SelectedIndex = 0
-                    _detectCameraId = cameras(0).DeviceId
-                End If
-                Logger.Info($"相機列表已加載，共 {cameras.Count} 個相機")
-            Else
-                Logger.Warn("未找到可用的相機設備")
-            End If
+            ' 訂閱相機變更事件：設定頁儲存相機後立即刷新本頁的相機清單（先移除避免重複訂閱）
+            RemoveHandler CameraManager.CameraChanged, AddressOf OnCameraChanged
+            AddHandler CameraManager.CameraChanged, AddressOf OnCameraChanged
 
         Catch ex As Exception
             Logger.Error($"HomePage 初始化失敗: {ex.Message}")
@@ -135,6 +127,7 @@ Partial Class HomePage
     End Sub
     Private Sub Page_Unloaded(sender As Object, e As RoutedEventArgs) Handles Me.Unloaded
         RemoveHandler CameraService.Instance.FrameArrived, AddressOf OnFrameArrived
+        RemoveHandler CameraManager.CameraChanged, AddressOf OnCameraChanged
 
     End Sub
     Public Sub RefreshLanguageUI()
@@ -247,14 +240,75 @@ Partial Class HomePage
     End Sub
     Private Sub UpdateFrame(sender As Object, e As EventArgs)
 
-        Dim frame = CameraService.Instance.GetFrame(GetCamId(1))
+        Dim frame = CameraService.Instance.GetFrame(_detectCameraId)
 
         If frame Is Nothing Then Return
 
         RenderImage.Source = frame
 
     End Sub
+
+    ''' <summary>
+    ''' 從 CameraManager 快取重新載入相機清單並更新 ComboBox，
+    ''' 盡量保留使用者當前的選擇（若該相機仍存在於清單中）。
+    ''' 必須在 UI 執行緒呼叫。
+    ''' </summary>
+    Private Sub RefreshCameraComboBox()
+        Dim allCameras = CameraManager.GetCachedCameras()
+
+        If allCameras Is Nothing OrElse allCameras.Count = 0 Then
+            Logger.Warn("未找到可用的相機設備")
+            Return
+        End If
+
+        CameraComboBox.ItemsSource = allCameras
+
+        ' 優先使用 My.Settings.CameraDeviceId（使用者最後選擇的相機）
+        ' 其次保留目前選定的相機（若仍存在）
+        ' 最後才使用設定中的第一個相機或清單第 0 個
+        Dim savedCameraId = My.Settings.CameraDeviceId
+
+        Dim toSelect As CameraInfo = Nothing
+
+        ' 1. 優先使用 My.Settings.CameraDeviceId
+        If Not String.IsNullOrWhiteSpace(savedCameraId) Then
+            toSelect = allCameras.FirstOrDefault(
+                Function(c) String.Equals(c.DeviceId, savedCameraId, StringComparison.OrdinalIgnoreCase))
+        End If
+
+        ' 2. 如果 My.Settings.CameraDeviceId 找不到，保留當前選擇
+        If toSelect Is Nothing AndAlso Not String.IsNullOrWhiteSpace(_detectCameraId) Then
+            toSelect = allCameras.FirstOrDefault(
+                Function(c) String.Equals(c.DeviceId, _detectCameraId, StringComparison.OrdinalIgnoreCase))
+        End If
+
+        ' 3. 如果還是沒有，使用 GetCamId(0)
+        If toSelect Is Nothing Then
+            Dim configuredFirst = allCameras.FirstOrDefault(
+                Function(c) String.Equals(c.DeviceId, GetCamId(0), StringComparison.OrdinalIgnoreCase))
+            toSelect = If(configuredFirst, allCameras(0))
+        End If
+
+        CameraComboBox.SelectedItem = toSelect
+        _detectCameraId = toSelect.DeviceId
+        _ocrCameraId = toSelect.DeviceId
+
+        Logger.Info($"相機列表已加載，共 {allCameras.Count} 個相機")
+    End Sub
+
+    ''' <summary>
+    ''' 設定頁儲存相機設定後觸發（CameraManager.CameraChanged），
+    ''' 在 UI 執行緒重新整理相機清單，讓變更立即生效，不需要重開此頁。
+    ''' </summary>
     Private Sub OnCameraChanged()
+
+        Dispatcher.Invoke(Sub()
+                              Try
+                                  RefreshCameraComboBox()
+                              Catch ex As Exception
+                                  Logger.Error($"[Camera] 刷新相機清單失敗: {ex.Message}")
+                              End Try
+                          End Sub)
 
         Task.Run(Sub()
 
@@ -264,12 +318,19 @@ Partial Class HomePage
                          Return
                      End If
 
+                     ' 若目前使用的相機仍在最新設定中，不需重啟，避免不必要的畫面中斷
+                     If Not String.IsNullOrWhiteSpace(_detectCameraId) AndAlso
+                        ids.Cast(Of String).Any(Function(id) String.Equals(id, _detectCameraId, StringComparison.OrdinalIgnoreCase)) Then
+                         Return
+                     End If
+
                      CameraService.Instance.StopAll()
 
                      ' 重新解析當前檢測相機——用最新設定中的第一個相機
-                     Dim newCameraId = GetCamId(1)
+                     Dim newCameraId = GetCamId(0)
                      If Not String.IsNullOrWhiteSpace(newCameraId) Then
                          _detectCameraId = newCameraId
+                         _ocrCameraId = newCameraId
                          CameraService.Instance.StartCamera(newCameraId)
                          Logger.Info($"[Camera] 設定已更新，相機切換為: {newCameraId}")
                      End If

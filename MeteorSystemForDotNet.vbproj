@@ -123,6 +123,9 @@
     <None Update="Voice\SingleFlowCompleted.wav">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="Voice\StageRecover.wav">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="Voice\StageSkipped.wav">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

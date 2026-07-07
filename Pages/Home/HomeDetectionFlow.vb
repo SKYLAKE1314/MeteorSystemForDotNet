@@ -83,7 +83,9 @@ Partial Class HomePage
     ''' </summary>
     Public Sub PreWarmMatchCamera()
         Try
-            Dim camId = GetCamId(0)
+            ' 優先預熱使用者當前選定的相機（_detectCameraId），而非永遠寫死用第一個相機，
+            ' 否則使用者選了其他相機時，預熱與實際檢測用的相機會不一致。
+            Dim camId = If(Not String.IsNullOrWhiteSpace(_detectCameraId), _detectCameraId, GetCamId(0))
             If String.IsNullOrWhiteSpace(camId) Then Return
             CameraService.Instance.StartCamera(camId)
             Logger.Info($"[MATCH] 預熱匹配相機: {camId}")
@@ -117,10 +119,16 @@ Partial Class HomePage
     Public Sub ResumeDetectionFlow()
         Try
             SyncLock _detectLock
-                ' 恢复检测流程
+                ' 只有在確實暫停的情況下才播報"已恢復"
+                If Not _isPaused Then
+                    Logger.Info("[FLOW] 檢測流程未暫停，忽略恢復請求")
+                    Return
+                End If
+
+                _isPaused = False
                 Logger.Info("[FLOW] 检测流程已恢复")
-                ' 播报语音提示："检测已恢复"
-                PlayPromptVoice("DetectionResumed.wav")
+                ' 收到信號 2 恢復錄製和檢測時播報
+                PlayPromptVoice(VoicePromptStageRecover)
             End SyncLock
         Catch ex As Exception
             Logger.Error("[FLOW] 恢复流程失敗: " & ex.Message)

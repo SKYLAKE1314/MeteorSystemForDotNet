@@ -39,8 +39,8 @@ Public Class AlgorithmPage
     Private templateIsPanning As Boolean = False
     Private templateLastPanPoint As WpfPoint
 
-    ' 當前選擇的相機（多相機建模使用）
-    Private _selectedCameraId As String = ""
+    ' 當前選擇的相機（多相機建模使用） - 優先使用設定中儲存的相機
+    Private _selectedCameraId As String = If(String.IsNullOrWhiteSpace(My.Settings.CameraDeviceId), GetCamId(0), My.Settings.CameraDeviceId)
     Private _selectedCameraSlot As Integer = 0
 
     ' 當前建模任務的父資料夾名稱（第一個相機建模時輸入，第二個沿用）
@@ -81,60 +81,85 @@ Public Class AlgorithmPage
 
         End If
 
+
     End Sub
 #Region "獲取圖像"
-    Private Sub GetSource_Click(sender As Object, e As RoutedEventArgs)
+    Private Async Sub GetSource_Click(sender As Object, e As RoutedEventArgs)
+        Try
+            ' 彈出相機選擇對話窗
+            Dim picker As New CameraPickDialog()
+            picker.Owner = Application.Current?.MainWindow
+            If picker.ShowDialog() <> True Then Return
 
-        SafeRun(Sub()
+            _selectedCameraId = picker.SelectedCameraId
+            _selectedCameraSlot = picker.SelectedCameraSlot
 
-                    ' 彈出相機選擇對話窗
-                    Dim picker As New CameraPickDialog()
-                    picker.Owner = Application.Current?.MainWindow
-                    Dim picked = picker.ShowDialog()
-                    If picked <> True Then Return
+            If String.IsNullOrWhiteSpace(_selectedCameraId) Then
+                ErrorDialogHelper.ShowError("尚未設定相機")
+                Return
+            End If
 
-                    _selectedCameraId = picker.SelectedCameraId
-                    _selectedCameraSlot = picker.SelectedCameraSlot
+            ' 啟動相機（若已在執行中則無效，不會重複啟動）
+            CameraService.Instance.StartCamera(_selectedCameraId)
 
-                    If String.IsNullOrWhiteSpace(_selectedCameraId) Then
-                        ErrorDialogHelper.ShowError("尚未設定相機")
-                        Return
-                    End If
+            ' 先檢查是否已有快取幀（相機已在執行中時可立即取得）
+            Dim frame = CameraService.Instance.GetFrame(_selectedCameraId)
 
-                    ' 启动相机并等待获取图像
-                    CameraService.Instance.StartCamera(_selectedCameraId)
+            ' 若無快取幀，訂閱 FrameArrived 等待第一幀（最長 8 秒）
+            ' 比 Thread.Sleep 輪詢更可靠：DSHOW 初始化通常需要 3～8 秒
+            If frame Is Nothing Then
+                Dim tcs As New TaskCompletionSource(Of BitmapSource)()
+                Dim targetId = _selectedCameraId
 
-                    Dim frame As BitmapSource = Nothing
-                    For i As Integer = 1 To 20
-                        System.Threading.Thread.Sleep(50)
-                        frame = CameraService.Instance.GetFrame(_selectedCameraId)
-                        If frame IsNot Nothing Then Exit For
-                    Next
+                Dim handler As Action(Of String, BitmapSource) = Nothing
+                handler = Sub(id As String, img As BitmapSource)
+                              If String.Equals(id, targetId, StringComparison.OrdinalIgnoreCase) Then
+                                  RemoveHandler CameraService.Instance.FrameArrived, handler
+                                  tcs.TrySetResult(img)
+                              End If
+                          End Sub
 
-                    If frame Is Nothing Then
-                        ErrorDialogHelper.ShowError($"尚未取得相機 {_selectedCameraSlot + 1} 的影像")
-                        Return
-                    End If
+                AddHandler CameraService.Instance.FrameArrived, handler
 
-                    _srcMat?.Dispose()
+                ' 訂閱後再次確認（避免幀在 GetFrame 和 AddHandler 之間到達的競爭條件）
+                Dim recheck = CameraService.Instance.GetFrame(_selectedCameraId)
+                If recheck IsNot Nothing Then
+                    RemoveHandler CameraService.Instance.FrameArrived, handler
+                    tcs.TrySetResult(recheck)
+                End If
 
-                    _srcMat = BitmapSourceToMat(frame)
+                Dim completed = Await Task.WhenAny(tcs.Task, Task.Delay(8000))
+                RemoveHandler CameraService.Instance.FrameArrived, handler
 
-                    SrcImage.Source = ImageConvertHelper.ToBitmap(_srcMat)
+                If completed Is tcs.Task Then
+                    frame = tcs.Task.Result
+                End If
+            End If
 
-                    _roiCtrl = New RoiController(
-                    RoiCanvas,
-                    SrcImage,
-                    _srcMat)
+            If frame Is Nothing Then
+                ErrorDialogHelper.ShowError($"尚未取得相機 {_selectedCameraSlot + 1} 的影像（相機啟動逾時，請確認相機已連接）")
+                Return
+            End If
 
-                    SrcImage.Source = ImageConvertHelper.ToBitmap(_srcMat)
-                    SrcImage.UpdateLayout()
+            _srcMat?.Dispose()
+            _srcMat = BitmapSourceToMat(frame)
 
-                    _autoParamsAppliedOnce = False  ' 新圖：下次生成才套用自動參數
-                    ResetUI()
+            SrcImage.Source = ImageConvertHelper.ToBitmap(_srcMat)
 
-                End Sub)
+            _roiCtrl = New RoiController(
+                RoiCanvas,
+                SrcImage,
+                _srcMat)
 
+            SrcImage.Source = ImageConvertHelper.ToBitmap(_srcMat)
+            SrcImage.UpdateLayout()
+
+            _autoParamsAppliedOnce = False  ' 新圖：下次生成才套用自動參數
+            ResetUI()
+
+        Catch ex As Exception
+            ExceptionHelper.ShowError(ex)
+        End Try
     End Sub
 #End Region
     ' =========================
@@ -298,14 +323,21 @@ Public Class AlgorithmPage
             Dim safeRoi = New CvRect(_roi.X, _roi.Y, _roi.Width, _roi.Height)
             Dim srcCopy = _srcMat
 
+            ' 在 UI 執行緒先讀取滑塊值（Task.Run 不可跨執行緒存取 UI）
+            Dim manualCannyLow = CInt(CannyLowSlider.Value)
+            Dim manualCannyHigh = CInt(CannyHighSlider.Value)
+            Dim manualMinArea = CInt(MinAreaSlider.Value)
+            Dim alreadyHasAutoParams = _autoParamsApplied   ' 第一次生成後為 True
+
             Dim result = Await Task.Run(Function()
                                             ' 在背景執行緒中計算自動參數（基於圖像統計）
                                             Dim autoP = ComputeAutoParams(srcCopy, safeRoi)
 
+                                            ' 第一次生成時使用自動計算值；之後採用使用者在 UI 手動調整的滑塊值
                                             Dim opts As New TemplateMatchOptions With {
-                                                .CannyLow = autoP.CannyLow,
-                                                .CannyHigh = autoP.CannyHigh,
-                                                .MinContourArea = autoP.MinArea
+                                                .CannyLow = If(alreadyHasAutoParams, manualCannyLow, autoP.CannyLow),
+                                                .CannyHigh = If(alreadyHasAutoParams, manualCannyHigh, autoP.CannyHigh),
+                                                .MinContourArea = If(alreadyHasAutoParams, manualMinArea, autoP.MinArea)
                                             }
 
                                             Dim preview As Mat = Nothing
@@ -322,7 +354,8 @@ Public Class AlgorithmPage
 
             TemplateImage.Source = ImageConvertHelper.ToBitmap(result.Item2)
 
-            ' 第一次生成時才自動套用參數；之後由使用者手動調整
+            ' 只在第一次生成時將自動計算參數套用到 UI 滑塊；
+            ' 之後保留使用者手動調整的值，不覆寫
             If Not _autoParamsApplied Then
                 ApplyAutoParams(result.Item3)
                 _autoParamsApplied = True
@@ -482,11 +515,16 @@ Public Class AlgorithmPage
                         Return
                     End If
 
+                    ' 以磁碟快照為基礎，但用目前 UI 的 OCR/Barcode 期望文字覆蓋，
+                    ' 避免剛生成未儲存的模板顯示舊模板的資料（導致「換掉母版內容」的感覺）
                     Dim snapshot = TemplateSnapshotStore.Load()
                     If snapshot Is Nothing Then
-                        MessageBox.Show("無法載入模板快照")
-                        Return
+                        snapshot = New TemplateSnapshot()
                     End If
+
+                    ' 以目前 UI 狀態覆蓋期望文字（確保對話框顯示的是當前模板的資料）
+                    snapshot.OcrExpectedText = RoiText.Text
+                    snapshot.BarcodeExpectedText = ResultText.Text
 
                     ' 彈出編輯對話窗
                     Dim dlg As New TemplateEditDialog(snapshot, TemplateImage.Source)
@@ -496,6 +534,11 @@ Public Class AlgorithmPage
                         MessageBox.Show("已取消修訂")
                         Return
                     End If
+
+                    ' 同步修訂後的期望文字回 UI 文字框，
+                    ' 確保後續「儲存模板」時能讀取到修訂後的最新值
+                    RoiText.Text = If(snapshot.OcrExpectedText, "")
+                    ResultText.Text = If(snapshot.BarcodeExpectedText, "")
 
                     ' 保存修訂後的 snapshot
                     TemplateSnapshotStore.Save(snapshot)

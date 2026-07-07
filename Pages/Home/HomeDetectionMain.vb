@@ -17,14 +17,18 @@ Partial Class HomePage
             Return _detectCameraId
         End If
 
-        Dim fallback = GetCamId(1)
+        ' 優先使用第一個相機，然後回退到第二個
+        Dim fallback = GetCamId(0)
         If String.IsNullOrWhiteSpace(fallback) Then
-            fallback = GetCamId(0)
+            fallback = GetCamId(1)
         End If
 
         If Not String.IsNullOrWhiteSpace(fallback) Then
             _detectCameraId = fallback
-            _ocrCameraId = fallback
+            ' 如果 OCR 相機尚未設置，也使用同一個相機
+            If String.IsNullOrWhiteSpace(_ocrCameraId) Then
+                _ocrCameraId = fallback
+            End If
         End If
 
         Return fallback
@@ -68,18 +72,19 @@ Partial Class HomePage
 
             Dim snapshot = TemplateSnapshotStore.Load()
 
-            ' 若模板記錄了建模相機，切換到該相機；否則沿用當前設定
+            ' 過去這裡會用「模板記錄的建模相機」強制覆蓋 _detectCameraId，
+            ' 導致使用者在畫面/設定頁選擇的相機被靜默改變（"相機還是不對"的根因之一）。
+            ' 現在改為：一律遵循使用者當前選擇的相機，只在不一致時記錄警告，不做任何切換。
             If snapshot IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(snapshot.CameraDeviceId) Then
                 If Not String.Equals(snapshot.CameraDeviceId, _detectCameraId, StringComparison.OrdinalIgnoreCase) Then
-                    Logger.Info($"[Camera] 模板指定相機 {snapshot.CameraDeviceId}，切換中...")
-                    _detectCameraId = snapshot.CameraDeviceId
-                    CameraService.Instance.StartCamera(_detectCameraId)
+                    Logger.Warn($"[Camera] 模板建模相機 ({snapshot.CameraDeviceId}) 與當前選定相機 ({_detectCameraId}) 不同，" &
+                                "已忽略模板相機設定並沿用使用者當前選擇")
                 End If
             End If
 
             Logger.Debug($"[FLOW] Current stage={stage}, EnableBarcode={If(snapshot IsNot Nothing, snapshot.EnableBarcode, False)}, EnableOcr={If(snapshot IsNot Nothing, snapshot.EnableOcr, False)}")
 
-            ' 匹配多次，在3秒內每秒嘗試一次（傳遞完整路徑以直接加載模板）
+            ' 匹配多次，在3秒內每秒嘗試一次
             Logger.Info("===== Before Match =====")
             Dim matchResult = Await WaitMultipleMatchAsync(templatePath, snapshot, 3000)
             Logger.Info("===== After Match =====")
@@ -127,10 +132,13 @@ Partial Class HomePage
             PlayPromptVoice(VoicePromptMatchCompleteScan)
             Logger.Info($"[RESULT] 匹配 - OK={result.IsOk}, Score={result.Score:F3}")
             Logger.Info($"[FLOW] 匹配完成，開始解碼")
-            ' 臨時
-            _ocrCameraId = GetCamId(1)         ' 相機2
+
+            ' 解碼使用與檢測相同的相機（單相機架構），移除舊有寫死切換至相機2的臨時代碼
+            ' （該代碼會導致選定相機與實際使用相機不一致，即使用戶已在畫面上選好相機也會被覆蓋）
+            If String.IsNullOrWhiteSpace(_ocrCameraId) Then
+                _ocrCameraId = _detectCameraId
+            End If
             CameraService.Instance.StartCamera(_ocrCameraId)
-            '
 
             Dim code = Await WaitBarcodeResultAsync(snapshot, StageTimeoutMs)
             ' Nothing=跳過  /  ""=超時  /  非空=成功

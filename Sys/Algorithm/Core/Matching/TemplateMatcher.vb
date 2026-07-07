@@ -71,8 +71,9 @@ Public Class TemplateMatcher
     End Function
 
     ''' <summary>
-    ''' 對模板邊界進行軟化處理，防止邊界被識別為特徵
-    ''' 通過在邊界添加漸變過渡來消除清晰的邊緣
+    ''' 對模板邊界進行軟化處理，防止邊界被識別為特徵。
+    ''' 邊界淡化目標為模板的平均色（而非固定暗色），
+    ''' 避免產生人工的矩形邊框特徵導致虛假高分匹配。
     ''' </summary>
     Private Shared Function SoftenTemplateBoundary(template As Mat) As Mat
         If template Is Nothing OrElse template.Empty() Then
@@ -82,16 +83,21 @@ Public Class TemplateMatcher
         Dim result = template.Clone()
         Dim padSize = BOUNDARY_PADDING
 
-        ' 邊界軟化策略：對邊界像素進行漸變填充
+        ' 計算模板各通道平均色，邊界淡化到此顏色而非固定的暗色，
+        ' 避免產生矩形邊框特徵（固定暗色 + CLAHE 增強 = 假矩形輪廓）
+        Dim meanScalar = Cv2.Mean(result)
+        Dim meanB = CByte(Math.Round(meanScalar.Val0))
+        Dim meanG = CByte(Math.Round(meanScalar.Val1))
+        Dim meanR = CByte(Math.Round(meanScalar.Val2))
+
         ' 左邊界
         For x As Integer = 0 To Math.Min(padSize - 1, result.Width - 1)
             Dim alpha = CDbl(x) / CDbl(padSize)
             For y As Integer = 0 To result.Height - 1
                 Dim pixel = result.At(Of Vec3b)(y, x)
-                ' 與暗色背景混合
-                pixel.Item0 = CByte(pixel.Item0 * alpha + 32 * (1 - alpha))
-                pixel.Item1 = CByte(pixel.Item1 * alpha + 32 * (1 - alpha))
-                pixel.Item2 = CByte(pixel.Item2 * alpha + 32 * (1 - alpha))
+                pixel.Item0 = CByte(pixel.Item0 * alpha + meanB * (1 - alpha))
+                pixel.Item1 = CByte(pixel.Item1 * alpha + meanG * (1 - alpha))
+                pixel.Item2 = CByte(pixel.Item2 * alpha + meanR * (1 - alpha))
                 result.Set(Of Vec3b)(y, x, pixel)
             Next
         Next
@@ -101,9 +107,9 @@ Public Class TemplateMatcher
             Dim alpha = CDbl(result.Width - 1 - x) / CDbl(padSize)
             For y As Integer = 0 To result.Height - 1
                 Dim pixel = result.At(Of Vec3b)(y, x)
-                pixel.Item0 = CByte(pixel.Item0 * alpha + 32 * (1 - alpha))
-                pixel.Item1 = CByte(pixel.Item1 * alpha + 32 * (1 - alpha))
-                pixel.Item2 = CByte(pixel.Item2 * alpha + 32 * (1 - alpha))
+                pixel.Item0 = CByte(pixel.Item0 * alpha + meanB * (1 - alpha))
+                pixel.Item1 = CByte(pixel.Item1 * alpha + meanG * (1 - alpha))
+                pixel.Item2 = CByte(pixel.Item2 * alpha + meanR * (1 - alpha))
                 result.Set(Of Vec3b)(y, x, pixel)
             Next
         Next
@@ -113,9 +119,9 @@ Public Class TemplateMatcher
             Dim alpha = CDbl(y) / CDbl(padSize)
             For x As Integer = 0 To result.Width - 1
                 Dim pixel = result.At(Of Vec3b)(y, x)
-                pixel.Item0 = CByte(pixel.Item0 * alpha + 32 * (1 - alpha))
-                pixel.Item1 = CByte(pixel.Item1 * alpha + 32 * (1 - alpha))
-                pixel.Item2 = CByte(pixel.Item2 * alpha + 32 * (1 - alpha))
+                pixel.Item0 = CByte(pixel.Item0 * alpha + meanB * (1 - alpha))
+                pixel.Item1 = CByte(pixel.Item1 * alpha + meanG * (1 - alpha))
+                pixel.Item2 = CByte(pixel.Item2 * alpha + meanR * (1 - alpha))
                 result.Set(Of Vec3b)(y, x, pixel)
             Next
         Next
@@ -125,9 +131,9 @@ Public Class TemplateMatcher
             Dim alpha = CDbl(result.Height - 1 - y) / CDbl(padSize)
             For x As Integer = 0 To result.Width - 1
                 Dim pixel = result.At(Of Vec3b)(y, x)
-                pixel.Item0 = CByte(pixel.Item0 * alpha + 32 * (1 - alpha))
-                pixel.Item1 = CByte(pixel.Item1 * alpha + 32 * (1 - alpha))
-                pixel.Item2 = CByte(pixel.Item2 * alpha + 32 * (1 - alpha))
+                pixel.Item0 = CByte(pixel.Item0 * alpha + meanB * (1 - alpha))
+                pixel.Item1 = CByte(pixel.Item1 * alpha + meanG * (1 - alpha))
+                pixel.Item2 = CByte(pixel.Item2 * alpha + meanR * (1 - alpha))
                 result.Set(Of Vec3b)(y, x, pixel)
             Next
         Next
@@ -265,6 +271,19 @@ Public Class TemplateMatcher
             Else
                 score = maxVal
                 matchPt = maxLoc
+            End If
+
+            ' 邊界假陽性檢驗：若匹配點落在結果圖的邊緣（±1px），
+            ' 通常是模板邊界特徵與搜尋區邊界的錯誤匹配，降低分數為 0
+            Dim resultW = result.Width
+            Dim resultH = result.Height
+            If resultW > 2 AndAlso resultH > 2 Then
+                Dim isBoundaryHit = (matchPt.X <= 1 OrElse matchPt.X >= resultW - 2 OrElse
+                                     matchPt.Y <= 1 OrElse matchPt.Y >= resultH - 2)
+                If isBoundaryHit AndAlso score > 0.5 Then
+                    Logger.Debug($"[MATCH] 邊界假陽性：matchPt=({matchPt.X},{matchPt.Y}) resultSize={resultW}x{resultH}，分數由 {score:F3} 降為 0")
+                    score = 0
+                End If
             End If
         End Using
     End Sub

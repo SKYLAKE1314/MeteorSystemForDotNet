@@ -16,15 +16,22 @@ Partial Class HomePage
         Dim decoder = AppRuntime.Barcode
         If decoder Is Nothing Then Return ""
 
-        'Dim cameraId = ResolveDetectCameraId()
-        '臨時
-        Dim cameraId = GetCamId(1)
-        '
+        ' 若模板未啟用條碼解碼，直接視為跳過，避免在無條碼場景誤判為"已解碼"
+        If snapshot IsNot Nothing AndAlso Not snapshot.EnableBarcode Then
+            Logger.Info("[FLOW] 條碼解碼未啟用，直接跳過")
+            Return Nothing
+        End If
+
+        ' 使用當前設定的解碼相機（預設與檢測相機相同）
+        Dim cameraId = _ocrCameraId
+        If String.IsNullOrWhiteSpace(cameraId) Then cameraId = _detectCameraId
+        If String.IsNullOrWhiteSpace(cameraId) Then
+            cameraId = GetCamId(0)  ' 回退到第一個相機
+        End If
+
         If String.IsNullOrWhiteSpace(cameraId) Then Return ""
-        ' 臨時
-        CameraService.Instance.StopAll()
-        Thread.Sleep(100)
-        '
+
+        ' 相機已在呼叫端啟動，這裡不再 StopAll()+重啟，避免不必要的畫面中斷
         CameraService.Instance.StartCamera(cameraId)
 
         Dim sw As New Stopwatch()
@@ -82,6 +89,12 @@ Partial Class HomePage
                                              text = TryAdvancedBarcodeDecode(decoder, mat, snapshot)
                                          End If
 
+                                         ' 過濾明顯不合理的假陽性解碼結果（雜訊誤判），避免"沒解到卻正確"
+                                         If Not String.IsNullOrWhiteSpace(text) AndAlso Not IsPlausibleBarcodeText(text) Then
+                                             Logger.Warn($"[BARCODE] 解碼結果疑似雜訊，已捨棄: '{text}'")
+                                             text = ""
+                                         End If
+
                                          If Not String.IsNullOrWhiteSpace(text) Then
                                              resultBox = text.Trim()
                                              Logger.Debug($"[BARCODE] 解碼成功: {text}")
@@ -105,6 +118,24 @@ Partial Class HomePage
     End Function
 
     ''' <summary>
+    ''' 過濾明顯不合理的解碼結果（例如過短、全同字元的雜訊誤判），
+    ''' 降低多角度/增強預處理策略下產生假陽性的機率。
+    ''' </summary>
+    Private Function IsPlausibleBarcodeText(text As String) As Boolean
+        If String.IsNullOrWhiteSpace(text) Then Return False
+
+        Dim trimmed = text.Trim()
+
+        ' 條碼通常至少有效字元數 >= 3
+        If trimmed.Length < 3 Then Return False
+
+        ' 全部為相同字元（例如 "111" 或 "---"）視為雜訊
+        If trimmed.Distinct().Count() = 1 Then Return False
+
+        Return True
+    End Function
+
+    ''' <summary>
     ''' 高級條碼解碼：考慮多角度、小的/模糊的目標
     ''' 策略：1)對比度增強 2)多角度嘗試 3)縮放處理小目標 4)適應性二值化
     ''' </summary>
@@ -115,7 +146,7 @@ Partial Class HomePage
             If enhanced IsNot Nothing Then
                 Try
                     Dim result = decoder.Run(enhanced)
-                    If Not String.IsNullOrWhiteSpace(result) Then
+                    If IsPlausibleBarcodeText(result) Then
                         Logger.Debug("[BARCODE] 通過對比度增強成功解碼")
                         Return result
                     End If
@@ -131,7 +162,7 @@ Partial Class HomePage
                 If rotated IsNot Nothing Then
                     Try
                         Dim result = decoder.Run(rotated)
-                        If Not String.IsNullOrWhiteSpace(result) Then
+                        If IsPlausibleBarcodeText(result) Then
                             Logger.Debug($"[BARCODE] 通過旋轉 {angle}° 成功解碼")
                             Return result
                         End If
@@ -146,7 +177,7 @@ Partial Class HomePage
             If upscaled IsNot Nothing Then
                 Try
                     Dim result = decoder.Run(upscaled)
-                    If Not String.IsNullOrWhiteSpace(result) Then
+                    If IsPlausibleBarcodeText(result) Then
                         Logger.Debug("[BARCODE] 通過上採樣 (2x) 成功解碼")
                         Return result
                     End If
@@ -156,7 +187,7 @@ Partial Class HomePage
                     If enhancedUpscaled IsNot Nothing Then
                         Try
                             result = decoder.Run(enhancedUpscaled)
-                            If Not String.IsNullOrWhiteSpace(result) Then
+                            If IsPlausibleBarcodeText(result) Then
                                 Logger.Debug("[BARCODE] 通過上採樣+對比度增強成功解碼")
                                 Return result
                             End If
@@ -174,7 +205,7 @@ Partial Class HomePage
             If binarized IsNot Nothing Then
                 Try
                     Dim result = decoder.Run(binarized)
-                    If Not String.IsNullOrWhiteSpace(result) Then
+                    If IsPlausibleBarcodeText(result) Then
                         Logger.Debug("[BARCODE] 通過適應性二值化成功解碼")
                         Return result
                     End If

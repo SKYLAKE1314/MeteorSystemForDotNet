@@ -8,8 +8,9 @@
         End Get
     End Property
 
-    Private _cameras As New Dictionary(Of String, CameraLink)
-    Private _frames As New Dictionary(Of String, BitmapSource)
+    ' OrdinalIgnoreCase: WMI DeviceId 大小寫可能不一致，必須不分大小寫比對
+    Private _cameras As New Dictionary(Of String, CameraLink)(StringComparer.OrdinalIgnoreCase)
+    Private _frames As New Dictionary(Of String, BitmapSource)(StringComparer.OrdinalIgnoreCase)
 
     Public Event FrameArrived As Action(Of String, BitmapSource)
 

@@ -16,15 +16,20 @@ Partial Class HomePage
         Dim ocr = AppRuntime.OCR
         If ocr Is Nothing Then Return ""
 
-        'Dim cameraId = ResolveDetectCameraId()
-        ' 臨時
-        Dim cameraId = GetCamId(1)
-        '
+        ' 使用當前設定中的 OCR 相機（或回退到檢測相機）
+        Dim cameraId = _ocrCameraId
+        If String.IsNullOrWhiteSpace(cameraId) Then
+            cameraId = _detectCameraId
+        End If
+        If String.IsNullOrWhiteSpace(cameraId) Then
+            cameraId = GetCamId(0)  ' 回退到第一個相機
+        End If
+
         If String.IsNullOrWhiteSpace(cameraId) Then Return ""
-        ' 臨時
+
         CameraService.Instance.StopAll()
         Thread.Sleep(100)
-        '
+
         CameraService.Instance.StartCamera(cameraId)
 
         ' 解析期望的OCR文本（支持多個子模板，用;分隔）

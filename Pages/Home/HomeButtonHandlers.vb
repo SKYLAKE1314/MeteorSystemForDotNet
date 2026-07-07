@@ -348,7 +348,10 @@ Partial Class HomePage
 
             While sw.ElapsedMilliseconds < timeoutMs
 
-                Dim ocrCamId = GetCamId(1)
+                Dim ocrCamId = _ocrCameraId
+                If String.IsNullOrEmpty(ocrCamId) Then
+                    ocrCamId = GetCamId(0)
+                End If
                 If String.IsNullOrEmpty(ocrCamId) Then Return
                 Dim frame As BitmapSource = CameraService.Instance.GetFrame(ocrCamId)
 
