@@ -12,30 +12,36 @@ Imports Cv = OpenCvSharp
 
 Partial Class HomePage
 
-    Private Function ResolveDetectCameraId() As String
-        If Not String.IsNullOrWhiteSpace(_detectCameraId) Then
-            Return _detectCameraId
+    ' =================================================================
+    ' 【核心修復】解析定位相機 ID（原 ResolveDetectCameraId）
+    ' =================================================================
+    Private Function ResolveMatchCameraId() As String
+        If Not String.IsNullOrWhiteSpace(_matchCameraId) Then
+            Return _matchCameraId
         End If
 
-        ' 優先使用第一個相機，然後回退到第二個
+        ' 優先使用第一個相機（相機 1），然後回退到第二個
         Dim fallback = GetCamId(0)
         If String.IsNullOrWhiteSpace(fallback) Then
             fallback = GetCamId(1)
         End If
 
         If Not String.IsNullOrWhiteSpace(fallback) Then
-            _detectCameraId = fallback
-            ' 如果 OCR 相機尚未設置，也使用同一個相機
+            _matchCameraId = fallback
+            ' 如果 OCR 相機（相機 2）尚未設置，優先嘗試獲取 GetCamId(1)，否則才與相機 1 綁定
             If String.IsNullOrWhiteSpace(_ocrCameraId) Then
-                _ocrCameraId = fallback
+                _ocrCameraId = If(Not String.IsNullOrWhiteSpace(GetCamId(1)), GetCamId(1), fallback)
             End If
         End If
 
         Return fallback
     End Function
 
+    ' =================================================================
+    ' 【核心修復】獲取定位幀：改為調用定位相機
+    ' =================================================================
     Private Async Function GetDetectFrameAsync() As Task(Of BitmapSource)
-        Dim camId = ResolveDetectCameraId()
+        Dim camId = ResolveMatchCameraId()
         If String.IsNullOrWhiteSpace(camId) Then
             Logger.Error("[DETECT] 未設定檢測相機")
             Return Nothing
@@ -55,6 +61,7 @@ Partial Class HomePage
         Logger.Error($"[DETECT] 無法取得相機畫面，CamId={camId}")
         Return Nothing
     End Function
+
     Public Async Function BtnGetImg_Click() As Task(Of DetectionResult)
 
         Try
@@ -72,12 +79,10 @@ Partial Class HomePage
 
             Dim snapshot = TemplateSnapshotStore.Load()
 
-            ' 過去這裡會用「模板記錄的建模相機」強制覆蓋 _detectCameraId，
-            ' 導致使用者在畫面/設定頁選擇的相機被靜默改變（"相機還是不對"的根因之一）。
-            ' 現在改為：一律遵循使用者當前選擇的相機，只在不一致時記錄警告，不做任何切換。
+            ' 【點對點修改】比對「模板建模相機」與當前使用者的「定位相機 1」
             If snapshot IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(snapshot.CameraDeviceId) Then
-                If Not String.Equals(snapshot.CameraDeviceId, _detectCameraId, StringComparison.OrdinalIgnoreCase) Then
-                    Logger.Warn($"[Camera] 模板建模相機 ({snapshot.CameraDeviceId}) 與當前選定相機 ({_detectCameraId}) 不同，" &
+                If Not String.Equals(snapshot.CameraDeviceId, _matchCameraId, StringComparison.OrdinalIgnoreCase) Then
+                    Logger.Warn($"[Camera] 模板建模相機 ({snapshot.CameraDeviceId}) 與當前選定定位相機 ({_matchCameraId}) 不同，" &
                                 "已忽略模板相機設定並沿用使用者當前選擇")
                 End If
             End If
@@ -126,18 +131,24 @@ Partial Class HomePage
                 _activeDetectionItem.resultType = If(result.IsOk, "MATCH", "MISMATCH")
                 _activeDetectionItem.confidence = result.Score
             End SyncLock
-            SetFlowStage(DetectionFlowStage.Barcode) ' 重置 skip 標誌，防止上一階段的按鈕操作漏入此階段
+
+            ' ← 進入條碼階段
+            SetFlowStage(DetectionFlowStage.Barcode)
 
             ' 不論OK還是NG，匹配後都播報"匹配完成，請掃描"
             PlayPromptVoice(VoicePromptMatchCompleteScan)
             Logger.Info($"[RESULT] 匹配 - OK={result.IsOk}, Score={result.Score:F3}")
             Logger.Info($"[FLOW] 匹配完成，開始解碼")
 
-            ' 解碼使用與檢測相同的相機（單相機架構），移除舊有寫死切換至相機2的臨時代碼
-            ' （該代碼會導致選定相機與實際使用相機不一致，即使用戶已在畫面上選好相機也會被覆蓋）
+            ' =================================================================
+            ' 【關鍵雙相機連動修復】解碼階段：精確指派並開啟「辨識相機 2」
+            ' =================================================================
             If String.IsNullOrWhiteSpace(_ocrCameraId) Then
-                _ocrCameraId = _detectCameraId
+                ' 如果設定頁有配相機 2 則優先使用，否則回退到與相機 1 相同
+                _ocrCameraId = If(Not String.IsNullOrWhiteSpace(GetCamId(1)), GetCamId(1), _matchCameraId)
             End If
+
+            Logger.Info($"[FLOW] 解碼/OCR 啟動相機: {_ocrCameraId}")
             CameraService.Instance.StartCamera(_ocrCameraId)
 
             Dim code = Await WaitBarcodeResultAsync(snapshot, StageTimeoutMs)
@@ -163,7 +174,7 @@ Partial Class HomePage
                 End If
             End SyncLock
 
-            ' ← 切換至 OCR 階段（同時清除 Barcode skip 旗標）
+            ' ← 切換至 OCR 階段
             SetFlowStage(DetectionFlowStage.Ocr)
 
             ' 條碼超時 → 結束流程

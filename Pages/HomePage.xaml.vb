@@ -49,7 +49,7 @@ Partial Class HomePage
     Private Const StageLoopDelayMs As Integer = 30
 
     ' 優先使用設定中儲存的相機，否則使用第一個相機
-    Private _detectCameraId As String = If(String.IsNullOrWhiteSpace(My.Settings.CameraDeviceId), GetCamId(0), My.Settings.CameraDeviceId)
+    'Private _detectCameraId As String = If(String.IsNullOrWhiteSpace(My.Settings.CameraDeviceId), GetCamId(0), My.Settings.CameraDeviceId)
     'Private _ocrCameraId As String = If(String.IsNullOrWhiteSpace(My.Settings.CameraDeviceId), GetCamId(0), My.Settings.CameraDeviceId)
 
     Private _io As IOController

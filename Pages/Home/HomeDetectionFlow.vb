@@ -41,6 +41,17 @@ Partial Class HomePage
             _flowStage = stage
             _skipCurrentStageRequested = False
         End SyncLock
+
+        ' 【核心修復】階段切換時，強制回主執行緒刷新相機 ComboBox
+        ' 這會讓 UI 立即顯示當下正在工作（OCR/Barcode）的相機，並確保相機狀態同步
+        Application.Current.Dispatcher.Invoke(Sub()
+                                                  Try
+                                                      RefreshCameraComboBox()
+                                                      Logger.Info($"[FLOW] 階段切換至 {stage.ToString()}，已同步切換工作相機")
+                                                  Catch ex As Exception
+                                                      Logger.Error($"[FLOW] 切換相機 UI 失敗: {ex.Message}")
+                                                  End Try
+                                              End Sub)
     End Sub
 
     Private Function IsSkipRequested(stage As DetectionFlowStage) As Boolean
@@ -83,10 +94,10 @@ Partial Class HomePage
     ''' </summary>
     Public Sub PreWarmMatchCamera()
         Try
-            ' 優先預熱使用者當前選定的相機（_detectCameraId），而非永遠寫死用第一個相機，
-            ' 否則使用者選了其他相機時，預熱與實際檢測用的相機會不一致。
-            Dim camId = If(Not String.IsNullOrWhiteSpace(_detectCameraId), _detectCameraId, GetCamId(0))
+            ' 【連動修復】預熱時完全使用 _matchCameraId，徹底與設定頁的相機 1（Index 0）綁定
+            Dim camId = If(Not String.IsNullOrWhiteSpace(_matchCameraId), _matchCameraId, GetCamId(0))
             If String.IsNullOrWhiteSpace(camId) Then Return
+
             CameraService.Instance.StartCamera(camId)
             Logger.Info($"[MATCH] 預熱匹配相機: {camId}")
         Catch ex As Exception

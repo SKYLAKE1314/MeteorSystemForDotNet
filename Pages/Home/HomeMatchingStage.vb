@@ -40,9 +40,10 @@ Partial Class HomePage
             Return New MatchResultWrapper With {.Result = Nothing}
         End If
 
-        ' 使用者在畫面 ComboBox 選定的相機（會依 GetCamId(0) 等做保底回退），
-        ' 之前這裡被寫死改成 GetCamId(0)，導致使用者切換相機選擇完全無效——這是「相機還是不對」的主因之一。
-        Dim cameraId = ResolveDetectCameraId()
+        ' =================================================================
+        ' 【核心修復】定位匹配一律調用專屬的 ResolveMatchCameraId()（相機 1）
+        ' =================================================================
+        Dim cameraId = ResolveMatchCameraId()
 
         ' 如果相機已在運行且有畫面，直接使用；否則重啟
         If CameraService.Instance.GetFrame(cameraId) Is Nothing Then
@@ -195,5 +196,4 @@ Partial Class HomePage
         CameraService.Instance.StopCamera(cameraId)
         Return New MatchResultWrapper With {.Result = finalResult, .MatchCount = matchAttempt}
     End Function
-
 End Class

@@ -24,7 +24,7 @@ Partial Class HomePage
 
         ' 使用當前設定的解碼相機（預設與檢測相機相同）
         Dim cameraId = _ocrCameraId
-        If String.IsNullOrWhiteSpace(cameraId) Then cameraId = _detectCameraId
+        If String.IsNullOrWhiteSpace(cameraId) Then cameraId = _matchCameraId
         If String.IsNullOrWhiteSpace(cameraId) Then
             cameraId = GetCamId(0)  ' 回退到第一個相機
         End If

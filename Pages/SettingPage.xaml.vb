@@ -165,9 +165,15 @@ If(My.Settings.AutoRun, 0, 1)
         row.SelectedCamera = cam
 
         RefreshAllCameraLists()
-        SaveCameraRows()
+        SaveCameraRows() ' 這會安全地把所有相機列表存入陣列 My.Settings.CameraDeviceIds
 
-        My.Settings.CameraDeviceId = cam?.DeviceId
+        ' 【核心連動修復】
+        ' 只有當使用者修改的是「相機 1」（Index = 0）時，才同步更新舊的單一欄位 CameraDeviceId。
+        ' 這樣修改「相機 2」時，才不會去覆寫並破壞主相機的設定，確保首頁讀取不會錯亂！
+        If CameraRows.IndexOf(row) = 0 Then
+            My.Settings.CameraDeviceId = cam?.DeviceId
+        End If
+
         My.Settings.Save()
 
         ' 通知其他頁面相機設定已變更，不展開 SettingPage 自己的 reload
