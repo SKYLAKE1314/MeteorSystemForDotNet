@@ -129,42 +129,57 @@
             <!-- Log -->
             <!-- ========================= -->
             <Border Grid.Column="0"
-                    Background="#252526"
-                    BorderBrush="#3C3C3C"
-                    BorderThickness="1"
-                    CornerRadius="6"
-                    Padding="6"
-                    Margin="0,0,10,0">
+        Background="#252526"
+        BorderBrush="#3C3C3C"
+        BorderThickness="1"
+        CornerRadius="8" 
+        Padding="12"
+        Margin="0,0,10,0">
 
                 <Grid>
-
                     <Grid.RowDefinitions>
-
-                        <RowDefinition Height="40"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="10"/>
                         <RowDefinition Height="*"/>
-
                     </Grid.RowDefinitions>
 
-                    <!-- Title -->
-                    <TextBlock Text="運行日誌"
-                               Foreground="White"
-                               FontSize="16"
-                               FontWeight="SemiBold"
-                               VerticalAlignment="Center"/>
+                    <DockPanel Grid.Row="0" LastChildFill="False">
+                        <TextBlock Text="運行日誌"
+                       Foreground="#E0E0E0"
+                       FontSize="14"
+                       FontWeight="SemiBold"
+                       VerticalAlignment="Center"/>
 
-                    <!-- Log -->
-                    <RichTextBox x:Name="rtbLog"
-                                 Grid.Row="1"
-                                 IsReadOnly="True"
-                                 FontFamily="Consolas"
-                                 FontSize="13"
-                                 Background="AliceBlue"
-                                 Foreground="#D4D4D4"
-                                 BorderThickness="0"
-                                 VerticalScrollBarVisibility="Auto"/>
+                        <ui:Button DockPanel.Dock="Right"
+                       Content="清除"
+                       FontSize="11"
+                       Height="24"
+                       Padding="8,0"
+                       Appearance="Secondary"
+                       Click="BtnClearLog_Click"/>
+                    </DockPanel>
 
+                    <Border Grid.Row="2"
+                Background="#1B1B1B"
+                BorderBrush="#3C3C3C"
+                BorderThickness="1"
+                CornerRadius="4"
+                Padding="8">
+
+                        <RichTextBox x:Name="rtbLog"
+                         IsReadOnly="True"
+                         FontFamily="Consolas"
+                         FontSize="12"
+                         Background="Transparent"
+                         Foreground="#A0A0A0"
+                         BorderThickness="0"
+                         VerticalScrollBarVisibility="Auto">
+                            <RichTextBox.Resources>
+                                <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#7C5CDB"/>
+                            </RichTextBox.Resources>
+                        </RichTextBox>
+                    </Border>
                 </Grid>
-
             </Border>
 
             <!-- ========================= -->

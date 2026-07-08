@@ -52,9 +52,9 @@ Public Class Logger
 
                                       Select Case level
                                           Case "DEBUG"
-                                              run.Foreground = Brushes.Blue
+                                              run.Foreground = Brushes.AliceBlue
                                           Case "INFO"
-                                              run.Foreground = Brushes.Black
+                                              run.Foreground = Brushes.White
                                           Case "WARN"
                                               run.Foreground = Brushes.Orange
                                           Case "ERROR"
