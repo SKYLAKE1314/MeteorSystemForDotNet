@@ -465,6 +465,7 @@ If(My.Settings.AutoRun, 0, 1)
     End Sub
 
     Private Sub SilentStartComboBox_SelectionChanged(sender As Object, e As SelectionChangedEventArgs)
+
         If Not _isLoaded Then Return
         My.Settings.SilentStart = (SilentStartComboBox.SelectedIndex = 0)
         My.Settings.Save()

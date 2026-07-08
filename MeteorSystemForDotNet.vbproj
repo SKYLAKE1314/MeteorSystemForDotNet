@@ -12,7 +12,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="54nkr-kmnbe-001.ico" />
+    <None Remove="app.config" />
   </ItemGroup>
 
   <ItemGroup>
@@ -135,7 +135,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Resource Include="54nkr-kmnbe-001.ico" />
+    <Resource Include="54nkr-kmnbe-001.ico">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="app.config" />
   </ItemGroup>
 
   <ItemGroup>

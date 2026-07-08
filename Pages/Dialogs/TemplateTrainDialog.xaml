@@ -5,7 +5,7 @@
         Title="模板訓練"
         Width="1160"
         Height="780"
-        WindowStartupLocation="CenterOwner"
+        WindowStartupLocation="CenterScreen"
         Background="#11131A">
     <Grid Margin="14">
         <Grid.ColumnDefinitions>
@@ -155,7 +155,7 @@
                     <TextBlock Margin="0,8,0,0"
                                Foreground="LightGray"
                                TextWrapping="Wrap"
-                               Text="說明：最多保存 50 張訓練模板，超過後會依最後匹配時間自動刪除較舊樣本。"/>
+                               Text="說明：不清晰的樣本會降低準度增加錯判，請定期刪除非較好樣本以維護。"/>
 
                     <Button x:Name="BtnManageTemplates" Margin="0,14,0,6" Height="32"
                             Background="#455A64" Foreground="White"

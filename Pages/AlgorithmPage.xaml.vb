@@ -88,16 +88,29 @@ Public Class AlgorithmPage
         Try
             ' 彈出相機選擇對話窗
             Dim picker As New CameraPickDialog()
-            picker.Owner = Application.Current?.MainWindow
+            picker.Owner = System.Windows.Window.GetWindow(Me) ' 確保 Owner 正確
+
             If picker.ShowDialog() <> True Then Return
 
             _selectedCameraId = picker.SelectedCameraId
             _selectedCameraSlot = picker.SelectedCameraSlot
 
-            If String.IsNullOrWhiteSpace(_selectedCameraId) Then
-                ErrorDialogHelper.ShowError("尚未設定相機")
-                Return
-            End If
+            ' 使用 Dispatcher 稍遲執行後續邏輯，避免與剛關閉的對話窗 Handle 衝突
+            Application.Current.Dispatcher.BeginInvoke(Sub()
+                                                           Try
+                                                               If String.IsNullOrWhiteSpace(_selectedCameraId) Then
+                                                                   ErrorDialogHelper.ShowError("尚未設定相機")
+                                                                   Return
+                                                               End If
+
+                                                               ' --- 後續啟動相機與等待第一幀的邏輯移到這裡 ---
+                                                               CameraService.Instance.StartCamera(_selectedCameraId)
+                                                               ' ... (其餘程式碼保持不變) ...
+
+                                                           Catch ex As Exception
+                                                               ExceptionHelper.ShowError(ex)
+                                                           End Try
+                                                       End Sub)
 
             ' 啟動相機（若已在執行中則無效，不會重複啟動）
             CameraService.Instance.StartCamera(_selectedCameraId)
