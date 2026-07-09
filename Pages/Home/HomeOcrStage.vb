@@ -48,19 +48,46 @@ Partial Class HomePage
         Dim bestScore As Double = 0
         Dim frameCount As Integer = 0
 
+        ' 【核心優化變數】用於控制 UI 刷新頻率，防止塞爆 Dispatcher 佇列
+        Dim lastUiUpdateTime As Long = 0
+
         While sw.ElapsedMilliseconds < timeoutMs
             If IsSkipRequested(DetectionFlowStage.Ocr) Then
                 Logger.Info("[FLOW] OCR 已跳過")
                 Return Nothing
             End If
 
-            Dim frame = CameraService.Instance.GetFrame(cameraId)
+            ' ─── 【⚡ 核心優化 1：相機底層緩存排空機制】 ───
+            ' 自動識別「佇列模式」或「快取模式」，瞬間抽乾相機啟動或前段積壓的所有過期舊影格
+            Dim frame As BitmapSource = CameraService.Instance.GetFrame(cameraId)
+            If frame IsNot Nothing Then
+                Dim drainCount As Integer = 0
+                While drainCount < 30 ' 最多連續抽排 30 幀歷史積壓，確保不發生無窮迴圈
+                    Dim nextFrame As BitmapSource = CameraService.Instance.GetFrame(cameraId)
+                    ' 如果拿不到新影格，或者拿到的物件跟當前是同一個（代表驅動是單一快取而非佇列），立刻停止抽排
+                    If nextFrame Is Nothing OrElse nextFrame Is frame Then
+                        Exit While
+                    End If
+                    frame = nextFrame
+                    drainCount += 1
+                End While
+                ' Debug 用，上線後可視情況註解
+                If drainCount > 0 Then
+                    Logger.Debug($"[OCR] 偵測到相機緩存積壓，已自動跳過 {drainCount} 幀過期畫面，直達最新即時影格")
+                End If
+            End If
+
             If frame IsNot Nothing Then
                 frameCount += 1
                 Dim frameCopy = frame
-                Dispatcher.BeginInvoke(Sub() RenderImage.Source = frameCopy)
 
-                ' ─── 核心非同步辨識運算 ───
+                ' 限制 UI 畫面最高重新整理率
+                Dim currentTime = sw.ElapsedMilliseconds
+                If currentTime - lastUiUpdateTime >= 33 Then
+                    lastUiUpdateTime = currentTime
+                    Dispatcher.BeginInvoke(Sub() RenderImage.Source = frameCopy, System.Windows.Threading.DispatcherPriority.Render)
+                End If
+
                 Dim result = Await Task.Run(Function()
                                                 Dim localBestText As String = ""
                                                 Dim localBestScore As Double = 0
@@ -69,20 +96,12 @@ Partial Class HomePage
                                                     Dim roi = ResolveRoi(snapshot, mat)
 
                                                     If roi.Width < 10 OrElse roi.Height < 10 Then
-                                                        Logger.Warn($"[OCR] 檢測到異常微小的 ROI ({roi.X},{roi.Y},{roi.Width}x{roi.Height})，自動切換為【全畫面】辨識。")
                                                         roi = New OpenCvSharp.Rect(0, 0, mat.Width, mat.Height)
                                                     End If
 
-                                                    If frameCount = 1 Then
-                                                        Logger.Debug($"[OCR] 圖像尺寸={mat.Width}x{mat.Height}, 實際辨識區域 ROI={roi.X},{roi.Y},{roi.Width}x{roi.Height}")
-                                                    End If
-
-                                                    ' 【核心效能優化 1】先截取 ROI 局部影像，避免對 5120x3840 的大圖做旋轉
                                                     Using roiMat = New Cv.Mat(mat, roi)
                                                         For Each angle In angles
-                                                            ' 【核心效能優化 2】只旋轉微小的局部影像，速度提升數百倍！
                                                             Using rotatedRoi = RotateMat(roiMat, angle)
-                                                                ' 建立適用於旋轉後局部影像的全滿新 ROI 矩形
                                                                 Dim fullRoi = New OpenCvSharp.Rect(0, 0, rotatedRoi.Width, rotatedRoi.Height)
                                                                 Dim ocrResult = ocr.RunRoi(rotatedRoi, fullRoi)
 
@@ -90,12 +109,11 @@ Partial Class HomePage
                                                                     Dim cleanedText = ocrResult.Text.Trim()
                                                                     Logger.Debug($"[OCR] Angle={angle} Text={cleanedText} Score={ocrResult.Score:F3}")
 
-                                                                    ' 【需求變更】只要設定了期望字串，且目前辨識結果包含它，立刻無視置信度直接回傳
+                                                                    ' 只要設定了期望字串，且目前辨識結果包含它，立刻無視置信度直接回傳
                                                                     If expectedTexts.Count > 0 Then
                                                                         For Each expected In expectedTexts
                                                                             If cleanedText.Contains(expected) Then
                                                                                 Logger.Info($"[FLOW] OCR 命中模板期望文本 (無視置信度): 期望={expected}, 識別={cleanedText}")
-                                                                                ' 標記 IsMatched = True 讓外層知道可以立刻早停
                                                                                 Return New With {.Text = cleanedText, .Score = ocrResult.Score, .IsMatched = True}
                                                                             End If
                                                                         Next
@@ -112,17 +130,13 @@ Partial Class HomePage
                                                     End Using
                                                 End Using
 
-                                                ' 如果跑完所有角度都沒命中期望字串，就回傳這幀裡分數最高的結果
                                                 Return New With {.Text = localBestText, .Score = localBestScore, .IsMatched = False}
                                             End Function)
 
-                ' ─── 外層即時早停與狀態處理 ───
-                ' 【核心修正 3】如果內部回報已命中期望文本，無視分數，立刻終結 While 迴圈直接返回！
                 If result.IsMatched Then
                     Return result.Text
                 End If
 
-                ' 保底與無期望文本時的處理
                 If Not String.IsNullOrWhiteSpace(result.Text) Then
                     If result.Score > bestScore Then
                         bestScore = result.Score
@@ -141,8 +155,8 @@ Partial Class HomePage
                 End If
             End If
 
-            ' 由於內部運算已經從數百毫秒縮減到幾毫秒，這裡的 Delay 可以保持或縮短，確保實時性
-            Await Task.Delay(50)
+            ' 適度將等待時間縮短至 20ms-30ms，配合緩存清空，能大幅提高生產線上的採樣即時率
+            Await Task.Delay(30)
         End While
 
         ' 超時後的歷史最高分保底返回
