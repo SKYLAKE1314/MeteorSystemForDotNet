@@ -23,7 +23,7 @@ Partial Class HomePage
     Private _detectLock As New Object()
     Private _isDetecting As Boolean = False
     Private _isPaused As Boolean = False
-
+    Private _isMatchCameraPreWarmed As Boolean = False
     Private Enum DetectionFlowStage
         Idle = 0
         Matching = 1
