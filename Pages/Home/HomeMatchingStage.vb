@@ -205,11 +205,11 @@ Partial Class HomePage
     Private Function ValidateFrameQuality(roiMat As Cv.Mat, ByRef outMean As Double, ByRef outStdDev As Double, ByRef outEdgeDensity As Double) As Boolean
         Using gray = roiMat.CvtColor(ColorConversionCodes.BGR2GRAY)
             ' 1. 檢查亮度
-            outMean = Cv2.Mean(gray).Val0
-            If outMean < 15 OrElse outMean > 245 Then
-                Logger.Warn($"[MATCH] 跳過異常亮度幀(ROI): mean={outMean:F1}")
-                Return False
-            End If
+            'outMean = Cv2.Mean(gray).Val0
+            'If outMean < 5 OrElse outMean > 245 Then
+            '    Logger.Warn($"[MATCH] 跳過異常亮度幀(ROI): mean={outMean:F1}")
+            '    Return False
+            'End If
 
             ' 2. 檢查方差/對比度
             Dim meanScalar As New Cv.Scalar()
@@ -228,7 +228,7 @@ Partial Class HomePage
                 Dim roiPixels = edges.Width * edges.Height
                 outEdgeDensity = CDbl(edgeCount) / CDbl(roiPixels)
                 ' 边缘過濾
-                If outEdgeDensity < 0.0015 Then
+                If outEdgeDensity < 0.0005 Then
                     Logger.Warn($"[MATCH] 跳過邊緣密度過低的幀(ROI): density={outEdgeDensity:P2} ({edgeCount}/{roiPixels})")
                     Return False
                 End If

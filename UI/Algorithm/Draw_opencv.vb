@@ -128,7 +128,6 @@ Public Class Draw_opencv
             ' 在正確的位置繪製綠色包圍框
             Cv.Cv2.Rectangle(display, rect, Cv.Scalar.Lime, 3)
 
-            ' ── 【核心修正 2】修正輪廓畫布錯位與大亂問題 ─────────────────
             Using roi As New Cv.Mat(input, rect),
                   gray As New Cv.Mat(),
                   edges As New Cv.Mat()
