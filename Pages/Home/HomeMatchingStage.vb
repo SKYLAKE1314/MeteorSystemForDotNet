@@ -224,8 +224,8 @@ Partial Class HomePage
                 Dim edgeCount = Cv2.CountNonZero(edges)
                 Dim roiPixels = edges.Width * edges.Height
                 outEdgeDensity = CDbl(edgeCount) / CDbl(roiPixels)
-
-                If outEdgeDensity < 0.005 Then
+                ' 边缘過濾
+                If outEdgeDensity < 0.0015 Then
                     Logger.Warn($"[MATCH] 跳過邊緣密度過低的幀(ROI): density={outEdgeDensity:P2} ({edgeCount}/{roiPixels})")
                     Return False
                 End If
