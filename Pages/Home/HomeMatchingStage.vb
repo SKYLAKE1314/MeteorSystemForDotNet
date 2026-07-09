@@ -116,6 +116,7 @@ Partial Class HomePage
                             ' 嘗試匹配母版
                             Dim masterResult = Await Draw_opencv.ProcessAsync(currentMat, masterData.Template, masterData.Config)
                             If masterResult IsNot Nothing Then
+                                ' 【優化】這裡不僅比對分數，同時採信演算法修正後的真正分數與判定
                                 If masterResult.Score > bestScore Then
                                     bestScore = masterResult.Score
                                     bestThreshold = masterData.Config.Threshold
@@ -125,6 +126,8 @@ Partial Class HomePage
                                     bestResultMat = masterResult.Mat?.Clone()
 
                                     Logger.Debug($"[MATCH] #{matchAttempt} 母版 Score={masterResult.Score:F3} (閾值={masterData.Config.Threshold:F3})")
+
+                                    ' 渲染到介面上
                                     If masterResult.Mat IsNot Nothing Then
                                         Dim wb = masterResult.Mat.ToWriteableBitmap()
                                         Dispatcher.Invoke(Sub() RenderImage.Source = wb)
