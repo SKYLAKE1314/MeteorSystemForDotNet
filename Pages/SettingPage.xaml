@@ -101,6 +101,7 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
 
+            <!-- 錄影相機 -->
             <TextBlock x:Name="TxtRecordingCameraTitle"
                 Text="錄影相機"
                 FontSize="16"
@@ -113,6 +114,21 @@
                   ItemsSource="{Binding RecordingCameraList}"
                   DisplayMemberPath="DisplayName"
                   SelectionChanged="RecordingCameraComboBox_SelectionChanged"/>
+
+            <!-- OCR 方式 -->
+            <TextBlock x:Name="TxtOcrModeTitle"
+                Text="OCR方式"
+                FontSize="16"
+                FontWeight="SemiBold"
+                Foreground="White"
+                Margin="0,20,0,8"/>
+            <ComboBox x:Name="OcrModeComboBox"
+                  Width="200"
+                  Margin="20,0,0,0"
+                  SelectionChanged="OcrModeComboBox_SelectionChanged">
+                <ComboBoxItem Content="標準 (PaddleOCR)"/>
+                <ComboBoxItem Content="AI (Ollama gml-ocr)"/>
+            </ComboBox>
 
             <TextBlock
                 x:Name="TxtAutoRunTitle"

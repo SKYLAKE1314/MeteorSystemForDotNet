@@ -13,10 +13,20 @@ Imports Cv = OpenCvSharp
 Partial Class HomePage
 
     Private Async Function WaitOcrResultAsync(snapshot As TemplateSnapshot, timeoutMs As Integer) As Task(Of String)
-        Dim ocr = AppRuntime.OCR
-        If ocr Is Nothing Then
-            Logger.Error("[OCR] AppRuntime.OCR 未設定或初始化失敗")
-            Return ""
+        Dim isAiMode = String.Equals(My.Settings.OcrMode, "AI", StringComparison.OrdinalIgnoreCase)
+
+        If isAiMode Then
+            Dim ollamaOcr = AppRuntime.OllamaOCR
+            If ollamaOcr Is Nothing Then
+                Logger.Error("[OCR] AppRuntime.OllamaOCR 未設定或初始化失敗")
+                Return ""
+            End If
+        Else
+            Dim ocr = AppRuntime.OCR
+            If ocr Is Nothing Then
+                Logger.Error("[OCR] AppRuntime.OCR 未設定或初始化失敗")
+                Return ""
+            End If
         End If
 
         Dim cameraId = _ocrCameraId
@@ -28,7 +38,7 @@ Partial Class HomePage
             Return ""
         End If
 
-        Logger.Info($"[FLOW] === 進入 OCR 階段 === 選定相機 CamId={cameraId}, 超時設定={timeoutMs}ms")
+        Logger.Info($"[FLOW] === 進入 OCR 階段 === OCR方式={(If(isAiMode, "AI (Ollama)", "標準 (PaddleOCR)"))}, 選定相機 CamId={cameraId}, 超時設定={timeoutMs}ms")
         CameraService.Instance.StartCamera(cameraId)
 
         ' 解析期望的 OCR 文本
@@ -88,7 +98,7 @@ Partial Class HomePage
                     Dispatcher.BeginInvoke(Sub() RenderImage.Source = frameCopy, System.Windows.Threading.DispatcherPriority.Render)
                 End If
 
-                Dim result = Await Task.Run(Function()
+                Dim result = Await Task.Run(Async Function()
                                                 Dim localBestText As String = ""
                                                 Dim localBestScore As Double = 0
 
@@ -99,35 +109,57 @@ Partial Class HomePage
                                                         roi = New OpenCvSharp.Rect(0, 0, mat.Width, mat.Height)
                                                     End If
 
-                                                    Using roiMat = New Cv.Mat(mat, roi)
-                                                        For Each angle In angles
-                                                            Using rotatedRoi = RotateMat(roiMat, angle)
-                                                                Dim fullRoi = New OpenCvSharp.Rect(0, 0, rotatedRoi.Width, rotatedRoi.Height)
-                                                                Dim ocrResult = ocr.RunRoi(rotatedRoi, fullRoi)
+                                                    If isAiMode Then
+                                                        ' AI 方式: 直接呼叫 Ollama 服務
+                                                        Dim ocrResult = Await AppRuntime.OllamaOCR.RunRoiAsync(mat, roi)
+                                                        If ocrResult IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(ocrResult.Text) Then
+                                                            Dim cleanedText = ocrResult.Text.Trim()
+                                                            Logger.Debug($"[OllamaOCR] Text={cleanedText} Score={ocrResult.Score:F3}")
 
-                                                                If ocrResult IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(ocrResult.Text) Then
-                                                                    Dim cleanedText = ocrResult.Text.Trim()
-                                                                    Logger.Debug($"[OCR] Angle={angle} Text={cleanedText} Score={ocrResult.Score:F3}")
-
-                                                                    ' 只要設定了期望字串，且目前辨識結果包含它，立刻無視置信度直接回傳
-                                                                    If expectedTexts.Count > 0 Then
-                                                                        For Each expected In expectedTexts
-                                                                            If cleanedText.Contains(expected) Then
-                                                                                Logger.Info($"[FLOW] OCR 命中模板期望文本 (無視置信度): 期望={expected}, 識別={cleanedText}")
-                                                                                Return New With {.Text = cleanedText, .Score = ocrResult.Score, .IsMatched = True}
-                                                                            End If
-                                                                        Next
+                                                            If expectedTexts.Count > 0 Then
+                                                                For Each expected In expectedTexts
+                                                                    If cleanedText.Contains(expected) Then
+                                                                        Logger.Info($"[FLOW] OllamaOCR 命中模板期望文本: 期望={expected}, 識別={cleanedText}")
+                                                                        Return New With {.Text = cleanedText, .Score = ocrResult.Score, .IsMatched = True}
                                                                     End If
+                                                                Next
+                                                            End If
 
-                                                                    ' 若無期望文本，則走原本的「最高分保底」邏輯
-                                                                    If ocrResult.Score > localBestScore Then
-                                                                        localBestScore = ocrResult.Score
-                                                                        localBestText = cleanedText
+                                                            localBestScore = ocrResult.Score
+                                                            localBestText = cleanedText
+                                                        End If
+                                                    Else
+                                                        ' 標準方式: 旋轉角度多重 OCR
+                                                        Using roiMat = New Cv.Mat(mat, roi)
+                                                            For Each angle In angles
+                                                                Using rotatedRoi = RotateMat(roiMat, angle)
+                                                                    Dim fullRoi = New OpenCvSharp.Rect(0, 0, rotatedRoi.Width, rotatedRoi.Height)
+                                                                    Dim ocrResult = AppRuntime.OCR.RunRoi(rotatedRoi, fullRoi)
+
+                                                                    If ocrResult IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(ocrResult.Text) Then
+                                                                        Dim cleanedText = ocrResult.Text.Trim()
+                                                                        Logger.Debug($"[OCR] Angle={angle} Text={cleanedText} Score={ocrResult.Score:F3}")
+
+                                                                        ' 只要設定了期望字串，且目前辨識結果包含它，立刻無視置信度直接回傳
+                                                                        If expectedTexts.Count > 0 Then
+                                                                            For Each expected In expectedTexts
+                                                                                If cleanedText.Contains(expected) Then
+                                                                                    Logger.Info($"[FLOW] OCR 命中模板期望文本 (無視置信度): 期望={expected}, 識別={cleanedText}")
+                                                                                    Return New With {.Text = cleanedText, .Score = ocrResult.Score, .IsMatched = True}
+                                                                                End If
+                                                                            Next
+                                                                        End If
+
+                                                                        ' 若無期望文本，則走原本的「最高分保底」邏輯
+                                                                        If ocrResult.Score > localBestScore Then
+                                                                            localBestScore = ocrResult.Score
+                                                                            localBestText = cleanedText
+                                                                        End If
                                                                     End If
-                                                                End If
-                                                            End Using
-                                                        Next
-                                                    End Using
+                                                                End Using
+                                                            Next
+                                                        End Using
+                                                    End If
                                                 End Using
 
                                                 Return New With {.Text = localBestText, .Score = localBestScore, .IsMatched = False}

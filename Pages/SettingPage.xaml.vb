@@ -99,6 +99,7 @@ Public Class SettingPage
         TxtIoBoardTitle.Text = LanguageManager.T("Setting_IoBoard")
         TxtCameraTitle.Text = LanguageManager.T("Setting_Camera")
         TxtRecordingCameraTitle.Text = "錄影相機"
+        TxtOcrModeTitle.Text = "OCR方式"
         TxtAutoRunTitle.Text = LanguageManager.T("Setting_AutoRun")
         TxtGpuTitle.Text = LanguageManager.T("Setting_GpuBoost")
     End Sub
@@ -315,6 +316,9 @@ If(My.Settings.AutoRun, 0, 1)
             ' 靜默啟動
             SilentStartComboBox.SelectedIndex = If(My.Settings.SilentStart, 0, 1)
 
+            ' OCR 方式
+            OcrModeComboBox.SelectedIndex = If(String.Equals(My.Settings.OcrMode, "AI", StringComparison.OrdinalIgnoreCase), 1, 0)
+
         Finally
             _suppressEvents = False
         End Try
@@ -469,6 +473,13 @@ If(My.Settings.AutoRun, 0, 1)
         If Not _isLoaded Then Return
         My.Settings.SilentStart = (SilentStartComboBox.SelectedIndex = 0)
         My.Settings.Save()
+    End Sub
+
+    Private Sub OcrModeComboBox_SelectionChanged(sender As Object, e As SelectionChangedEventArgs)
+        If Not _isLoaded Then Return
+        My.Settings.OcrMode = If(OcrModeComboBox.SelectedIndex = 1, "AI", "Standard")
+        My.Settings.Save()
+        Logger.Info($"[Setting] OCR方式變更為: {My.Settings.OcrMode}")
     End Sub
 
     ''' <summary>

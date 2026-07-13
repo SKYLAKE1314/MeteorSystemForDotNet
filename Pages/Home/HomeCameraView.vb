@@ -26,7 +26,10 @@ Partial Class HomePage
 
                                                If RenderImage Is Nothing Then Return
 
-                                               RenderImage.Source = img
+                                               ' 如果是匹配階段，由 UpdateFrame 負責高頻渲染帶框畫面，避免此處原生畫面覆蓋造成閃爍
+                                               If _flowStage <> DetectionFlowStage.Matching Then
+                                                   RenderImage.Source = img
+                                               End If
 
                                                ' ⭐ 保存最後一幀（UI層）
                                                _lastFrameBitmap = img

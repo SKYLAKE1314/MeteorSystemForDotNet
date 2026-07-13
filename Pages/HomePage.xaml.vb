@@ -19,6 +19,7 @@ Partial Class HomePage
     Private _isAlive As Boolean = True
     Private _isActive As Boolean = False
     Private _isStreaming As Boolean = False
+    Private _wasStreamingBeforeUnload As Boolean = False
 
     Private _detectLock As New Object()
     Private _isDetecting As Boolean = False
@@ -70,6 +71,33 @@ Partial Class HomePage
             ' 如果是重複返回此頁面，重新註冊 UI 刷新循環，避免畫面凍結
             RemoveHandler CompositionTarget.Rendering, AddressOf UpdateFrame
             AddHandler CompositionTarget.Rendering, AddressOf UpdateFrame
+
+            ' 重新整理相機清單與工作相機變數（防止在設定頁更改後返回首頁未套用）
+            Try
+                RefreshCameraComboBox()
+            Catch ex As Exception
+                Logger.Error($"[Camera] 返回首頁刷新相機失敗: {ex.Message}")
+            End Try
+
+            ' 重新訂閱相機變更事件
+            RemoveHandler CameraManager.CameraChanged, AddressOf OnCameraChanged
+            AddHandler CameraManager.CameraChanged, AddressOf OnCameraChanged
+
+            ' 如果先前離開時處於串流狀態，自動恢復相機與串流更新，防止畫面凍結！
+            If _wasStreamingBeforeUnload Then
+                Logger.Info("[FLOW] 返回首頁，自動恢復相機串流...")
+                RemoveHandler CameraService.Instance.FrameArrived, AddressOf OnFrameArrived
+                AddHandler CameraService.Instance.FrameArrived, AddressOf OnFrameArrived
+
+                ' 啟動定位與解碼相機
+                If Not String.IsNullOrWhiteSpace(_matchCameraId) Then
+                    CameraService.Instance.StartCamera(_matchCameraId)
+                End If
+                If Not String.IsNullOrWhiteSpace(_ocrCameraId) AndAlso _ocrCameraId <> _matchCameraId Then
+                    CameraService.Instance.StartCamera(_ocrCameraId)
+                End If
+                _isStreaming = True
+            End If
             Return
         End If
 
@@ -132,10 +160,27 @@ Partial Class HomePage
     End Sub
 
     Private Sub Page_Unloaded(sender As Object, e As RoutedEventArgs) Handles Me.Unloaded
+        ' 儲存當前串流狀態，供返回首頁時自動恢復
+        _wasStreamingBeforeUnload = _isStreaming
+
         ' 【核心修復】離開頁面時必須解除註冊，防止背景線程持續索取已關閉的硬體資源
         RemoveHandler CompositionTarget.Rendering, AddressOf UpdateFrame
         RemoveHandler CameraManager.CameraChanged, AddressOf OnCameraChanged
-        _isStreaming = False
+        RemoveHandler CameraService.Instance.FrameArrived, AddressOf OnFrameArrived
+
+        ' 如果當前正在串流，且背景沒有執行任務錄影，離開頁面時才暫時關閉相機
+        If _isStreaming Then
+            Dim isRecording = (TaskVideoRecorder.Instance.GetCurrentInfo() IsNot Nothing)
+            If Not isRecording Then
+                If Not String.IsNullOrWhiteSpace(_matchCameraId) Then
+                    CameraService.Instance.StopCamera(_matchCameraId)
+                End If
+                If Not String.IsNullOrWhiteSpace(_ocrCameraId) AndAlso _ocrCameraId <> _matchCameraId Then
+                    CameraService.Instance.StopCamera(_ocrCameraId)
+                End If
+            End If
+            _isStreaming = False
+        End If
     End Sub
     Public Sub RefreshLanguageUI()
 

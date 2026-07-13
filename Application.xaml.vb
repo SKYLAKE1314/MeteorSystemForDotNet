@@ -85,6 +85,7 @@ Class Application
         AppProgress.Report(80, "初始化OCR")
 
         AppRuntime.OCR = New PaddleOcrService()
+        AppRuntime.OllamaOCR = New OllamaOcrService()
 
         AppProgress.Report(90, "初始化Barcode")
 
@@ -101,6 +102,7 @@ End Class
 Public Class AppRuntime
 
     Public Shared OCR As PaddleOcrService
+    Public Shared OllamaOCR As OllamaOcrService
     Public Shared Barcode As BarcodeDecodeService
     Public Shared Process As ProcessPage
     Public Shared Home As HomePage
