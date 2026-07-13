@@ -446,43 +446,45 @@ Partial Public Class ProcessPage
                 '==============================
                 ' 状态 1: 暂停检测倒计时和录制
                 '==============================
-                ' 只有在已啟動的情況下才允許暫停
                 If Not _allowDetection Then
-                    AddLog("[TASK] 1 -> PAUSE 失敗：檢測未啟動")
+                    AddLog("[TASK] 1 -> PAUSE 失敗：檢測未啟動（尚未收到信號 0）")
                     Return
                 End If
 
-                AddLog("[TASK] 1 -> PAUSE (暂停检测倒计时和录制)")
+                AddLog("[TASK] 1 -> PAUSE (暫停檢測流程與錄製)")
 
-                ' 暂停录制
-                Await TaskVideoRecorder.Instance.PauseRecordingAsync()
-                Logger.Info("[VideoRecorder] 录制已暂停")
-
-                ' 暂停检测流程
+                ' 先暫停檢測流程（記錄當前階段、設 _isPaused=True、播語音）
                 If AppRuntime.Home IsNot Nothing Then
                     AppRuntime.Home.PauseDetectionFlow()
                 End If
+
+                ' 再暫停錄製
+                Await TaskVideoRecorder.Instance.PauseRecordingAsync()
+                Logger.Info("[VideoRecorder] 錄製已暫停")
 
             Case 2
                 '==============================
                 ' 状态 2: 恢复检测倒计时和录制
                 '==============================
-                ' 只有在已暫停的情況下才允許恢復
-                If Not TaskVideoRecorder.Instance.IsPaused Then
-                    AddLog("[TASK] 2 -> RESUME 失敗：錄製未暫停")
+                If Not _allowDetection Then
+                    AddLog("[TASK] 2 -> RESUME 失敗：檢測未啟動（尚未收到信號 0）")
                     Return
                 End If
 
-                AddLog("[TASK] 2 -> RESUME (恢复检测倒计时和录制)")
+                ' 先恢復錄製
+                If TaskVideoRecorder.Instance.IsPaused Then
+                    Await TaskVideoRecorder.Instance.ResumeRecordingAsync()
+                    Logger.Info("[VideoRecorder] 錄製已恢復")
+                Else
+                    Logger.Warn("[VideoRecorder] 收到 2 但錄製並未暫停，跳過恢復")
+                End If
 
-                ' 恢复录制
-                Await TaskVideoRecorder.Instance.ResumeRecordingAsync()
-                Logger.Info("[VideoRecorder] 录制已恢复")
-
-                ' 在 HomePage 中也恢复检测流程
+                ' 再恢復檢測流程（設 _isPaused=False、播語音）
                 If AppRuntime.Home IsNot Nothing Then
                     AppRuntime.Home.ResumeDetectionFlow()
                 End If
+
+                AddLog("[TASK] 2 -> RESUME (已恢復檢測流程與錄製)")
 
             Case 3
                 '==============================
@@ -641,7 +643,7 @@ Partial Public Class ProcessPage
             Dim imageBytes = Convert.FromBase64String(normalizedBase64)
             Dim folderPath = _currentArtifactFolder
             If String.IsNullOrWhiteSpace(folderPath) Then
-                folderPath = BuildTaskArtifactFolder(New TaskData With {.requestId = requestId, .PartCode = requestId}, DateTimeOffset.Now.ToUnixTimeMilliseconds())
+                folderPath = BuildTaskArtifactFolder(New TaskData With {.RequestId = requestId, .PartCode = requestId}, DateTimeOffset.Now.ToUnixTimeMilliseconds())
             End If
 
             Directory.CreateDirectory(folderPath)

@@ -110,14 +110,14 @@ Partial Class HomePage
     End Sub
 
     ''' <summary>
-    ''' 暂停检测流程和倒计时
+    ''' 暫停檢測流程：記錄當前階段並暫停，等待信號 2 恢復
     ''' </summary>
     Public Sub PauseDetectionFlow()
         Try
             SyncLock _detectLock
                 _isPaused = True
-                Logger.Info("[FLOW] 檢測流程已暫停")
-                PlayPromptVoice("DetectionPaused.wav")
+                Logger.Info($"[FLOW] 檢測流程已暫停，當前階段={_flowStage}")
+                PlayPromptVoice(VoicePromptDetectionPaused)
             End SyncLock
         Catch ex As Exception
             Logger.Error("[FLOW] 暫停流程失敗: " & ex.Message)

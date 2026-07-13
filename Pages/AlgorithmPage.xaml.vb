@@ -478,7 +478,19 @@ Public Class AlgorithmPage
 
                     ' 彈出編輯對話窗
                     Dim dlg As New TemplateEditDialog(snapshot, Nothing)
-                    dlg.Owner = Application.Current?.MainWindow
+
+                    ' 1. 強制指定為 System.Windows.Window
+                    Dim parentWindow As System.Windows.Window = System.Windows.Window.GetWindow(Me)
+
+                    ' 2. 二次檢查時也同樣使用完整名稱
+                    If parentWindow IsNot Nothing AndAlso parentWindow IsNot dlg Then
+                        dlg.Owner = parentWindow
+                    Else
+                        ' Fallback 機制
+                        If Application.Current?.MainWindow IsNot Nothing AndAlso Application.Current.MainWindow IsNot dlg Then
+                            dlg.Owner = Application.Current.MainWindow
+                        End If
+                    End If
                     Dim res = dlg.ShowDialog()
 
                     If res <> True Then

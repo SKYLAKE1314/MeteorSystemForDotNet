@@ -28,12 +28,12 @@ Partial Class HomePage
         Return New OpenCvSharp.Rect(x, y, w, h)
     End Function
 
-    ' 多次匹配方法：在3秒內每200ms嘗試一次，收集最高分，最後比對閾值決定OK/NG
+    ' 多次匹配方法：每 200 ms 對所有模板（母版 + 子模板）循環嘗試；
+    ' 任一模板匹配 OK 立即退出（不等超時）；尊重 _isPaused 暫停等待。
     Private Async Function WaitMultipleMatchAsync(templatePath As String, snapshot As TemplateSnapshot, timeoutMs As Integer) As Task(Of MatchResultWrapper)
         Dim sw As New Stopwatch()
         sw.Start()
 
-        ' 直接從路徑加載母版
         Dim masterData = TemplateManager.LoadTemplate(templatePath)
         If masterData Is Nothing OrElse masterData.Template Is Nothing Then
             Logger.Warn($"[FLOW] 無法加載母版模板: {templatePath}")
@@ -42,14 +42,17 @@ Partial Class HomePage
 
         Dim cameraId = ResolveMatchCameraId()
 
-        If CameraService.Instance.GetFrame(cameraId) Is Nothing Then
+        ' 相機預熱：若尚未有畫面則啟動並等待第一幀，完成後播報就緒語音
+        Dim needsWarmup = (CameraService.Instance.GetFrame(cameraId) Is Nothing)
+        If needsWarmup Then
             CameraService.Instance.StartCamera(cameraId)
             Dim warmupSw As New Stopwatch()
             warmupSw.Start()
-            While CameraService.Instance.GetFrame(cameraId) Is Nothing AndAlso warmupSw.ElapsedMilliseconds < 2000
+            While CameraService.Instance.GetFrame(cameraId) Is Nothing AndAlso warmupSw.ElapsedMilliseconds < 3000
                 Await Task.Delay(50)
             End While
             Logger.Debug($"[MATCH] 相機沖熱完成 ({warmupSw.ElapsedMilliseconds}ms)")
+            PlayPromptVoice(VoicePromptDetectionReady) ' 相機就緒，可以開始檢測
         Else
             Logger.Debug("[MATCH] 相機已有畫面，繼續使用實時串流")
         End If
@@ -64,10 +67,8 @@ Partial Class HomePage
         Dim subTemplateMetas = TemplateTrainingStore.GetTrainingSamples(groupPath)
         Logger.Debug($"[MATCH] 子模板數量={If(subTemplateMetas IsNot Nothing, subTemplateMetas.Count, 0)}, groupPath={groupPath}")
 
-        ' =================================================================
-        ' 【核心修正 1】將子模板讀取移出 While 迴圈，提前載入記憶體快取
-        ' =================================================================
-        Dim loadedSubTemplates As New List(Of Tuple(Of Object, Cv.Mat))() ' 註：Object 可替換為您的 subMeta 實際型別
+        ' 預先載入所有子模板至記憶體，避免每次迴圈重複 IO
+        Dim loadedSubTemplates As New List(Of Tuple(Of Object, Cv.Mat))()
         If subTemplateMetas IsNot Nothing Then
             For Each subMeta In subTemplateMetas
                 Dim subMat = TemplateTrainingStore.LoadTrainingSampleImage(groupPath, subMeta.FileName)
@@ -78,9 +79,17 @@ Partial Class HomePage
         End If
 
         Const AttemptIntervalMs As Long = 200
+        Dim earlyOkResult As Draw_opencv.ResultPack = Nothing  ' 提前 OK 結果
 
         Try
-            While sw.ElapsedMilliseconds < timeoutMs
+            While sw.ElapsedMilliseconds < timeoutMs AndAlso earlyOkResult Is Nothing
+
+                ' ── 暫停等待：收到信號 1 時在此掛起，直到信號 2 恢復 ──────────
+                If _isPaused Then
+                    Await Task.Delay(100)
+                    Continue While
+                End If
+
                 If sw.ElapsedMilliseconds - lastAttemptTime >= AttemptIntervalMs Then
                     matchAttempt += 1
                     lastAttemptTime = sw.ElapsedMilliseconds
@@ -96,84 +105,88 @@ Partial Class HomePage
 
                         Using currentMat = BitmapSourceToMat(frame)
                             Dim roiRect = ResolveRoi(snapshot, currentMat)
-                            Dim isFrameValid As Boolean = False
+                            Dim meanVal As Double = 0, stdDev As Double = 0, edgeDensity As Double = 0
 
-                            Dim meanVal As Double = 0
-                            Dim stdDev As Double = 0
-                            Dim edgeDensity As Double = 0
+                            ' ── 【完美修復】依據當前模板動態參數進行影像質量校驗，避免硬編碼 ──
+                            Dim cannyL As Double = If(masterData.Config IsNot Nothing AndAlso masterData.Config.CannyLow > 0, CDbl(masterData.Config.CannyLow), 80.0)
+                            Dim cannyH As Double = If(masterData.Config IsNot Nothing AndAlso masterData.Config.CannyHigh > 0, CDbl(masterData.Config.CannyHigh), 160.0)
 
-                            ' 計算並擷取 ROI 局部影像來做質量檢驗
                             Using roiMat = currentMat.SubMat(roiRect)
-                                ' 【核心修正 3】呼叫抽離後的檢驗函式，不使用 GoTo
-                                isFrameValid = ValidateFrameQuality(roiMat, meanVal, stdDev, edgeDensity)
+                                If Not ValidateFrameQuality(roiMat, meanVal, stdDev, edgeDensity, cannyL, cannyH) Then Continue While
                             End Using
+                            Logger.Debug($"[MATCH] #{matchAttempt} 幀質量OK(ROI): mean={meanVal:F1}, stdDev={stdDev:F1}, edge={edgeDensity:P2}")
 
-                            ' 檢驗沒通過，直接進入下一次 Delay 循環
-                            If Not isFrameValid Then Continue While
-
-                            Logger.Debug($"[MATCH] #{matchAttempt} 幀質量檢驗通過(ROI): mean={meanVal:F1}, stdDev={stdDev:F1}, edgeDensity={edgeDensity:P2}")
-
-                            ' 嘗試匹配母版
+                            ' ── 嘗試母版 ───────────────────────────────────────────
                             Dim masterResult = Await Draw_opencv.ProcessAsync(currentMat, masterData.Template, masterData.Config)
                             If masterResult IsNot Nothing Then
-                                ' 【優化】這裡不僅比對分數，同時採信演算法修正後的真正分數與判定
                                 If masterResult.Score > bestScore Then
                                     bestScore = masterResult.Score
                                     bestThreshold = masterData.Config.Threshold
-
-                                    ' 安全釋放舊的最高分 Mat
                                     If bestResultMat IsNot Nothing Then bestResultMat.Dispose()
                                     bestResultMat = masterResult.Mat?.Clone()
-
                                     Logger.Debug($"[MATCH] #{matchAttempt} 母版 Score={masterResult.Score:F3} (閾值={masterData.Config.Threshold:F3})")
-
-                                    ' 渲染到介面上
                                     If masterResult.Mat IsNot Nothing Then
                                         Dim wb = masterResult.Mat.ToWriteableBitmap()
                                         Dispatcher.Invoke(Sub() RenderImage.Source = wb)
                                     End If
                                 End If
-
-                                ' 【核心修正 2】及時釋放 ProcessAsync 產生的臨時影像，避免記憶體洩漏
+                                ' 母版 OK → 立即退出
+                                If masterResult.IsOk Then
+                                    Logger.Info($"[MATCH] 母版 OK（提前退出）Score={masterResult.Score:F3}, 嘗試={matchAttempt}")
+                                    earlyOkResult = New Draw_opencv.ResultPack With {
+                                        .Score = masterResult.Score, .IsOk = True,
+                                        .Mat = If(bestResultMat IsNot Nothing, bestResultMat, masterResult.Mat?.Clone())
+                                    }
+                                    masterResult.Mat?.Dispose()
+                                    Exit While
+                                End If
                                 masterResult.Mat?.Dispose()
                             End If
 
-                            ' 嘗試匹配所有子模板（此處直接從記憶體快取讀取，速度極快）
+                            If earlyOkResult IsNot Nothing Then Exit While
+
+                            ' ── 循環嘗試所有子模板（mother 未 OK 才進入）──────────
                             For Each item In loadedSubTemplates
-                                Dim subMeta = item.Item1 ' 若上面替換了型別，此處可直接使用
+                                Dim subMeta = item.Item1
                                 Dim subMat = item.Item2
-
                                 Dim subConfig As New TemplateConfig With {
-                                .Threshold = If(subMeta.MasterThreshold > 0, subMeta.MasterThreshold, masterData.Config.Threshold),
-                                .MatchMethod = subMeta.MatchMethod,
-                                .PyramidLevel = subMeta.PyramidLevel,
-                                .CannyLow = If(subMeta.CannyLow > 0, subMeta.CannyLow, masterData.Config.CannyLow),
-                                .CannyHigh = If(subMeta.CannyHigh > 0, subMeta.CannyHigh, masterData.Config.CannyHigh)
-                            }
-
+                                    .Threshold = If(subMeta.MasterThreshold > 0, subMeta.MasterThreshold, masterData.Config.Threshold),
+                                    .MatchMethod = subMeta.MatchMethod,
+                                    .PyramidLevel = subMeta.PyramidLevel,
+                                    .CannyLow = If(subMeta.CannyLow > 0, subMeta.CannyLow, masterData.Config.CannyLow),
+                                    .CannyHigh = If(subMeta.CannyHigh > 0, subMeta.CannyHigh, masterData.Config.CannyHigh),
+                                    .RoiX = masterData.Config.RoiX, .RoiY = masterData.Config.RoiY,
+                                    .RoiW = masterData.Config.RoiW, .RoiH = masterData.Config.RoiH
+                                }
                                 Dim subResult = Await Draw_opencv.ProcessAsync(currentMat, subMat, subConfig)
                                 If subResult IsNot Nothing Then
                                     If subResult.Score > bestScore Then
                                         bestScore = subResult.Score
                                         bestThreshold = subConfig.Threshold
-
                                         If bestResultMat IsNot Nothing Then bestResultMat.Dispose()
                                         bestResultMat = subResult.Mat?.Clone()
-
                                         Logger.Debug($"[MATCH] #{matchAttempt} 子模板'{subMeta.FileName}' Score={subResult.Score:F3} (閾值={subConfig.Threshold:F3})")
                                         If subResult.Mat IsNot Nothing Then
                                             Dim wb = subResult.Mat.ToWriteableBitmap()
                                             Dispatcher.Invoke(Sub() RenderImage.Source = wb)
                                         End If
                                     End If
-
-                                    ' 【核心修正 2】及時釋放子模板臨時影像
+                                    ' 子模板 OK → 立即退出
+                                    If subResult.IsOk Then
+                                        Logger.Info($"[MATCH] 子模板'{subMeta.FileName}' OK（提前退出）Score={subResult.Score:F3}, 嘗試={matchAttempt}")
+                                        earlyOkResult = New Draw_opencv.ResultPack With {
+                                            .Score = subResult.Score, .IsOk = True,
+                                            .Mat = If(bestResultMat IsNot Nothing, bestResultMat, subResult.Mat?.Clone())
+                                        }
+                                        subResult.Mat?.Dispose()
+                                        Exit For
+                                    End If
                                     subResult.Mat?.Dispose()
                                 End If
                             Next
                         End Using
                     Else
-                        Logger.Warn($"[MATCH] #{matchAttempt}: 無法獲取相機畫面（請檢查生產線觸發信號或曝光時間）")
+                        Logger.Warn($"[MATCH] #{matchAttempt}: 無法獲取相機畫面")
                     End If
                 End If
 
@@ -181,60 +194,85 @@ Partial Class HomePage
             End While
 
         Finally
-            ' =================================================================
-            ' 【核心修正 1 續】不論 While 成功或中途出錯，最終統一清空子模板記憶體
-            ' =================================================================
             For Each item In loadedSubTemplates
                 item.Item2.Dispose()
             Next
             loadedSubTemplates.Clear()
         End Try
 
-        Dim isOk = (bestScore >= bestThreshold)
-        Logger.Info($"[MATCH] 3秒結束，最高分={bestScore:F3}, 對應閾值={bestThreshold:F3}, IsOk={isOk}, 共{matchAttempt}次")
+        ' 提前 OK 退出
+        If earlyOkResult IsNot Nothing Then
+            Return New MatchResultWrapper With {.Result = earlyOkResult, .MatchCount = matchAttempt}
+        End If
 
-        Dim finalResult As New Draw_opencv.ResultPack With {
-        .Score = bestScore,
-        .IsOk = isOk,
-        .Mat = bestResultMat ' 帶有最高分的視覺影像，交由外部呼叫者負責最後的 Dispose
-    }
-        'CameraService.Instance.StopCamera(cameraId)
+        ' 超時：用最高分決定 OK/NG
+        Dim isOk = (bestScore >= bestThreshold)
+        Logger.Info($"[MATCH] 超時結束，最高分={bestScore:F3}, 對應閾值={bestThreshold:F3}, IsOk={isOk}, 共{matchAttempt}次")
+        Dim finalResult As New Draw_opencv.ResultPack With {.Score = bestScore, .IsOk = isOk, .Mat = bestResultMat}
         Return New MatchResultWrapper With {.Result = finalResult, .MatchCount = matchAttempt}
     End Function
 
-    Private Function ValidateFrameQuality(roiMat As Cv.Mat, ByRef outMean As Double, ByRef outStdDev As Double, ByRef outEdgeDensity As Double) As Boolean
-        Using gray = roiMat.CvtColor(ColorConversionCodes.BGR2GRAY)
-            ' 1. 檢查亮度
-            'outMean = Cv2.Mean(gray).Val0
-            'If outMean < 5 OrElse outMean > 245 Then
-            '    Logger.Warn($"[MATCH] 跳過異常亮度幀(ROI): mean={outMean:F1}")
-            '    Return False
-            'End If
+    Private Function ValidateFrameQuality(
+    roiMat As Cv.Mat,
+    ByRef outMean As Double,
+    ByRef outStdDev As Double,
+    ByRef outEdgeDensity As Double,
+    Optional cannyLow As Double = 80,
+    Optional cannyHigh As Double = 160,
+    Optional minEdgeDensity As Double = 0.0005,
+    Optional minStdDev As Double = 5.0
+) As Boolean
 
-            ' 2. 檢查方差/對比度
-            Dim meanScalar As New Cv.Scalar()
-            Dim stdDevScalar As New Cv.Scalar()
-            Cv2.MeanStdDev(gray, meanScalar, stdDevScalar)
-            outStdDev = stdDevScalar.Val0
-            If outStdDev < 10 Then
-                Logger.Warn($"[MATCH] 跳過對比度過低的幀(ROI): stdDev={outStdDev:F1}")
-                Return False
-            End If
+        ' ── 0. 防禦性檢查 ──
+        ' 如果輸入的 ROI 矩陣為空，直接攔截，避免後續 CvtColor 拋出 OpenCV 底層崩潰異常
+        If roiMat Is Nothing OrElse roiMat.Empty() Then
+            Logger.Warn("[MATCH] 影像驗證失敗：輸入的 ROI Mat 為空或未初始化。")
+            Return False
+        End If
 
-            ' 3. 檢查邊緣密度
-            Using edges As New Cv.Mat()
-                Cv2.Canny(gray, edges, 80, 160)
-                Dim edgeCount = Cv2.CountNonZero(edges)
-                Dim roiPixels = edges.Width * edges.Height
-                outEdgeDensity = CDbl(edgeCount) / CDbl(roiPixels)
-                ' 边缘過濾
-                If outEdgeDensity < 0.0005 Then
-                    Logger.Warn($"[MATCH] 跳過邊緣密度過低的幀(ROI): density={outEdgeDensity:P2} ({edgeCount}/{roiPixels})")
+        Try
+            ' 確保 gray 在結束時會被正確釋放釋放 Unmanaged 記憶體
+            Using gray As New Cv.Mat()
+                ' 轉換為灰階
+                Cv2.CvtColor(roiMat, gray, ColorConversionCodes.BGR2GRAY)
+
+                ' ── 1. 檢查亮度與對比度 (標準差) ──
+                Dim meanScalar As New Cv.Scalar()
+                Dim stdDevScalar As New Cv.Scalar()
+                Cv2.MeanStdDev(gray, meanScalar, stdDevScalar)
+
+                outMean = meanScalar.Val0
+                outStdDev = stdDevScalar.Val0
+
+                If outStdDev < minStdDev Then
+                    Logger.Warn($"[MATCH] 跳過對比度過低的幀(ROI): stdDev={outStdDev:F1} (門檻值={minStdDev})")
                     Return False
                 End If
-            End Using
-        End Using
 
-        Return True
+                ' ── 2. 檢查邊緣密度 ──
+                Using edges As New Cv.Mat()
+                    ' 使用傳入的 Canny 參數，增加彈性
+                    Cv2.Canny(gray, edges, cannyLow, cannyHigh)
+
+                    Dim edgeCount As Integer = Cv2.CountNonZero(edges)
+                    Dim roiPixels As Long = gray.Total() ' 
+
+                    outEdgeDensity = CDbl(edgeCount) / CDbl(roiPixels)
+
+                    ' 邊緣過濾
+                    If outEdgeDensity < minEdgeDensity Then
+                        Logger.Warn($"[MATCH] 跳過邊緣密度過低的幀(ROI): density={outEdgeDensity:P3} ({edgeCount}/{roiPixels}, 門檻值={minEdgeDensity:P3})")
+                        Return False
+                    End If
+                End Using
+            End Using
+
+            Return True
+
+        Catch ex As Exception
+            ' 捕捉未知的 OpenCV 或系統異常，防止整個檢測執行緒中斷
+            Logger.Error($"[MATCH] ValidateFrameQuality 執行時發生異常: {ex.Message}")
+            Return False
+        End Try
     End Function
 End Class

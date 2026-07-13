@@ -140,8 +140,7 @@ Public Class TemplateTrainingStore
 
         Dim now = DateTimeOffset.Now.ToUnixTimeMilliseconds()
 
-        Dim indexFile = LoadIndex(groupRoot)
-        indexFile.Samples.Add(New TrainingSampleMeta With {
+        Dim newMeta As New TrainingSampleMeta With {
             .FileName = fileName,
             .CreatedAt = now,
             .LastMatchedAt = now,
@@ -159,8 +158,14 @@ Public Class TemplateTrainingStore
             .AngleMax = params.AngleMax,
             .AngleStep = params.AngleStep,
             .PolygonPoints = safePoly.Select(Function(p) New TrainingPoint With {.X = p.X, .Y = p.Y}).ToList()
-        })
+        }
 
+        ' 每張訓練圖對應一個獨立的 JSON（與圖檔同名，副檔名換 .json）
+        SaveSampleJson(sampleDir, newMeta)
+
+        ' 同時更新 training_index.json（向下相容舊版讀取）
+        Dim indexFile = LoadIndex(groupRoot)
+        indexFile.Samples.Add(newMeta)
         PurgeOverflow(groupRoot, indexFile, Math.Max(1, params.MaxSamples))
         SaveIndex(groupRoot, indexFile)
         SaveParams(groupRoot, params)
@@ -298,14 +303,44 @@ Public Class TemplateTrainingStore
             End If
         End SyncLock
 
+        ' ── 主要：讀取 samples/ 目錄下每張圖對應的獨立 JSON ──────────────
+        Dim sampleDir = IO.Path.Combine(groupRoot, "training", "samples")
+        Dim merged As New Dictionary(Of String, TrainingSampleMeta)(StringComparer.OrdinalIgnoreCase)
+
+        If IO.Directory.Exists(sampleDir) Then
+            For Each jsonFile In IO.Directory.GetFiles(sampleDir, "*.json")
+                Try
+                    Dim json = IO.File.ReadAllText(jsonFile)
+                    Dim meta = JsonSerializer.Deserialize(Of TrainingSampleMeta)(json)
+                    If meta IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(meta.FileName) Then
+                        merged(meta.FileName) = meta
+                    End If
+                Catch ex As Exception
+                    Logger.Warn($"[TemplateTraining] 讀取獨立 JSON 失敗: {jsonFile} — {ex.Message}")
+                End Try
+            Next
+        End If
+
+        ' ── 向下相容：從 training_index.json 補充缺少獨立 JSON 的舊樣本 ──
         Dim idx = LoadIndex(groupRoot)
-        Dim samples = idx.Samples.OrderByDescending(Function(x) x.LastMatchedAt).ThenByDescending(Function(x) x.CreatedAt).ToList()
+        For Each s In idx.Samples
+            If Not merged.ContainsKey(s.FileName) Then
+                merged(s.FileName) = s
+            End If
+        Next
+
+        ' 過濾掉已不存在對應圖檔的項目
+        Dim validSamples = merged.Values.
+            Where(Function(m) IO.File.Exists(IO.Path.Combine(sampleDir, m.FileName))).
+            OrderByDescending(Function(x) x.LastMatchedAt).
+            ThenByDescending(Function(x) x.CreatedAt).
+            ToList()
 
         SyncLock _cacheLock
-            _sampleMetaCache(groupRoot) = samples.Select(Function(x) CloneMeta(x)).ToList()
+            _sampleMetaCache(groupRoot) = validSamples.Select(Function(x) CloneMeta(x)).ToList()
         End SyncLock
 
-        Return samples
+        Return validSamples
     End Function
 
     Public Shared Function GetTrainingSampleMeta(groupPath As String, fileName As String) As TrainingSampleMeta
@@ -351,12 +386,8 @@ Public Class TemplateTrainingStore
             Dim normalized = NormalizeGroupPath(groupRoot)
             If String.IsNullOrWhiteSpace(normalized) Then Continue For
 
-            Dim idx = LoadIndex(normalized)
-            Dim samples = idx.Samples.Select(Function(x) CloneMeta(x)).ToList()
-
-            SyncLock _cacheLock
-                _sampleMetaCache(normalized) = samples
-            End SyncLock
+            ' 使用 GetTrainingSamples 讀取（自動合併獨立 JSON + index.json 回退）
+            Dim samples = GetTrainingSamples(normalized)
 
             Dim sampleDir = IO.Path.Combine(normalized, "training", "samples")
             If Not IO.Directory.Exists(sampleDir) Then Continue For
@@ -380,21 +411,26 @@ Public Class TemplateTrainingStore
         Dim groupRoot = NormalizeGroupPath(groupPath)
         If String.IsNullOrWhiteSpace(groupRoot) OrElse String.IsNullOrWhiteSpace(fileName) Then Return False
 
+        Dim sampleDir = IO.Path.Combine(groupRoot, "training", "samples")
+
+        ' 刪除圖檔
+        Dim filePath = IO.Path.Combine(sampleDir, fileName)
+        If IO.File.Exists(filePath) Then IO.File.Delete(filePath)
+
+        ' 刪除對應的獨立 JSON
+        Dim jsonPath = IO.Path.Combine(sampleDir, IO.Path.GetFileNameWithoutExtension(fileName) & ".json")
+        If IO.File.Exists(jsonPath) Then IO.File.Delete(jsonPath)
+
+        ' 從 training_index.json 中也移除（向下相容）
         Dim idx = LoadIndex(groupRoot)
         Dim item = idx.Samples.FirstOrDefault(Function(x) String.Equals(x.FileName, fileName, StringComparison.OrdinalIgnoreCase))
-        If item Is Nothing Then Return False
-
-        Dim sampleDir = IO.Path.Combine(groupRoot, "training", "samples")
-        Dim filePath = IO.Path.Combine(sampleDir, item.FileName)
-        If IO.File.Exists(filePath) Then
-            IO.File.Delete(filePath)
+        If item IsNot Nothing Then
+            idx.Samples.Remove(item)
+            SaveIndex(groupRoot, idx)
         End If
 
-        idx.Samples.Remove(item)
-        SaveIndex(groupRoot, idx)
-
         SyncLock _cacheLock
-            Dim cacheKey = IO.Path.Combine(groupRoot, "training", "samples", item.FileName)
+            Dim cacheKey = IO.Path.Combine(sampleDir, fileName)
             _sampleBytesCache.Remove(cacheKey)
             _sampleMetaCache.Remove(groupRoot)
         End SyncLock
@@ -418,6 +454,7 @@ Public Class TemplateTrainingStore
         Dim sampleDir = IO.Path.Combine(groupRoot, "training", "samples")
         For Each s In idx.Samples
             If keepSet.Contains(s.FileName) Then Continue For
+            ' 刪除圖檔
             Dim fp = IO.Path.Combine(sampleDir, s.FileName)
             If IO.File.Exists(fp) Then
                 Try
@@ -425,6 +462,13 @@ Public Class TemplateTrainingStore
                 Catch ex As Exception
                     Logger.Warn("[TemplateTraining] delete sample failed: " & ex.Message)
                 End Try
+            End If
+            ' 刪除對應的獨立 JSON
+            Dim jp = IO.Path.Combine(sampleDir, IO.Path.GetFileNameWithoutExtension(s.FileName) & ".json")
+            If IO.File.Exists(jp) Then
+                Try
+                    IO.File.Delete(jp)
+                Catch : End Try
             End If
         Next
 
@@ -457,6 +501,22 @@ Public Class TemplateTrainingStore
         SyncLock _cacheLock
             _sampleMetaCache(groupRoot) = idx.Samples.Select(Function(x) CloneMeta(x)).ToList()
         End SyncLock
+    End Sub
+
+    ''' <summary>
+    ''' 將單個訓練樣本的 meta 儲存為與圖檔同名的獨立 JSON
+    ''' （例如 tpl_20250101_001.png → tpl_20250101_001.json）
+    ''' </summary>
+    Private Shared Sub SaveSampleJson(sampleDir As String, meta As TrainingSampleMeta)
+        If meta Is Nothing OrElse String.IsNullOrWhiteSpace(meta.FileName) Then Return
+        Try
+            IO.Directory.CreateDirectory(sampleDir)
+            Dim jsonPath = IO.Path.Combine(sampleDir, IO.Path.GetFileNameWithoutExtension(meta.FileName) & ".json")
+            Dim json = JsonSerializer.Serialize(meta, New JsonSerializerOptions With {.WriteIndented = True})
+            IO.File.WriteAllText(jsonPath, json)
+        Catch ex As Exception
+            Logger.Warn($"[TemplateTraining] 儲存獨立 JSON 失敗: {meta.FileName} — {ex.Message}")
+        End Try
     End Sub
 
     Private Shared Sub SaveParams(groupRoot As String, params As TrainingTemplateParams)

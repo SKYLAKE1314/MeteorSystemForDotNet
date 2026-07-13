@@ -41,10 +41,12 @@ Partial Class HomePage
     Private Const VoicePromptSingleFlowCompleted As String = "SingleFlowCompleted.wav"
     Private Const VoicePromptStageTimeout As String = "StageTimeout.wav"                    ' 階段超時
     Private Const VoicePromptStageSkipped As String = "StageSkipped.wav"                    ' 階段已跳過
-    Private Const VoicePromptStageRecover As String = "StageRecover.wav"                    ' 階段已恢復
+    Private Const VoicePromptStageRecover As String = "StageRecover.wav"                    ' 收到信號 2：恢復錄製與檢測
+    Private Const VoicePromptDetectionPaused As String = "DetectionPaused.wav"              ' 收到信號 1：暫停錄製與檢測
+    Private Const VoicePromptDetectionReady As String = "DetectionReady.wav"                ' 收到信號 0：相機就緒，可以開始檢測
     Private Const VoicePromptCorrect As String = "Correct.wav"                              ' 正確（解碼/OCR 成功）
     Private Const VoicePromptError As String = "NoTemplate.wav"
-    Private Const VoicePromptNoTemplate As String = "Error.wav"   ' 找不到供應商對應模板時播報
+    Private Const VoicePromptNoTemplate As String = "Error.wav"                             ' 找不到供應商對應模板時播報
     Private Const StageTimeoutMs As Integer = 60000
     Private Const StageLoopDelayMs As Integer = 30
 
@@ -95,6 +97,7 @@ Partial Class HomePage
                 Logger.Info("IO 已停用，保留語音播報")
             Else
                 Logger.Info("IO 初始化完成")
+                _io.SetLightYellow()  ' 程式載入後黃燈常亮待機
             End If
 
             AddHandler ProcessPage.OnRealtimeTrigger, AddressOf RunDetection
