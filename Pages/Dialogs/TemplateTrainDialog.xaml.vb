@@ -33,13 +33,17 @@ Public Class TemplateTrainDialog
         ApplyMasterConfig()
         RefreshSampleCount()
 
-        ' Camera init is deferred to Loaded (async) to avoid freezing the UI
+        RefreshLanguageUI()
+        AddHandler LanguageManager.LanguageChanged, AddressOf RefreshLanguageUI
+
         AddHandler Me.Loaded, AddressOf TemplateTrainDialog_Loaded
     End Sub
 
     Private Async Sub TemplateTrainDialog_Loaded(sender As Object, e As RoutedEventArgs)
         RemoveHandler Me.Loaded, AddressOf TemplateTrainDialog_Loaded
-        SetLoading(True, "正在初始化相機...")
+
+        SetLoading(True, LanguageManager.T("Train_LoadingCamera"))
+
         Try
             Await Task.Run(Sub()
                                CameraManager.Initialize()
@@ -64,14 +68,14 @@ Public Class TemplateTrainDialog
 
     Private Sub ApplyMasterConfig()
         If _masterConfig Is Nothing Then
-            TxtMasterThreshold.Text = "母版閾值：0.80 (預設)"
+            TxtMasterThreshold.Text = LanguageManager.T("Train_MasterThreshDefault")
             AngleMinSlider.Value = -60
             AngleMaxSlider.Value = 60
             AngleStepSlider.Value = 3
             Return
         End If
 
-        TxtMasterThreshold.Text = $"母版閾值：{_masterConfig.Threshold:F2}"
+        TxtMasterThreshold.Text = $"{LanguageManager.T("Train_MasterThreshLabel")}{_masterConfig.Threshold:F2}"
         PyramidSlider.Value = Math.Max(PyramidSlider.Minimum, Math.Min(PyramidSlider.Maximum, _masterConfig.PyramidLevel))
         MatchMethodBox.SelectedIndex = Math.Max(0, Math.Min(2, _masterConfig.MatchMethod))
         MinAreaSlider.Value = Math.Max(MinAreaSlider.Minimum, Math.Min(MinAreaSlider.Maximum, _masterConfig.MinArea))
@@ -99,50 +103,40 @@ Public Class TemplateTrainDialog
                 Await AutoAnalyzeParamsAsync(_sourceMat)
             End If
         Catch ex As Exception
-            MessageBox.Show("載入圖片失敗: " & ex.Message)
+            MessageBox.Show(LanguageManager.T("Train_ErrLoadFile") & ex.Message)
         End Try
     End Sub
 
-    ''' <summary>
-    ''' 相機選擇變更事件
-    ''' </summary>
     Private Sub CameraComboBox_SelectionChanged(sender As Object, e As SelectionChangedEventArgs)
-        ' 簡單的選擇變更處理，實際采集在 BtnCaptureFromCamera_Click 中
     End Sub
 
-    ''' <summary>
-    ''' 從相機采集圖像
-    ''' </summary>
     Private Async Sub BtnCaptureFromCamera_Click(sender As Object, e As RoutedEventArgs)
         Try
             If CameraComboBox.SelectedValue Is Nothing Then
-                MessageBox.Show("請先選擇相機")
+                MessageBox.Show(LanguageManager.T("Train_SelectCamPrompt"))
                 Return
             End If
 
             Dim cameraId = CameraComboBox.SelectedValue.ToString()
             If String.IsNullOrWhiteSpace(cameraId) Then
-                MessageBox.Show("相機設備識別碼無效")
+                MessageBox.Show(LanguageManager.T("Train_InvalidCamId"))
                 Return
             End If
 
-            ' 禁用按鈕防止重複點擊
             BtnCaptureFromCamera.IsEnabled = False
-            BtnCaptureFromCamera.Content = "⏳ 采集中..."
+            BtnCaptureFromCamera.Content = "⏳ " & LanguageManager.T("Train_Capturing")
 
-            ' 啟動相機並等待第一幀
             CameraService.Instance.StartCamera(cameraId)
             Await Task.Delay(100)
 
             Dim frame = Await WaitForCameraFrameAsync(cameraId, 3000)
             If frame Is Nothing Then
-                MessageBox.Show("無法取得相機畫面，請檢查相機是否連接")
+                MessageBox.Show(LanguageManager.T("Train_CamTimeoutPrompt"))
                 BtnCaptureFromCamera.IsEnabled = True
-                BtnCaptureFromCamera.Content = "📷 從相機采集圖像"
+                BtnCaptureFromCamera.Content = "📷 " & LanguageManager.T("Train_BtnCapture")
                 Return
             End If
 
-            ' 將相機幀轉換為 Mat
             Using mat = BitmapSourceConverter.ToMat(frame)
                 LoadImageFromMat(mat.Clone())
             End Using
@@ -152,59 +146,47 @@ Public Class TemplateTrainDialog
                 Await AutoAnalyzeParamsAsync(_sourceMat)
             End If
             BtnCaptureFromCamera.IsEnabled = True
-            BtnCaptureFromCamera.Content = "📷 從相機采集圖像"
+            BtnCaptureFromCamera.Content = "📷 " & LanguageManager.T("Train_BtnCapture")
 
         Catch ex As Exception
-            MessageBox.Show("采集圖像失敗: " & ex.Message)
+            MessageBox.Show(LanguageManager.T("Train_ErrCapture") & ex.Message)
             BtnCaptureFromCamera.IsEnabled = True
-            BtnCaptureFromCamera.Content = "📷 從相機采集圖像"
+            BtnCaptureFromCamera.Content = "📷 " & LanguageManager.T("Train_BtnCapture")
         End Try
     End Sub
 
-    ''' <summary>
-    ''' 等待相機幀（超時機制）
-    ''' </summary>
     Private Async Function WaitForCameraFrameAsync(cameraId As String, timeoutMs As Integer) As Task(Of BitmapSource)
         Dim sw As New Stopwatch()
         sw.Start()
-
         While sw.ElapsedMilliseconds < timeoutMs
             Dim frame = CameraService.Instance.GetFrame(cameraId)
             If frame IsNot Nothing Then Return frame
             Await Task.Delay(50)
         End While
-
         Return Nothing
     End Function
 
-    ''' <summary>
-    ''' 從文件路徑加載圖像
-    ''' </summary>
     Private Sub LoadImageFromPath(filePath As String)
         Try
             Dim loaded = Cv2.ImRead(filePath)
             If loaded Is Nothing OrElse loaded.Empty() Then
                 loaded?.Dispose()
-                MessageBox.Show("圖片載入失敗")
+                MessageBox.Show(LanguageManager.T("Train_ErrImgInvalid"))
                 Return
             End If
-            LoadImageFromMat(loaded)  ' ownership transfers; LoadImageFromMat sets _sourceMat
+            LoadImageFromMat(loaded)
         Catch ex As Exception
-            MessageBox.Show("載入圖片失敗: " & ex.Message)
+            MessageBox.Show(LanguageManager.T("Train_ErrLoadFile") & ex.Message)
         End Try
     End Sub
 
-    ''' <summary>
-    ''' 從 Mat 對象加載圖像到 UI（取得 mat 的所有權）
-    ''' </summary>
     Private Sub LoadImageFromMat(mat As Mat)
         Try
             If mat Is Nothing OrElse mat.Empty() Then
-                MessageBox.Show("圖像無效")
+                MessageBox.Show(LanguageManager.T("Train_ErrImgInvalid"))
                 Return
             End If
 
-            ' Only dispose the previous mat if it is a different object
             If Not ReferenceEquals(_sourceMat, mat) Then
                 _sourceMat?.Dispose()
             End If
@@ -214,21 +196,21 @@ Public Class TemplateTrainDialog
             ClearPolygon()
             ImgPreview.Source = Nothing
             ResetPreviewView()
-            TxtPreviewInfo.Text = "完成多邊形後" & vbCrLf & "自動生成"
-            TxtRoiStatus.Text = "ROI：左鍵加點，右鍵撤銷，雙擊完成"
-            ' AutoAnalyzeParams is called by callers after this returns
+
+            TxtPreviewInfo.Text = LanguageManager.T("Train_PreviewAutoPrompt")
+            TxtRoiStatus.Text = LanguageManager.T("Train_RoiStatusDefault")
         Catch ex As Exception
-            MessageBox.Show("處理圖像失敗: " & ex.Message)
+            MessageBox.Show(LanguageManager.T("Train_ErrProcessMat") & ex.Message)
         End Try
     End Sub
 
     Private Async Sub BtnAutoAnalyze_Click(sender As Object, e As RoutedEventArgs)
         If _sourceMat Is Nothing OrElse _sourceMat.Empty() Then
-            MessageBox.Show("請先載入圖片")
+            MessageBox.Show(LanguageManager.T("Train_LoadImgFirst"))
             Return
         End If
         Await AutoAnalyzeParamsAsync(_sourceMat)
-        TxtAutoInfo.Text = "已更新建議參數，可手動調整"
+        TxtAutoInfo.Text = LanguageManager.T("Train_AutoAnalyzeSuccess")
     End Sub
 
     Private Async Sub BtnRefreshPreview_Click(sender As Object, e As RoutedEventArgs)
@@ -239,8 +221,8 @@ Public Class TemplateTrainDialog
         ClearPolygon()
         ImgPreview.Source = Nothing
         ResetPreviewView()
-        TxtPreviewInfo.Text = "完成多邊形後\n自動生成"
-        TxtRoiStatus.Text = "ROI：已清空"
+        TxtPreviewInfo.Text = LanguageManager.T("Train_PreviewAutoPrompt")
+        TxtRoiStatus.Text = LanguageManager.T("Train_RoiCleared")
     End Sub
 
     Private Sub RoiOverlay_MouseLeftButtonDown(sender As Object, e As System.Windows.Input.MouseButtonEventArgs)
@@ -248,7 +230,6 @@ Public Class TemplateTrainDialog
         Dim p = e.GetPosition(RoiOverlay)
 
         If e.ClickCount >= 2 Then
-            ' Double-click: complete polygon without adding extra point
             If Not _polygonClosed Then
                 CompletePolygon()
             End If
@@ -256,14 +237,13 @@ Public Class TemplateTrainDialog
             Return
         End If
 
-        ' Single click
         If _polygonClosed Then
             ClearPolygon()
         End If
 
         _polygonPoints.Add(p)
         DrawPolygonOverlay(currentMouse:=p)
-        TxtRoiStatus.Text = $"ROI：已選 {_polygonPoints.Count} 點（雙擊完成，右鍵撤銷）"
+        TxtRoiStatus.Text = $"{LanguageManager.T("Train_RoiSelectedPrefix")} {_polygonPoints.Count} {LanguageManager.T("Train_RoiSelectedSuffix")}"
         e.Handled = True
     End Sub
 
@@ -272,7 +252,6 @@ Public Class TemplateTrainDialog
         If e.ChangedButton <> System.Windows.Input.MouseButton.Left Then Return
         If _polygonClosed Then Return
 
-        ' Remove the duplicate point added by the second single-click of the double-click sequence
         If _polygonPoints.Count > 0 Then
             _polygonPoints.RemoveAt(_polygonPoints.Count - 1)
         End If
@@ -291,9 +270,11 @@ Public Class TemplateTrainDialog
     End Sub
 
     Private Sub RoiOverlay_MouseRightButtonDown(sender As Object, e As System.Windows.Input.MouseButtonEventArgs)
+        ' 【⚡ 核心修正】把 Threading.Tasks.Task 改回正常的 Nothing，解決類別類型錯誤！
         If _sourceMat Is Nothing Then Return
+
         If _polygonPoints.Count = 0 Then
-            TxtRoiStatus.Text = "ROI：目前沒有可撤銷的點"
+            TxtRoiStatus.Text = LanguageManager.T("Train_RoiNoUndo")
             Return
         End If
 
@@ -305,22 +286,22 @@ Public Class TemplateTrainDialog
         DrawPolygonOverlay(Nothing)
 
         If _polygonPoints.Count = 0 Then
-            TxtRoiStatus.Text = "ROI：已清空"
+            TxtRoiStatus.Text = LanguageManager.T("Train_RoiCleared")
         Else
-            TxtRoiStatus.Text = $"ROI：已撤銷，剩餘 {_polygonPoints.Count} 點"
+            TxtRoiStatus.Text = $"{LanguageManager.T("Train_RoiUndoLeft")} {_polygonPoints.Count} {LanguageManager.T("Train_RoiUndoRight")}"
         End If
         e.Handled = True
     End Sub
 
     Private Async Sub CompletePolygon()
         If _polygonPoints.Count < 3 Then
-            TxtRoiStatus.Text = "ROI：至少需要 3 個點"
+            TxtRoiStatus.Text = LanguageManager.T("Train_RoiMinPoints")
             Return
         End If
 
         _polygonClosed = True
         DrawPolygonOverlay(Nothing)
-        TxtRoiStatus.Text = $"ROI：多邊形完成（{_polygonPoints.Count} 點）"
+        TxtRoiStatus.Text = $"{LanguageManager.T("Train_RoiComplete")}（{_polygonPoints.Count} {LanguageManager.T("Train_PointsUnit")}）"
         Await UpdatePreviewAsync()
     End Sub
 
@@ -385,7 +366,6 @@ Public Class TemplateTrainDialog
 
     Private Function GetImageDisplayRect() As WpfRect
         If _sourceMat Is Nothing Then Return New WpfRect()
-
         Dim controlW = RoiOverlay.ActualWidth
         Dim controlH = RoiOverlay.ActualHeight
         If controlW <= 0 OrElse controlH <= 0 Then Return New WpfRect()
@@ -398,23 +378,18 @@ Public Class TemplateTrainDialog
         Dim dispH = imgH * scale
         Dim x = (controlW - dispW) / 2.0
         Dim y = (controlH - dispH) / 2.0
-
         Return New WpfRect(x, y, dispW, dispH)
     End Function
 
     Private Function DisplayToImagePoint(p As WpfPoint) As Point
         Dim imgRect = GetImageDisplayRect()
         If imgRect.Width <= 0 OrElse imgRect.Height <= 0 Then Return New Point(0, 0)
-
         Dim rx = (p.X - imgRect.X) / imgRect.Width
         Dim ry = (p.Y - imgRect.Y) / imgRect.Height
-
         rx = Math.Max(0, Math.Min(1, rx))
         ry = Math.Max(0, Math.Min(1, ry))
-
         Dim ix = CInt(Math.Round(rx * (_sourceMat.Width - 1)))
         Dim iy = CInt(Math.Round(ry * (_sourceMat.Height - 1)))
-
         Return New Point(ix, iy)
     End Function
 
@@ -423,22 +398,17 @@ Public Class TemplateTrainDialog
         If imgRect.Width <= 0 OrElse imgRect.Height <= 0 OrElse _sourceMat Is Nothing OrElse _sourceMat.Empty() Then
             Return New WpfPoint(0, 0)
         End If
-
         Dim rx = p.X / Math.Max(1.0, _sourceMat.Width - 1)
         Dim ry = p.Y / Math.Max(1.0, _sourceMat.Height - 1)
-
-        Return New WpfPoint(
-            imgRect.X + rx * imgRect.Width,
-            imgRect.Y + ry * imgRect.Height)
+        Return New WpfPoint(imgRect.X + rx * imgRect.Width, imgRect.Y + ry * imgRect.Height)
     End Function
 
     Private Async Function LoadTrainingSampleIntoEditor(fileName As String, meta As TemplateTrainingStore.TrainingSampleMeta) As Task
         If String.IsNullOrWhiteSpace(fileName) OrElse meta Is Nothing Then Return
-
         Try
             Dim mat = TemplateTrainingStore.LoadTrainingSampleImage(_groupPath, fileName)
             If mat Is Nothing OrElse mat.Empty() Then
-                MessageBox.Show("訓練樣本圖片載入失敗")
+                MessageBox.Show(LanguageManager.T("Train_ErrLoadSampleImg"))
                 Return
             End If
 
@@ -467,32 +437,31 @@ Public Class TemplateTrainDialog
 
             _polygonClosed = _polygonPoints.Count >= 3
             DrawPolygonOverlay(Nothing)
-            TxtRoiStatus.Text = If(_polygonClosed, $"ROI：已載入 {_polygonPoints.Count} 點", "ROI：樣本無多邊形")
-            TxtPreviewInfo.Text = $"已載入樣本{Environment.NewLine}{fileName}"
+            TxtRoiStatus.Text = If(_polygonClosed, $"{LanguageManager.T("Train_RoiLoadedPrefix")} {_polygonPoints.Count} {LanguageManager.T("Train_PointsUnit")}", LanguageManager.T("Train_RoiNoPolygon"))
+            TxtPreviewInfo.Text = $"{LanguageManager.T("Train_SampleLoaded")}{Environment.NewLine}{fileName}"
             If _polygonClosed Then Await UpdatePreviewAsync()
         Catch ex As Exception
-            MessageBox.Show("載入訓練樣本失敗: " & ex.Message)
+            MessageBox.Show(LanguageManager.T("Train_ErrLoadSample") & ex.Message)
         End Try
     End Function
 
     Private Async Sub BtnAddSample_Click(sender As Object, e As RoutedEventArgs)
         Try
             If String.IsNullOrWhiteSpace(_groupPath) OrElse Not IO.Directory.Exists(_groupPath) Then
-                MessageBox.Show("模板路徑無效")
+                MessageBox.Show(LanguageManager.T("Train_InvalidTemplatePath"))
                 Return
             End If
 
             If _sourceMat Is Nothing OrElse _sourceMat.Empty() Then
-                MessageBox.Show("請先載入圖片")
+                MessageBox.Show(LanguageManager.T("Train_LoadImgFirst"))
                 Return
             End If
 
             If Not _polygonClosed OrElse _polygonPoints.Count < 3 Then
-                MessageBox.Show("請先完成多邊形 ROI（雙擊完成）")
+                MessageBox.Show(LanguageManager.T("Train_CompletePolygonFirst"))
                 Return
             End If
 
-            ' 1. 安全座標對齊
             Dim imagePolygon = _polygonPoints.Select(Function(dp)
                                                          Dim resPoint = DisplayToImagePoint(dp)
                                                          Dim safeX = Math.Max(0, Math.Min(resPoint.X, _sourceMat.Width - 1))
@@ -500,8 +469,6 @@ Public Class TemplateTrainDialog
                                                          Return New Point(safeX, safeY)
                                                      End Function).ToList()
 
-            ' ─── 【⚡ 核心修正版：將 p 更改為 pt，徹底消滅變數隱藏衝突！】 ───
-            ' 計算多邊形的外切矩形
             Dim pts = imagePolygon.Select(Function(pt) New OpenCvSharp.Point(pt.X, pt.Y)).ToArray()
             Dim bbox = Cv2.BoundingRect(pts)
 
@@ -510,7 +477,6 @@ Public Class TemplateTrainDialog
             Dim x2 = Math.Min(_sourceMat.Width, bbox.X + bbox.Width)
             Dim y2 = Math.Min(_sourceMat.Height, bbox.Y + bbox.Height)
 
-            ' 強制轉化為完美矩形的 4 個頂點，阻斷 FillPoly 塗黑
             Dim cleanRectPolygon As New List(Of Point) From {
                 New Point(x1, y1),
                 New Point(x2, y1),
@@ -518,7 +484,6 @@ Public Class TemplateTrainDialog
                 New Point(x1, y2)
             }
 
-            ' 這裡定義了變數 p，這就是為什麼下方的 Lambda 參數絕對不能再叫 p 喔！
             Dim p As New TemplateTrainingStore.TrainingTemplateParams With {
                 .MasterThreshold = If(_masterConfig IsNot Nothing, _masterConfig.Threshold, 0.8),
                 .PyramidLevel = CInt(PyramidSlider.Value),
@@ -539,10 +504,10 @@ Public Class TemplateTrainDialog
                                        End Function)
 
             RefreshSampleCount(count)
-            MessageBox.Show("訓練模板已加入")
+            MessageBox.Show(LanguageManager.T("Train_SampleAddedSuccess"))
 
         Catch ex As Exception
-            MessageBox.Show("加入訓練模板失敗: " & ex.Message)
+            MessageBox.Show(LanguageManager.T("Train_ErrAddSample") & ex.Message)
         Finally
             BtnAddSample.IsEnabled = True
         End Try
@@ -550,15 +515,12 @@ Public Class TemplateTrainDialog
 
     Private Sub RefreshSampleCount(Optional count As Integer? = Nothing)
         Dim current = If(count.HasValue, count.Value, TemplateTrainingStore.GetTrainingSampleCount(_groupPath))
-        TxtSampleCount.Text = $"樣本數：{current} / 50"
+        TxtSampleCount.Text = $"{LanguageManager.T("Train_SampleCountLabel")} {current} / 50"
     End Sub
 
-    ''' <summary>
-    ''' Analyze source image and suggest Canny/MinArea/Pyramid parameters (runs OpenCV in background).
-    ''' </summary>
     Private Async Function AutoAnalyzeParamsAsync(src As Mat) As Task
         If src Is Nothing OrElse src.Empty() Then Return
-        TxtAutoInfo.Text = "分析中..."
+        TxtAutoInfo.Text = LanguageManager.T("Train_Analyzing")
         Dim srcClone = src.Clone()
         Try
             Dim lo As Integer, hi As Integer, suggested As Integer, pyramid As Integer
@@ -567,8 +529,7 @@ Public Class TemplateTrainDialog
                                    Cv2.CvtColor(srcClone, gray, ColorConversionCodes.BGR2GRAY)
                                    Dim otsuThresh As Double
                                    Using tmp As New Mat()
-                                       otsuThresh = Cv2.Threshold(gray, tmp, 0, 255,
-                                           ThresholdTypes.Binary Or ThresholdTypes.Otsu)
+                                       otsuThresh = Cv2.Threshold(gray, tmp, 0, 255, ThresholdTypes.Binary Or ThresholdTypes.Otsu)
                                    End Using
                                    lo = CInt(Math.Max(20, Math.Min(120, otsuThresh * 0.5)))
                                    hi = CInt(Math.Max(60, Math.Min(240, otsuThresh)))
@@ -578,11 +539,9 @@ Public Class TemplateTrainDialog
                                    Using edges As New Mat()
                                        Cv2.Canny(gray, edges, lo, hi)
                                        Dim contours As Point()() = Nothing
-                                       Cv2.FindContours(edges, contours, Nothing, RetrievalModes.External,
-                                                       ContourApproximationModes.ApproxSimple)
+                                       Cv2.FindContours(edges, contours, Nothing, RetrievalModes.External, ContourApproximationModes.ApproxSimple)
                                        If contours IsNot Nothing AndAlso contours.Length > 0 Then
-                                           Dim areas = contours.Select(Function(c) Cv2.ContourArea(c)).
-                                                        Where(Function(a) a > 1).ToArray()
+                                           Dim areas = contours.Select(Function(c) Cv2.ContourArea(c)).Where(Function(a) a > 1).ToArray()
                                            If areas.Length > 0 Then
                                                Dim medianArea = areas.OrderBy(Function(a) a).ElementAt(areas.Length \ 2)
                                                suggested = CInt(Math.Max(10, Math.Min(500, medianArea * 0.1)))
@@ -599,20 +558,17 @@ Public Class TemplateTrainDialog
             PyramidSlider.Value = pyramid
             TxtAutoInfo.Text = $"Canny {lo}/{hi}  MinArea {suggested}  Pyr {pyramid}"
         Catch ex As Exception
-            TxtAutoInfo.Text = "自動分析失敗: " & ex.Message
+            TxtAutoInfo.Text = LanguageManager.T("Train_ErrAutoAnalyze") & ex.Message
         Finally
             srcClone.Dispose()
         End Try
     End Function
 
-    ''' <summary>
-    ''' Render the polygon-masked + edge-overlay preview (OpenCV runs in background).
-    ''' </summary>
     Private Async Function UpdatePreviewAsync() As Task
         If _sourceMat Is Nothing OrElse _sourceMat.Empty() Then Return
         If Not _polygonClosed OrElse _polygonPoints.Count < 3 Then Return
 
-        TxtPreviewInfo.Text = "渲染中..."
+        TxtPreviewInfo.Text = LanguageManager.T("Train_Rendering")
         Dim srcClone = _sourceMat.Clone()
         Dim lo = CDbl(CannyLowSlider.Value)
         Dim hi = CDbl(CannyHighSlider.Value)
@@ -624,15 +580,9 @@ Public Class TemplateTrainDialog
 
             Await Task.Run(Sub()
                                Try
-                                   Dim safePoly = imagePolygon.
-                                       Select(Function(p) New Point(
-                                           Math.Max(0, Math.Min(srcClone.Width - 1, p.X)),
-                                           Math.Max(0, Math.Min(srcClone.Height - 1, p.Y)))).
-                                       ToArray()
-
+                                   Dim safePoly = imagePolygon.Select(Function(p) New Point(Math.Max(0, Math.Min(srcClone.Width - 1, p.X)), Math.Max(0, Math.Min(srcClone.Height - 1, p.Y)))).ToArray()
                                    Using mask As Mat = Mat.Zeros(srcClone.Size(), MatType.CV_8UC1)
                                        Cv2.FillPoly(mask, {safePoly}, Scalar.White)
-
                                        Using gray As New Mat(), edges As New Mat(), maskedEdge As New Mat()
                                            Cv2.CvtColor(srcClone, gray, ColorConversionCodes.BGR2GRAY)
                                            Cv2.Canny(gray, edges, lo, hi)
@@ -652,13 +602,13 @@ Public Class TemplateTrainDialog
                                                Dim edgePx = Cv2.CountNonZero(maskedEdge)
                                                Dim roiArea = Cv2.ContourArea(safePoly)
                                                Dim density = If(roiArea > 0, edgePx / roiArea, 0)
-                                               Dim quality = If(density > 0.15, "✅ 豐富", If(density > 0.05, "🟡 適中", "🔴 稀疏"))
-                                               infoText = $"邊緣密度{vbCrLf}{density:F3}{vbCrLf}{quality}"
+                                               Dim quality = If(density > 0.15, "✅ " & LanguageManager.T("Train_QualityRich"), If(density > 0.05, "🟡 " & LanguageManager.T("Train_QualityMedium"), "🔴 " & LanguageManager.T("Train_QualitySparse")))
+                                               infoText = $"{LanguageManager.T("Train_EdgeDensity")}{vbCrLf}{density:F3}{vbCrLf}{quality}"
                                            End Using
                                        End Using
                                    End Using
                                Catch
-                                   infoText = "預覽失敗"
+                                   infoText = LanguageManager.T("Train_PreviewFailed")
                                End Try
                            End Sub)
 
@@ -674,11 +624,9 @@ Public Class TemplateTrainDialog
 
     Private Sub PreviewBorder_MouseWheel(sender As Object, e As System.Windows.Input.MouseWheelEventArgs)
         If ImgPreview.Source Is Nothing Then Return
-
         Dim zoomFactor As Double = If(e.Delta > 0, 1.1, 0.9)
         _previewZoom *= zoomFactor
         _previewZoom = Math.Max(0.2, Math.Min(8.0, _previewZoom))
-
         PreviewScale.ScaleX = _previewZoom
         PreviewScale.ScaleY = _previewZoom
         e.Handled = True
@@ -687,7 +635,6 @@ Public Class TemplateTrainDialog
     Private Sub PreviewBorder_MouseDown(sender As Object, e As System.Windows.Input.MouseButtonEventArgs)
         If ImgPreview.Source Is Nothing Then Return
         If e.MiddleButton <> System.Windows.Input.MouseButtonState.Pressed Then Return
-
         _previewIsPanning = True
         _previewLastPanPoint = e.GetPosition(PreviewBorder)
         PreviewBorder.CaptureMouse()
@@ -696,11 +643,9 @@ Public Class TemplateTrainDialog
 
     Private Sub PreviewBorder_MouseMove(sender As Object, e As System.Windows.Input.MouseEventArgs)
         If Not _previewIsPanning Then Return
-
         Dim pos = e.GetPosition(PreviewBorder)
         Dim dx = pos.X - _previewLastPanPoint.X
         Dim dy = pos.Y - _previewLastPanPoint.Y
-
         PreviewTranslate.X += dx
         PreviewTranslate.Y += dy
         _previewLastPanPoint = pos
@@ -709,7 +654,6 @@ Public Class TemplateTrainDialog
 
     Private Sub PreviewBorder_MouseUp(sender As Object, e As System.Windows.Input.MouseButtonEventArgs)
         If Not _previewIsPanning Then Return
-
         _previewIsPanning = False
         PreviewBorder.ReleaseMouseCapture()
         e.Handled = True
@@ -734,7 +678,7 @@ Public Class TemplateTrainDialog
             End If
             RefreshSampleCount()
         Catch ex As Exception
-            MessageBox.Show($"管理模板失敗：{ex.Message}")
+            MessageBox.Show(LanguageManager.T("Train_ErrManageFailed") & ex.Message)
         End Try
     End Sub
 
@@ -745,6 +689,50 @@ Public Class TemplateTrainDialog
     Protected Overrides Sub OnClosed(e As EventArgs)
         MyBase.OnClosed(e)
         _sourceMat?.Dispose()
+    End Sub
+
+    Public Sub RefreshLanguageUI()
+        TrainWindow.Title = LanguageManager.T("Train_Title")
+        TxtTitle.Text = LanguageManager.T("Train_Title")
+
+        TxtPreviewPanelTitle.Text = LanguageManager.T("Train_PreviewPanelTitle")
+        If Not _polygonClosed Then
+            TxtPreviewInfo.Text = LanguageManager.T("Train_PreviewAutoPrompt")
+        End If
+        BtnRefreshPreview.Content = "🔄 " & LanguageManager.T("Train_BtnRefresh")
+
+        TxtImageSourceSection.Text = LanguageManager.T("Train_ImageSourceSection")
+        TxtSelectCamLabel.Text = LanguageManager.T("Train_SelectCamLabel")
+        BtnCaptureFromCamera.Content = "📷 " & LanguageManager.T("Train_BtnCapture")
+        BtnLoadImage.Content = "📁 " & LanguageManager.T("Train_BtnLoadFile")
+
+        BtnAutoAnalyze.Content = "⚡ " & LanguageManager.T("Train_BtnAutoAnalyze")
+        If Not TxtAutoInfo.Text.Contains("Canny") Then
+            TxtAutoInfo.Text = LanguageManager.T("Train_AutoDesc")
+        End If
+        BtnClearPolygon.Content = LanguageManager.T("Train_BtnClearPolygon")
+
+        If Not _polygonClosed AndAlso _polygonPoints.Count = 0 Then
+            TxtRoiStatus.Text = LanguageManager.T("Train_RoiStatusDefault")
+        End If
+        RefreshSampleCount()
+        ApplyMasterConfig()
+
+        TxtPyramidLabel.Text = LanguageManager.T("Train_PyramidLabel")
+        TxtMatchMethodLabel.Text = LanguageManager.T("Train_MatchMethodLabel")
+        TxtMinAreaLabel.Text = LanguageManager.T("Train_MinAreaLabel")
+        TxtCannyLowLabel.Text = LanguageManager.T("Train_CannyLowLabel")
+        TxtCannyHighLabel.Text = LanguageManager.T("Train_CannyHighLabel")
+        TxtAngleMinLabel.Text = LanguageManager.T("Train_AngleMinLabel")
+        TxtAngleMaxLabel.Text = LanguageManager.T("Train_AngleMaxLabel")
+        TxtAngleStepLabel.Text = LanguageManager.T("Train_AngleStepLabel")
+
+        BtnAddSample.Content = LanguageManager.T("Train_BtnAddSample")
+        TxtAddSampleDesc.Text = LanguageManager.T("Train_AddSampleDesc")
+        BtnManageTemplates.Content = "📋 " & LanguageManager.T("Train_BtnManage")
+        BtnClose.Content = LanguageManager.T("Train_BtnClose")
+
+        LoadingText.Text = LanguageManager.T("Train_LoadingCamera")
     End Sub
 
 End Class
