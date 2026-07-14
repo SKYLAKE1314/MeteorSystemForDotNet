@@ -149,80 +149,165 @@ Partial Class HomePage
     End Function
 
     ''' <summary>
-    ''' 高級條碼解碼：考慮多角度、小的/模糊的目標
-    ''' 策略：1)對比度增強 2)多角度嘗試 3)縮放處理小目標 4)適應性二值化
+    ''' 高級條碼解碼（多執行緒安全版）
     ''' </summary>
     Private Function TryAdvancedBarcodeDecode(decoder As Object, mat As Mat, snapshot As TemplateSnapshot) As String
+        Dim tasks As New List(Of Task(Of String))
+        Dim cts As New CancellationTokenSource()
+
+        ' 策略 1: CLAHE (對比度增強)
+        tasks.Add(Task.Run(Function() As String
+                               Return TryDecodeSafe(decoder, mat, AddressOf EnhanceContrast, cts.Token)
+                           End Function))
+
+        ' 策略 2: 銳化 (針對失焦模糊)
+        tasks.Add(Task.Run(Function() As String
+                               Return TryDecodeSafe(decoder, mat, AddressOf SharpenImage, cts.Token)
+                           End Function))
+
+        ' 策略 3: 適應性二值化 (針對陰影反光)
+        tasks.Add(Task.Run(Function() As String
+                               Return TryDecodeSafe(decoder, mat, AddressOf TrueAdaptiveBinarize, cts.Token)
+                           End Function))
+
+        ' 策略 4: 多角度
+        Dim angles As Double() = {90, 45, -45}
+        For Each angle In angles
+            Dim currentAngle = angle ' 閉包捕捉
+            tasks.Add(Task.Run(Function() As String
+                                   Try
+                                       If cts.Token.IsCancellationRequested Then Return ""
+
+                                       Using rotated = RotateImage(mat, currentAngle)
+                                           If rotated Is Nothing OrElse rotated.IsDisposed Then Return ""
+                                           If cts.Token.IsCancellationRequested Then Return ""
+
+                                           Dim result As String = ""
+                                           ' 【關鍵防護】排隊進入解碼，保護底層 C++ 不崩潰
+                                           SyncLock _decoderLock
+                                               result = CStr(decoder.Run(rotated))
+                                           End SyncLock
+
+                                           Return If(IsPlausibleBarcodeText(result), result, "")
+                                       End Using
+                                   Catch ex As Exception
+                                       ' 靜默處理單一執行緒錯誤
+                                       Return ""
+                                   End Try
+                               End Function))
+        Next
+
         Try
-            ' 策略1：對比度增強（CLAHE）
-            Using enhanced = EnhanceContrast(mat)
-                If enhanced IsNot Nothing Then
-                    Dim result = decoder.Run(enhanced)
-                    If IsPlausibleBarcodeText(result) Then
-                        Logger.Debug("[BARCODE] 通過對比度增強成功解碼")
-                        Return result
-                    End If
+            ' 等待任何一個任務完成
+            While tasks.Count > 0
+                Dim completedTask = Task.WhenAny(tasks).Result
+                tasks.Remove(completedTask)
+
+                ' 【關鍵防護】如果該任務內部崩潰了，記錄下來並跳過，不要引爆它
+                If completedTask.IsFaulted Then
+                    Dim errMsg = If(completedTask.Exception?.InnerException?.Message, "未知錯誤")
+                    Logger.Warn($"[BARCODE] 單一並行任務失敗 (已忽略): {errMsg}")
+                    Continue While
                 End If
-            End Using
 
-            ' 策略2：多角度嘗試
-            Dim angles As Integer() = {-30, -15, 15, 30}
-            For Each angle In angles
-                Using rotated = RotateImage(mat, angle)
-                    If rotated IsNot Nothing Then
-                        Dim result = decoder.Run(rotated)
-                        If IsPlausibleBarcodeText(result) Then
-                            Logger.Debug($"[BARCODE] 通過旋轉 {angle}° 成功解碼")
-                            Return result
-                        End If
-                    End If
-                End Using
-            Next
-
-            ' 策略3：上採樣（【重大修復】只允許對寬度小於 1920 的低畫質影像放大，嚴防 4K 放大到 8K）
-            If mat.Width < 1920 Then
-                Using upscaled = UpscaleImage(mat, 2.0)
-                    If upscaled IsNot Nothing Then
-                        Dim result = decoder.Run(upscaled)
-                        If IsPlausibleBarcodeText(result) Then
-                            Logger.Debug("[BARCODE] 通過上採樣 (2x) 成功解碼")
-                            Return result
-                        End If
-
-                        ' 上採樣後也嘗試對比度增強
-                        Using enhancedUpscaled = EnhanceContrast(upscaled)
-                            If enhancedUpscaled IsNot Nothing Then
-                                result = decoder.Run(enhancedUpscaled)
-                                If IsPlausibleBarcodeText(result) Then
-                                    Logger.Debug("[BARCODE] 通過上採樣+對比度增強成功解碼")
-                                    Return result
-                                End If
-                            End If
-                        End Using
-                    End If
-                End Using
-            End If
-
-            ' 策略4：適應性二值化
-            Using binarized = AdaptiveBinarize(mat)
-                If binarized IsNot Nothing Then
-                    Dim result = decoder.Run(binarized)
-                    If IsPlausibleBarcodeText(result) Then
-                        Logger.Debug("[BARCODE] 通過適應性二值化成功解碼")
-                        Return result
-                    End If
+                ' 走到這裡代表任務正常結束，檢查是否有解出結果
+                Dim result = completedTask.Result
+                If Not String.IsNullOrEmpty(result) Then
+                    cts.Cancel() ' 立刻取消其他還在跑的任務，釋放 CPU 資源
+                    Logger.Debug($"[BARCODE] 並行解碼成功，命中結果: {result}")
+                    Return result
                 End If
-            End Using
-
-            Logger.Warn("[BARCODE] 高級解碼策略全部失敗")
-            Return ""
-
+            End While
         Catch ex As Exception
-            Logger.Warn($"[BARCODE] 高級解碼異常: {ex.Message}")
+            Logger.Warn($"[BARCODE] 總體並行解碼異常: {ex.Message}")
+        Finally
+            cts.Dispose()
+        End Try
+
+        Return ""
+    End Function
+
+    ''' <summary>
+    ''' 輔助方法：處理影像轉換與安全解碼
+    ''' </summary>
+    Private Function TryDecodeSafe(decoder As Object, src As Mat, transformFunc As Func(Of Mat, Mat), token As CancellationToken) As String
+        Try
+            If token.IsCancellationRequested Then Return ""
+
+            Using transformed = transformFunc(src)
+                If transformed Is Nothing OrElse transformed.IsDisposed Then Return ""
+                If token.IsCancellationRequested Then Return ""
+
+                Dim result As String = ""
+
+                SyncLock _decoderLock
+                    result = CStr(decoder.Run(transformed))
+                End SyncLock
+
+                Return If(IsPlausibleBarcodeText(result), result, "")
+            End Using
+        Catch ex As Exception
+            ' 單一任務出錯不回報給外層，只回傳空字串
             Return ""
         End Try
     End Function
 
+    ' 輔助方法：統一處理 Mat 的生命週期與委派轉換
+    Private Function TryDecodeWithTransform(decoder As Object, src As Mat, transformFunc As Func(Of Mat, Mat), token As CancellationToken) As String
+        If token.IsCancellationRequested Then Return ""
+        Using transformed = transformFunc(src)
+            If transformed Is Nothing Then Return ""
+            If token.IsCancellationRequested Then Return ""
+            Dim result = decoder.Run(transformed)
+            Return If(IsPlausibleBarcodeText(result), result, "")
+        End Using
+    End Function
+    ''' <summary>
+    ''' 銳化圖像 (Unsharp Mask) - 針對失焦模糊的條碼特別有效
+    ''' </summary>
+    Private Function SharpenImage(mat As Mat) As Mat
+        Dim blurred As New Mat()
+        Dim sharpened As New Mat()
+        Try
+            ' 使用高斯模糊取得背景平滑影像
+            Cv2.GaussianBlur(mat, blurred, New Cv.Size(0, 0), 3)
+            ' 原圖放大權重，扣除模糊影像，達到邊緣增強效果
+            Cv2.AddWeighted(mat, 1.5, blurred, -0.5, 0, sharpened)
+            Return sharpened
+        Catch ex As Exception
+            Logger.Warn($"[BARCODE] 銳化失敗: {ex.Message}")
+            If sharpened IsNot Nothing Then sharpened.Dispose()
+            Return Nothing
+        Finally
+            If blurred IsNot Nothing AndAlso Not blurred.IsDisposed Then blurred.Dispose()
+        End Try
+    End Function
+
+    ''' <summary>
+    ''' 真正的區域適應性二值化 (Local Adaptive Thresholding)
+    ''' </summary>
+    Private Function TrueAdaptiveBinarize(mat As Mat) As Mat
+        Dim gray As Mat = Nothing
+        Dim binary As New Mat()
+        Try
+            If mat.Channels() = 3 Then
+                gray = New Mat()
+                Cv2.CvtColor(mat, gray, ColorConversionCodes.BGR2GRAY)
+            Else
+                gray = mat.Clone()
+            End If
+
+            ' 區塊大小(15)與偏移量(5)可依實際相機解析度微調
+            Cv2.AdaptiveThreshold(gray, binary, 255, AdaptiveThresholdTypes.GaussianC, ThresholdTypes.Binary, 15, 5)
+            Return binary
+        Catch ex As Exception
+            Logger.Warn($"[BARCODE] 適應性二值化失敗: {ex.Message}")
+            If binary IsNot Nothing Then binary.Dispose()
+            Return Nothing
+        Finally
+            If gray IsNot Nothing AndAlso Not gray.IsDisposed Then gray.Dispose()
+        End Try
+    End Function
     ''' <summary>
     ''' 對比度增強（CLAHE - 自適應直方圖均衡化）
     ''' </summary>
@@ -246,7 +331,7 @@ Partial Class HomePage
             If enhanced IsNot Nothing Then enhanced.Dispose()
             Return Nothing
         Finally
-            ' 徹底銷毀 C++ 佔用記憶體
+            ' 銷毀 C++ 佔用記憶體
             If gray IsNot Nothing AndAlso Not gray.IsDisposed Then gray.Dispose()
             If clahe IsNot Nothing Then clahe.Dispose()
         End Try
@@ -298,7 +383,7 @@ Partial Class HomePage
                 gray = mat.Clone()
             End If
 
-            Cv2.Threshold(gray, binary, 0, 255, ThresholdTypes.Binary Or ThresholdTypes.Otsu)
+            Cv2.AdaptiveThreshold(gray, binary, 255, AdaptiveThresholdTypes.GaussianC, ThresholdTypes.Binary, 15, 5)
             Return binary
         Catch ex As Exception
             Logger.Warn($"[BARCODE] 適應性二值化失敗: {ex.Message}")

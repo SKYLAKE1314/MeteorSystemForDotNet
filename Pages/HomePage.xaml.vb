@@ -31,6 +31,8 @@ Partial Class HomePage
     Private _isPaused As Boolean = False
     Private _isMatchCameraPreWarmed As Boolean = False
     Private _isMatchingInPreview As Boolean = False ' 防止實時匹配任務重疊雪崩
+
+    Private Shared ReadOnly _decoderLock As New Object()
     Private Enum DetectionFlowStage
         Idle = 0
         Matching = 1

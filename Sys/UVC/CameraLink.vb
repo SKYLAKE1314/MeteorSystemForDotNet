@@ -65,17 +65,16 @@ Public Class CameraLink
                         Continue While
                     End If
 
-                    ' ─── 【⚡ 完美排空防禦修復】防範 2 FPS 下影像被清空的問題 ───
                     ' 先標準讀取一幀作為安全保底畫面
                     If Not _capture.Read(mat) OrElse mat.Empty() Then
-                        Thread.Sleep(50)
+                        Thread.Sleep(25)
                         Continue While
                     End If
 
-                    ' 最多快速 Grab 5 次來清除緩存積壓。 Grab 只抓取不解碼，極快且不破壞 mat 記憶體
+                    ' 最多快速 Grab 2 次來清除緩存積壓。 Grab 只抓取不解碼，極快且不破壞 mat 記憶體
                     Using temp As New Mat()
                         Dim hasNewer As Boolean = False
-                        For i As Integer = 1 To 5
+                        For i As Integer = 1 To 2
                             If _capture.Grab() Then
                                 _capture.Retrieve(temp)
                                 hasNewer = True
@@ -102,7 +101,7 @@ Public Class CameraLink
                     ' 保持絕對安靜
                 End Try
 
-                Thread.Sleep(500)
+                Thread.Sleep(100)
             End While
 
         Catch ex As Exception
