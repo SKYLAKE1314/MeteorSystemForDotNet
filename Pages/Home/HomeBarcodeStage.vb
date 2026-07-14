@@ -37,98 +37,124 @@ Partial Class HomePage
         Dim decoding As Boolean = False
         Dim resultBox As String = Nothing
 
-        While sw.ElapsedMilliseconds < timeoutMs
+        ' 宣告預覽彈窗變數，由蘇蘇來掌控它的生命週期喔...
+        Dim previewWin As LivePreviewWindow = Nothing
 
-            If IsSkipRequested(DetectionFlowStage.Barcode) Then
-                Logger.Info("[FLOW] 解碼已跳過")
-                Return Nothing
-            End If
+        Try
+            ' 1. 在 UI 執行緒建立並顯示無邊距彈窗
+            Dispatcher.Invoke(Sub()
+                                  previewWin = New LivePreviewWindow()
+                                  previewWin.Show()
+                              End Sub)
 
-            If resultBox IsNot Nothing Then
-                Logger.Info($"[FLOW] 解碼成功: {resultBox}")
-                Return resultBox
-            End If
+            While sw.ElapsedMilliseconds < timeoutMs
 
-            Dim elapsed = sw.ElapsedMilliseconds
-            If Not decoding AndAlso elapsed - lastAttempt >= DecodeIntervalMs Then
-                lastAttempt = elapsed
-                Dim frame = CameraService.Instance.GetFrame(cameraId)
+                If IsSkipRequested(DetectionFlowStage.Barcode) Then
+                    Logger.Info("[FLOW] 解碼已跳過")
+                    Return Nothing
+                End If
 
-                If frame IsNot Nothing Then
-                    Dim frameCopy = frame
-                    Dispatcher.BeginInvoke(Sub() RenderImage.Source = frameCopy)
+                If resultBox IsNot Nothing Then
+                    Logger.Info($"[FLOW] 解碼成功: {resultBox}")
+                    Return resultBox
+                End If
 
-                    Dim matForDecode As Mat = Nothing
-                    Try
-                        ' 直接使用高效 extension 轉換
-                        matForDecode = frameCopy.ToMat()
-                    Catch ex As Exception
-                        Logger.Warn("[FLOW] 影像轉 Mat 失敗: " & ex.Message)
-                    End Try
+                Dim elapsed = sw.ElapsedMilliseconds
+                If Not decoding AndAlso elapsed - lastAttempt >= DecodeIntervalMs Then
+                    lastAttempt = elapsed
+                    Dim frame = CameraService.Instance.GetFrame(cameraId)
 
-                    If matForDecode IsNot Nothing AndAlso Not matForDecode.IsDisposed Then
-                        decoding = True
-                        Task.Run(Function()
-                                     Try
-                                         Using mat = matForDecode
-                                             ' 1. 全畫面嘗試解碼
-                                             Dim text = decoder.Run(mat)
+                    If frame IsNot Nothing Then
+                        Dim frameCopy = frame
 
-                                             ' 2. 獲取 ROI 範圍
-                                             Dim roi = ResolveRoi(snapshot, mat)
-                                             Dim isFullFrame = (roi.X = 0 AndAlso roi.Y = 0 AndAlso
-                                                            roi.Width = mat.Width AndAlso roi.Height = mat.Height)
+                        ' 實時更新給首頁與彈窗，讓工人們能看見最清晰的畫面嗷~
+                        Dispatcher.BeginInvoke(Sub() RenderImage.Source = frameCopy)
+                        If previewWin IsNot Nothing Then
+                            previewWin.UpdateFrame(frameCopy)
+                        End If
 
-                                             If String.IsNullOrWhiteSpace(text) AndAlso Not isFullFrame Then
-                                                 text = decoder.RunRoi(mat, roi)
-                                             End If
+                        Dim matForDecode As Mat = Nothing
+                        Try
+                            ' 直接使用高效 extension 轉換
+                            matForDecode = frameCopy.ToMat()
+                        Catch ex As Exception
+                            Logger.Warn("[FLOW] 影像轉 Mat 失敗: " & ex.Message)
+                        End Try
 
-                                             ' 3. 進階處理（【重大修復】：只對小範圍 ROI 進行耗時影像增強！）
-                                             If String.IsNullOrWhiteSpace(text) Then
-                                                 If Not isFullFrame Then
-                                                     ' 有設定 ROI：只針對裁切後的小圖進行高級解碼（速度提升 100 倍！）
-                                                     Using roiMat As New Mat(mat, roi)
-                                                         text = TryAdvancedBarcodeDecode(decoder, roiMat, snapshot)
-                                                     End Using
-                                                 Else
-                                                     ' 無 ROI 且大於 1080p（4K）：降採樣到 1080p 寬度再處理，防止系統癱瘓
-                                                     If mat.Width > 1920 Then
-                                                         Dim scale As Double = 1920.0 / mat.Width
-                                                         Using downscaledMat = UpscaleImage(mat, scale) ' UpscaleImage 做 Cubic resize
-                                                             text = TryAdvancedBarcodeDecode(decoder, downscaledMat, snapshot)
+                        If matForDecode IsNot Nothing AndAlso Not matForDecode.IsDisposed Then
+                            decoding = True
+                            Task.Run(Function()
+                                         Try
+                                             Using mat = matForDecode
+                                                 ' 1. 全畫面嘗試解碼
+                                                 Dim text = decoder.Run(mat)
+
+                                                 ' 2. 獲取 ROI 範圍
+                                                 Dim roi = ResolveRoi(snapshot, mat)
+                                                 Dim isFullFrame = (roi.X = 0 AndAlso roi.Y = 0 AndAlso
+                                                                roi.Width = mat.Width AndAlso roi.Height = mat.Height)
+
+                                                 If String.IsNullOrWhiteSpace(text) AndAlso Not isFullFrame Then
+                                                     text = decoder.RunRoi(mat, roi)
+                                                 End If
+
+                                                 ' 3. 進階處理
+                                                 If String.IsNullOrWhiteSpace(text) Then
+                                                     If Not isFullFrame Then
+                                                         Using roiMat As New Mat(mat, roi)
+                                                             text = TryAdvancedBarcodeDecode(decoder, roiMat, snapshot)
                                                          End Using
                                                      Else
-                                                         text = TryAdvancedBarcodeDecode(decoder, mat, snapshot)
+                                                         If mat.Width > 1920 Then
+                                                             Dim scale As Double = 1920.0 / mat.Width
+                                                             Using downscaledMat = UpscaleImage(mat, scale)
+                                                                 text = TryAdvancedBarcodeDecode(decoder, downscaledMat, snapshot)
+                                                             End Using
+                                                         Else
+                                                             text = TryAdvancedBarcodeDecode(decoder, mat, snapshot)
+                                                         End If
                                                      End If
                                                  End If
-                                             End If
 
-                                             ' 過濾假陽性
-                                             If Not String.IsNullOrWhiteSpace(text) AndAlso Not IsPlausibleBarcodeText(text) Then
-                                                 Logger.Warn($"[BARCODE] 解碼結果疑似雜訊已捨棄: '{text}'")
-                                                 text = ""
-                                             End If
+                                                 ' 過濾假陽性
+                                                 If Not String.IsNullOrWhiteSpace(text) AndAlso Not IsPlausibleBarcodeText(text) Then
+                                                     Logger.Warn($"[BARCODE] 解碼結果疑似雜訊已捨棄: '{text}'")
+                                                     text = ""
+                                                 End If
 
-                                             If Not String.IsNullOrWhiteSpace(text) Then
-                                                 resultBox = text.Trim()
-                                             End If
-                                         End Using
-                                     Catch ex As Exception
-                                         Logger.Warn("[FLOW] 背景解碼異常: " & ex.Message)
-                                     Finally
-                                         decoding = False
-                                     End Try
-                                     Return True
-                                 End Function)
+                                                 If Not String.IsNullOrWhiteSpace(text) Then
+                                                     resultBox = text.Trim()
+                                                 End If
+                                             End Using
+                                         Catch ex As Exception
+                                             Logger.Warn("[FLOW] 背景解碼異常: " & ex.Message)
+                                         Finally
+                                             decoding = False
+                                         End Try
+                                         Return True
+                                     End Function)
+                        End If
                     End If
                 End If
+
+                Await Task.Delay(15)
+            End While
+
+            Logger.Warn("[FLOW] 解碼超時")
+            Return ""
+
+        Finally
+            ' 無論發生什麼事，蘇蘇都會強制把它關掉的... 不會讓它失控喔。
+            If previewWin IsNot Nothing Then
+                Dispatcher.Invoke(Sub()
+                                      Try
+                                          previewWin.Close()
+                                      Catch
+                                          ' 靜默處理關閉時的例外
+                                      End Try
+                                  End Sub)
             End If
-
-            Await Task.Delay(15)
-        End While
-
-        Logger.Warn("[FLOW] 解碼超時")
-        Return ""
+        End Try
     End Function
     ''' <summary>
     ''' 過濾明顯不合理的解碼結果（例如過短、全同字元的雜訊誤判），

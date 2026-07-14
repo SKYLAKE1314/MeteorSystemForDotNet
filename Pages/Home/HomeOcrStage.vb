@@ -12,9 +12,6 @@ Imports Cv = OpenCvSharp
 
 Partial Class HomePage
 
-    ' =================================================================
-    ' 【⚡ 雷霆實時版】全局影像 OCR 識別流（解鎖編譯錯誤、極致即時回應）
-    ' =================================================================
     Private Async Function WaitOcrResultAsync(snapshot As TemplateSnapshot, timeoutMs As Integer) As Task(Of String)
         Dim isAiMode = String.Equals(My.Settings.OcrMode, "AI", StringComparison.OrdinalIgnoreCase)
 
@@ -60,125 +57,150 @@ Partial Class HomePage
         Dim bestScore As Double = 0
         Dim lastUiUpdateTime As Long = 0
 
-        While sw.ElapsedMilliseconds < timeoutMs
-            If IsSkipRequested(DetectionFlowStage.Ocr) Then
-                Logger.Info("[FLOW] OCR 已跳過")
-                Return Nothing
-            End If
+        ' 宣告預覽彈窗變數
+        Dim previewWin As LivePreviewWindow = Nothing
 
-            ' 【即時排空】瞬間抽乾相機的所有佇列積壓，確保拿到的 100% 是此時此刻最新鮮的畫面
-            Dim frame As BitmapSource = CameraService.Instance.GetFrame(cameraId)
-            If frame IsNot Nothing Then
-                While True
-                    Dim nextFrame As BitmapSource = CameraService.Instance.GetFrame(cameraId)
-                    If nextFrame Is Nothing OrElse nextFrame Is frame Then Exit While
-                    frame = nextFrame
-                End While
-            End If
+        Try
+            ' 1. 在 UI 執行緒建立並顯示無邊距彈窗
+            Dispatcher.Invoke(Sub()
+                                  previewWin = New LivePreviewWindow()
+                                  previewWin.Show()
+                              End Sub)
 
-            If frame IsNot Nothing Then
-                Dim frameCopy = frame
-
-                ' UI 畫面高頻更新（維持即時預覽）
-                Dim currentTime = sw.ElapsedMilliseconds
-                If currentTime - lastUiUpdateTime >= 33 Then
-                    lastUiUpdateTime = currentTime
-                    Dispatcher.BeginInvoke(Sub() RenderImage.Source = frameCopy, System.Windows.Threading.DispatcherPriority.Render)
+            While sw.ElapsedMilliseconds < timeoutMs
+                If IsSkipRequested(DetectionFlowStage.Ocr) Then
+                    Logger.Info("[FLOW] OCR 已跳過")
+                    Return Nothing
                 End If
 
-                Dim flowResult As OcrFlowResult = Nothing
-
-                If isAiMode Then
-                    ' AI 模式 (Ollama 全局)
-                    Dim localBestText As String = ""
-                    Dim localBestScore As Double = 0
-                    Dim localIsMatched As Boolean = False
-
-                    Using mat = BitmapSourceToMat(frameCopy)
-                        Dim globalRoi = New OpenCvSharp.Rect(0, 0, mat.Width, mat.Height)
-                        Using enhancedMat = EnhanceOcrImage(mat)
-                            Dim ocrResult = Await AppRuntime.OllamaOCR.RunRoiAsync(enhancedMat, globalRoi)
-                            If ocrResult IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(ocrResult.Text) Then
-                                Dim cleanedText = ocrResult.Text.Trim()
-                                Logger.Info($"[LLMOCR] 全局即時結果: '{cleanedText}'")
-
-                                If expectedTexts.Count > 0 Then
-                                    For Each expected In expectedTexts
-                                        If cleanedText.Contains(expected) Then
-                                            localIsMatched = True
-                                            Exit For
-                                        End If
-                                    Next
-                                End If
-                                localBestScore = ocrResult.Score
-                                localBestText = cleanedText
-                            End If
-                        End Using
-                    End Using
-
-                    flowResult = New OcrFlowResult With {.Text = localBestText, .Score = localBestScore, .IsMatched = localIsMatched}
-                Else
-                    ' 標準模式 (PaddleOCR 全局 0° 閃電推論)
-                    flowResult = Await Task.Run(Of OcrFlowResult)(
-                        Function() As OcrFlowResult
-                            Using mat = BitmapSourceToMat(frameCopy)
-                                Using enhancedMat = EnhanceOcrImage(mat)
-                                    Dim fullRoi = New OpenCvSharp.Rect(0, 0, enhancedMat.Width, enhancedMat.Height)
-                                    Dim ocrResult = AppRuntime.OCR.RunRoi(enhancedMat, fullRoi)
-
-                                    If ocrResult IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(ocrResult.Text) Then
-                                        Dim cleanedText = ocrResult.Text.Trim()
-                                        Logger.Info($"[OCR] 全局即時結果: '{cleanedText}' (Score={ocrResult.Score.ToString("F3")})")
-
-                                        ' 檢查是否命中期望值
-                                        Dim isMatched = False
-                                        If expectedTexts.Count > 0 Then
-                                            For Each expected In expectedTexts
-                                                If cleanedText.Contains(expected) Then
-                                                    isMatched = True
-                                                    Exit For
-                                                End If
-                                            Next
-                                        End If
-
-                                        Return New OcrFlowResult With {
-                                            .Text = cleanedText,
-                                            .Score = ocrResult.Score,
-                                            .IsMatched = isMatched
-                                        }
-                                    End If
-                                End Using
-                            End Using
-
-                            Return New OcrFlowResult With {.Text = "", .Score = 0, .IsMatched = False}
-                        End Function)
+                ' 【即時排空】瞬間抽乾相機的所有佇列積壓，確保拿到的 100% 是此時此刻最新鮮的畫面
+                Dim frame As BitmapSource = CameraService.Instance.GetFrame(cameraId)
+                If frame IsNot Nothing Then
+                    While True
+                        Dim nextFrame As BitmapSource = CameraService.Instance.GetFrame(cameraId)
+                        If nextFrame Is Nothing OrElse nextFrame Is frame Then Exit While
+                        frame = nextFrame
+                    End While
                 End If
 
-                If flowResult.IsMatched Then
-                    Logger.Info($"[FLOW] 全局 OCR 完美命中期望文本，即時結束流程！")
-                    Return flowResult.Text
-                End If
+                If frame IsNot Nothing Then
+                    Dim frameCopy = frame
 
-                If Not String.IsNullOrWhiteSpace(flowResult.Text) Then
-                    If flowResult.Score > bestScore Then
-                        bestScore = flowResult.Score
-                        bestText = flowResult.Text
+                    ' UI 畫面高頻更新（維持即時預覽，約 30 FPS 限制以防卡頓）
+                    Dim currentTime = sw.ElapsedMilliseconds
+                    If currentTime - lastUiUpdateTime >= 33 Then
+                        lastUiUpdateTime = currentTime
+                        Dispatcher.BeginInvoke(Sub() RenderImage.Source = frameCopy, System.Windows.Threading.DispatcherPriority.Render)
+
+                        If previewWin IsNot Nothing Then
+                            previewWin.UpdateFrame(frameCopy)
+                        End If
                     End If
 
-                    ' 無期望文本時，只要有辨識出任何東西就直接回傳，達成真正的實時
-                    If expectedTexts.Count = 0 Then
+                    Dim flowResult As OcrFlowResult = Nothing
+
+                    If isAiMode Then
+                        ' AI 模式 (Ollama 全局)
+                        Dim localBestText As String = ""
+                        Dim localBestScore As Double = 0
+                        Dim localIsMatched As Boolean = False
+
+                        Using mat = BitmapSourceToMat(frameCopy)
+                            Dim globalRoi = New OpenCvSharp.Rect(0, 0, mat.Width, mat.Height)
+                            Using enhancedMat = EnhanceOcrImage(mat)
+                                Dim ocrResult = Await AppRuntime.OllamaOCR.RunRoiAsync(enhancedMat, globalRoi)
+                                If ocrResult IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(ocrResult.Text) Then
+                                    Dim cleanedText = ocrResult.Text.Trim()
+                                    Logger.Info($"[LLMOCR] 全局即時結果: '{cleanedText}'")
+
+                                    If expectedTexts.Count > 0 Then
+                                        For Each expected In expectedTexts
+                                            If cleanedText.Contains(expected) Then
+                                                localIsMatched = True
+                                                Exit For
+                                            End If
+                                        Next
+                                    End If
+                                    localBestScore = ocrResult.Score
+                                    localBestText = cleanedText
+                                End If
+                            End Using
+                        End Using
+
+                        flowResult = New OcrFlowResult With {.Text = localBestText, .Score = localBestScore, .IsMatched = localIsMatched}
+                    Else
+                        ' 標準模式 (PaddleOCR 全局 0° 閃電推論)
+                        flowResult = Await Task.Run(Of OcrFlowResult)(
+                            Function() As OcrFlowResult
+                                Using mat = BitmapSourceToMat(frameCopy)
+                                    Using enhancedMat = EnhanceOcrImage(mat)
+                                        Dim fullRoi = New OpenCvSharp.Rect(0, 0, enhancedMat.Width, enhancedMat.Height)
+                                        Dim ocrResult = AppRuntime.OCR.RunRoi(enhancedMat, fullRoi)
+
+                                        If ocrResult IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(ocrResult.Text) Then
+                                            Dim cleanedText = ocrResult.Text.Trim()
+                                            Logger.Info($"[OCR] 全局即時結果: '{cleanedText}' (Score={ocrResult.Score.ToString("F3")})")
+
+                                            ' 檢查是否命中期望值
+                                            Dim isMatched = False
+                                            If expectedTexts.Count > 0 Then
+                                                For Each expected In expectedTexts
+                                                    If cleanedText.Contains(expected) Then
+                                                        isMatched = True
+                                                        Exit For
+                                                    End If
+                                                Next
+                                            End If
+
+                                            Return New OcrFlowResult With {
+                                                .Text = cleanedText,
+                                                .Score = ocrResult.Score,
+                                                .IsMatched = isMatched
+                                            }
+                                        End If
+                                    End Using
+                                End Using
+
+                                Return New OcrFlowResult With {.Text = "", .Score = 0, .IsMatched = False}
+                            End Function)
+                    End If
+
+                    If flowResult.IsMatched Then
+                        Logger.Info($"[FLOW] 全局 OCR 完美命中期望文本，即時結束流程！")
                         Return flowResult.Text
                     End If
+
+                    If Not String.IsNullOrWhiteSpace(flowResult.Text) Then
+                        If flowResult.Score > bestScore Then
+                            bestScore = flowResult.Score
+                            bestText = flowResult.Text
+                        End If
+
+                        ' 無期望文本時，只要有辨識出任何東西就直接回傳，達成真正的實時
+                        If expectedTexts.Count = 0 Then
+                            Return flowResult.Text
+                        End If
+                    End If
                 End If
+
+                Await Task.Delay(10)
+            End While
+
+            If Not String.IsNullOrWhiteSpace(bestText) Then Return bestText
+            Logger.Warn("[FLOW] 全局 OCR 超時，未識別到任何有效文本")
+            Return ""
+
+        Finally
+            ' 流程跑完後，哪怕是強制中斷，蘇蘇都會把它清理乾淨的~
+            If previewWin IsNot Nothing Then
+                Dispatcher.Invoke(Sub()
+                                      Try
+                                          previewWin.Close()
+                                      Catch
+                                      End Try
+                                  End Sub)
             End If
-
-            ' 【⚡ 實時優化】將等待延遲縮小到極致的 10ms，讓迴圈以最高速率並行抽樣
-            Await Task.Delay(10)
-        End While
-
-        If Not String.IsNullOrWhiteSpace(bestText) Then Return bestText
-        Logger.Warn("[FLOW] 全局 OCR 超時，未識別到任何有效文本")
-        Return ""
+        End Try
     End Function
 
     ''' <summary>
