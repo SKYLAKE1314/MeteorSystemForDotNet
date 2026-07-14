@@ -65,18 +65,30 @@ Public Class CameraLink
                         Continue While
                     End If
 
-                    ' ─── 【⚡ 核心排空】解決 2 FPS 下相機硬體快取帶來的延遲問題 ───
-                    ' 連續快速 Read 丟棄積壓的舊畫面，只把最後一幀最新畫面存入 mat
-                    Dim readSuccess As Boolean = False
-                    For i As Integer = 1 To 4
-                        readSuccess = _capture.Read(mat)
-                        If Not readSuccess OrElse mat.Empty() Then Exit For
-                    Next
-
-                    If Not readSuccess OrElse mat.Empty() Then
+                    ' ─── 【⚡ 完美排空防禦修復】防範 2 FPS 下影像被清空的問題 ───
+                    ' 先標準讀取一幀作為安全保底畫面
+                    If Not _capture.Read(mat) OrElse mat.Empty() Then
                         Thread.Sleep(50)
                         Continue While
                     End If
+
+                    ' 最多快速 Grab 5 次來清除緩存積壓。 Grab 只抓取不解碼，極快且不破壞 mat 記憶體
+                    Using temp As New Mat()
+                        Dim hasNewer As Boolean = False
+                        For i As Integer = 1 To 5
+                            If _capture.Grab() Then
+                                _capture.Retrieve(temp)
+                                hasNewer = True
+                            Else
+                                Exit For
+                            End If
+                        Next
+                        ' 只有當確實安全拿到更新鮮、且不為空的畫面時，才放心地進行覆蓋
+                        If hasNewer AndAlso Not temp.Empty() Then
+                            mat.Dispose()
+                            mat = temp.Clone()
+                        End If
+                    End Using
 
                     ' 零洩漏快速轉換
                     Dim bmp = MatToBitmapSource(mat)
@@ -87,11 +99,9 @@ Public Class CameraLink
                     End If
 
                 Catch ex As Exception
-                    ' 保持絕對安靜，不再用任何警告日誌去吵你喔
+                    ' 保持絕對安靜
                 End Try
 
-                ' ─── 【⚡ 頻率限制】1秒只處理兩幀（每 500 毫秒一幀） ───
-                ' 給系統留出最極致、最寬鬆的呼吸空間
                 Thread.Sleep(500)
             End While
 

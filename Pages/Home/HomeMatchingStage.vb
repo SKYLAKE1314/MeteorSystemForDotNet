@@ -28,8 +28,6 @@ Partial Class HomePage
         Return New OpenCvSharp.Rect(x, y, w, h)
     End Function
 
-    ' 多次匹配方法：每 200 ms 對所有模板（母版 + 子模板）循環嘗試；
-    ' 任一模板匹配 OK 立即退出（不等超時）；尊重 _isPaused 暫停等待。
     Private Async Function WaitMultipleMatchAsync(templatePath As String, snapshot As TemplateSnapshot, timeoutMs As Integer) As Task(Of MatchResultWrapper)
         Dim sw As New Stopwatch()
         sw.Start()
@@ -42,7 +40,7 @@ Partial Class HomePage
 
         Dim cameraId = ResolveMatchCameraId()
 
-        ' 相機預熱：若尚未有畫面則啟動並等待第一幀，完成後播報就緒語音
+        ' 相機預熱
         Dim needsWarmup = (CameraService.Instance.GetFrame(cameraId) Is Nothing)
         If needsWarmup Then
             CameraService.Instance.StartCamera(cameraId)
@@ -51,10 +49,6 @@ Partial Class HomePage
             While CameraService.Instance.GetFrame(cameraId) Is Nothing AndAlso warmupSw.ElapsedMilliseconds < 3000
                 Await Task.Delay(50)
             End While
-            Logger.Debug($"[MATCH] 相機沖熱完成 ({warmupSw.ElapsedMilliseconds}ms)")
-            PlayPromptVoice(VoicePromptDetectionReady) ' 相機就緒，可以開始檢測
-        Else
-            Logger.Debug("[MATCH] 相機已有畫面，繼續使用實時串流")
         End If
 
         Dim bestResultMat As Cv.Mat = Nothing
@@ -65,26 +59,25 @@ Partial Class HomePage
 
         Dim groupPath = IO.Path.GetDirectoryName(templatePath)
         Dim subTemplateMetas = TemplateTrainingStore.GetTrainingSamples(groupPath)
-        Logger.Debug($"[MATCH] 子模板數量={If(subTemplateMetas IsNot Nothing, subTemplateMetas.Count, 0)}, groupPath={groupPath}")
 
-        ' 預先載入所有子模板至記憶體，避免每次迴圈重複 IO
+        ' ─── 【⚡ 終極核心修復：原生裁切 + 容錯防禦（拔除錯誤縮放）】 ───
         Dim loadedSubTemplates As New List(Of Tuple(Of Object, Cv.Mat))()
         If subTemplateMetas IsNot Nothing Then
             For Each subMeta In subTemplateMetas
-                Dim subMat = TemplateTrainingStore.LoadTrainingSampleImage(groupPath, subMeta.FileName)
-                If subMat IsNot Nothing Then
-                    loadedSubTemplates.Add(Tuple.Create(DirectCast(subMeta, Object), subMat))
+                ' 此處載入的已經是 724x489 且毫無黑邊的純淨小特徵，直接用就對了！
+                Dim patchMat = TemplateTrainingStore.LoadTrainingSampleImage(groupPath, subMeta.FileName)
+                If patchMat IsNot Nothing Then
+                    loadedSubTemplates.Add(Tuple.Create(DirectCast(subMeta, Object), patchMat))
                 End If
             Next
         End If
+        Logger.Info($"[MATCH] 子模板載入完成，就緒數量={loadedSubTemplates.Count}")
 
         Const AttemptIntervalMs As Long = 200
-        Dim earlyOkResult As Draw_opencv.ResultPack = Nothing  ' 提前 OK 結果
+        Dim earlyOkResult As Draw_opencv.ResultPack = Nothing
 
         Try
             While sw.ElapsedMilliseconds < timeoutMs AndAlso earlyOkResult Is Nothing
-
-                ' ── 暫停等待：收到信號 1 時在此掛起，直到信號 2 恢復 ──────────
                 If _isPaused Then
                     Await Task.Delay(100)
                     Continue While
@@ -107,32 +100,33 @@ Partial Class HomePage
                             Dim roiRect = ResolveRoi(snapshot, currentMat)
                             Dim meanVal As Double = 0, stdDev As Double = 0, edgeDensity As Double = 0
 
-                            ' ── 【完美修復】依據當前模板動態參數進行影像質量校驗，避免硬編碼 ──
                             Dim cannyL As Double = If(masterData.Config IsNot Nothing AndAlso masterData.Config.CannyLow > 0, CDbl(masterData.Config.CannyLow), 80.0)
                             Dim cannyH As Double = If(masterData.Config IsNot Nothing AndAlso masterData.Config.CannyHigh > 0, CDbl(masterData.Config.CannyHigh), 160.0)
 
                             Using roiMat = currentMat.SubMat(roiRect)
-                                If Not ValidateFrameQuality(roiMat, meanVal, stdDev, edgeDensity, cannyL, cannyH) Then Continue While
+                                If Not ValidateFrameQuality(roiMat, meanVal, stdDev, edgeDensity, cannyL, cannyH) Then
+                                    Logger.Warn($"[MATCH] #{matchAttempt} 影格品質不理想(stdDev={stdDev:F1})，強制交由演算法進行比對。")
+                                End If
                             End Using
-                            Logger.Debug($"[MATCH] #{matchAttempt} 幀質量OK(ROI): mean={meanVal:F1}, stdDev={stdDev:F1}, edge={edgeDensity:P2}")
 
-                            ' ── 嘗試母版 ───────────────────────────────────────────
+                            ' ── 1. 嘗試母版 ───────────────────────────────────────────
                             Dim masterResult = Await Draw_opencv.ProcessAsync(currentMat, masterData.Template, masterData.Config)
                             If masterResult IsNot Nothing Then
                                 If masterResult.Score > bestScore Then
                                     bestScore = masterResult.Score
                                     bestThreshold = masterData.Config.Threshold
+
                                     If bestResultMat IsNot Nothing Then bestResultMat.Dispose()
                                     bestResultMat = masterResult.Mat?.Clone()
-                                    Logger.Debug($"[MATCH] #{matchAttempt} 母版 Score={masterResult.Score:F3} (閾值={masterData.Config.Threshold:F3})")
+
                                     If masterResult.Mat IsNot Nothing Then
                                         Dim wb = masterResult.Mat.ToWriteableBitmap()
                                         Dispatcher.Invoke(Sub() RenderImage.Source = wb)
                                     End If
                                 End If
-                                ' 母版 OK → 立即退出
+
                                 If masterResult.IsOk Then
-                                    Logger.Info($"[MATCH] 母版 OK（提前退出）Score={masterResult.Score:F3}, 嘗試={matchAttempt}")
+                                    Logger.Info($"[MATCH] 母版 OK（提前退出）Score={masterResult.Score:F3}")
                                     earlyOkResult = New Draw_opencv.ResultPack With {
                                         .Score = masterResult.Score, .IsOk = True,
                                         .Mat = If(bestResultMat IsNot Nothing, bestResultMat, masterResult.Mat?.Clone())
@@ -145,10 +139,11 @@ Partial Class HomePage
 
                             If earlyOkResult IsNot Nothing Then Exit While
 
-                            ' ── 循環嘗試所有子模板（mother 未 OK 才進入）──────────
+                            ' ── 2. 嘗試子模板 ───────────────────────────────────────────
                             For Each item In loadedSubTemplates
                                 Dim subMeta = item.Item1
-                                Dim subMat = item.Item2
+                                Dim subMatPatch = item.Item2
+
                                 Dim subConfig As New TemplateConfig With {
                                     .Threshold = If(subMeta.MasterThreshold > 0, subMeta.MasterThreshold, masterData.Config.Threshold),
                                     .MatchMethod = subMeta.MatchMethod,
@@ -158,22 +153,24 @@ Partial Class HomePage
                                     .RoiX = masterData.Config.RoiX, .RoiY = masterData.Config.RoiY,
                                     .RoiW = masterData.Config.RoiW, .RoiH = masterData.Config.RoiH
                                 }
-                                Dim subResult = Await Draw_opencv.ProcessAsync(currentMat, subMat, subConfig)
+
+                                Dim subResult = Await Draw_opencv.ProcessAsync(currentMat, subMatPatch, subConfig)
                                 If subResult IsNot Nothing Then
                                     If subResult.Score > bestScore Then
                                         bestScore = subResult.Score
                                         bestThreshold = subConfig.Threshold
                                         If bestResultMat IsNot Nothing Then bestResultMat.Dispose()
                                         bestResultMat = subResult.Mat?.Clone()
-                                        Logger.Debug($"[MATCH] #{matchAttempt} 子模板'{subMeta.FileName}' Score={subResult.Score:F3} (閾值={subConfig.Threshold:F3})")
+                                        Logger.Debug($"[MATCH] #{matchAttempt} 命中子模板'{subMeta.FileName}' Score={subResult.Score:F3}")
+
                                         If subResult.Mat IsNot Nothing Then
                                             Dim wb = subResult.Mat.ToWriteableBitmap()
                                             Dispatcher.Invoke(Sub() RenderImage.Source = wb)
                                         End If
                                     End If
-                                    ' 子模板 OK → 立即退出
+
                                     If subResult.IsOk Then
-                                        Logger.Info($"[MATCH] 子模板'{subMeta.FileName}' OK（提前退出）Score={subResult.Score:F3}, 嘗試={matchAttempt}")
+                                        Logger.Info($"[MATCH] 子模板'{subMeta.FileName}' OK（提前退出）Score={subResult.Score:F3}")
                                         earlyOkResult = New Draw_opencv.ResultPack With {
                                             .Score = subResult.Score, .IsOk = True,
                                             .Mat = If(bestResultMat IsNot Nothing, bestResultMat, subResult.Mat?.Clone())
@@ -185,8 +182,6 @@ Partial Class HomePage
                                 End If
                             Next
                         End Using
-                    Else
-                        Logger.Warn($"[MATCH] #{matchAttempt}: 無法獲取相機畫面")
                     End If
                 End If
 
@@ -200,18 +195,15 @@ Partial Class HomePage
             loadedSubTemplates.Clear()
         End Try
 
-        ' 提前 OK 退出
         If earlyOkResult IsNot Nothing Then
             Return New MatchResultWrapper With {.Result = earlyOkResult, .MatchCount = matchAttempt}
         End If
 
-        ' 超時：用最高分決定 OK/NG
         Dim isOk = (bestScore >= bestThreshold)
-        Logger.Info($"[MATCH] 超時結束，最高分={bestScore:F3}, 對應閾值={bestThreshold:F3}, IsOk={isOk}, 共{matchAttempt}次")
+        Logger.Info($"[MATCH] 流程結束，最終最高分={bestScore:F3}, 門檻={bestThreshold:F3}, 結果={isOk}")
         Dim finalResult As New Draw_opencv.ResultPack With {.Score = bestScore, .IsOk = isOk, .Mat = bestResultMat}
         Return New MatchResultWrapper With {.Result = finalResult, .MatchCount = matchAttempt}
     End Function
-
     Private Function ValidateFrameQuality(
     roiMat As Cv.Mat,
     ByRef outMean As Double,

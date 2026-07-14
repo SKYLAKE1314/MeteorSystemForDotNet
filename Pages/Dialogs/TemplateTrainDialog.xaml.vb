@@ -492,8 +492,33 @@ Public Class TemplateTrainDialog
                 Return
             End If
 
-            Dim imagePolygon = _polygonPoints.Select(Function(dp) DisplayToImagePoint(dp)).ToList()
+            ' 1. 安全座標對齊
+            Dim imagePolygon = _polygonPoints.Select(Function(dp)
+                                                         Dim resPoint = DisplayToImagePoint(dp)
+                                                         Dim safeX = Math.Max(0, Math.Min(resPoint.X, _sourceMat.Width - 1))
+                                                         Dim safeY = Math.Max(0, Math.Min(resPoint.Y, _sourceMat.Height - 1))
+                                                         Return New Point(safeX, safeY)
+                                                     End Function).ToList()
 
+            ' ─── 【⚡ 核心修正版：將 p 更改為 pt，徹底消滅變數隱藏衝突！】 ───
+            ' 計算多邊形的外切矩形
+            Dim pts = imagePolygon.Select(Function(pt) New OpenCvSharp.Point(pt.X, pt.Y)).ToArray()
+            Dim bbox = Cv2.BoundingRect(pts)
+
+            Dim x1 = Math.Max(0, bbox.X)
+            Dim y1 = Math.Max(0, bbox.Y)
+            Dim x2 = Math.Min(_sourceMat.Width, bbox.X + bbox.Width)
+            Dim y2 = Math.Min(_sourceMat.Height, bbox.Y + bbox.Height)
+
+            ' 強制轉化為完美矩形的 4 個頂點，阻斷 FillPoly 塗黑
+            Dim cleanRectPolygon As New List(Of Point) From {
+                New Point(x1, y1),
+                New Point(x2, y1),
+                New Point(x2, y2),
+                New Point(x1, y2)
+            }
+
+            ' 這裡定義了變數 p，這就是為什麼下方的 Lambda 參數絕對不能再叫 p 喔！
             Dim p As New TemplateTrainingStore.TrainingTemplateParams With {
                 .MasterThreshold = If(_masterConfig IsNot Nothing, _masterConfig.Threshold, 0.8),
                 .PyramidLevel = CInt(PyramidSlider.Value),
@@ -510,7 +535,7 @@ Public Class TemplateTrainDialog
             BtnAddSample.IsEnabled = False
 
             Dim count = Await Task.Run(Function()
-                                           Return TemplateTrainingStore.AddSamplePolygon(_groupPath, _sourceMat, imagePolygon, p)
+                                           Return TemplateTrainingStore.AddSamplePolygon(_groupPath, _sourceMat, cleanRectPolygon, p)
                                        End Function)
 
             RefreshSampleCount(count)
