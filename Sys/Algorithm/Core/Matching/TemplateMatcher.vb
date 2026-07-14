@@ -177,22 +177,18 @@ Public Class TemplateMatcher
 
     ' =========================================
     ' 異步匹配
-    ' =========================================
-    ' =================================================================
-    ' 異步匹配 (安全修正版：防範跨執行緒 Disposed 異常)
-    ' =================================================================
+
     Public Shared Async Function MatchAsync(
     source As Mat,
     template As Mat,
     threshold As Double,
     methodIndex As Integer) As Task(Of MatchResult)
 
-        ' 【核心修復】如果傳入的物件已經不合法，直接返回
+        ' 如果傳入的物件已經不合法，直接返回
         If source Is Nothing OrElse source.IsDisposed OrElse template Is Nothing OrElse template.IsDisposed Then
             Return Nothing
         End If
 
-        ' 【核心修復】必須在「呼叫 Task.Run 之前（主執行緒）」先完成 Clone！
         ' 這樣能確保傳進背景執行緒的 Mat 擁有獨立生命週期，絕不會被外部 UI 循環提前銷毀
         Dim srcCopyForThread As Mat = source.Clone()
         Dim tplCopyForThread As Mat = template.Clone()
@@ -213,12 +209,6 @@ Public Class TemplateMatcher
 
     End Function
 
-    ' =========================================
-    ' Match Core
-    ' =========================================
-    ' =================================================================
-    ' Match Core (工業級防盲增強版：徹底封殺純色與無特徵虛假高分)
-    ' =================================================================
     Private Shared Function MatchCore(
     source As Mat,
     template As Mat,
@@ -242,9 +232,6 @@ Public Class TemplateMatcher
                 template.CopyTo(grayTpl)
             End If
 
-            ' =================================================================
-            ' 【核心防禦：大圖質量與紋理檢驗】
-            ' =================================================================
             ' 計算搜尋大圖的平均值與標準差。標準差 (StdDev) 代表圖像紋理的複雜度。
             ' 如果大圖是純黑、純白、純色或幾乎沒紋理的雜訊，標準差會極低（通常 < 8）。
             Dim meanSrc As Scalar = Nothing

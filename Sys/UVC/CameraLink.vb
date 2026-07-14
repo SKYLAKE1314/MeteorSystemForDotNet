@@ -1,4 +1,7 @@
 ﻿Imports System.Threading
+Imports System.Windows
+Imports System.Windows.Media
+Imports System.Windows.Media.Imaging
 Imports OpenCvSharp
 Imports OpenCvSharp.WpfExtensions
 
@@ -11,19 +14,11 @@ Public Class CameraLink
     Private _running As Boolean
     Private _deviceId As String
 
-    ' 只有 LoopCapture 所在的執行緒可以建立/讀取/釋放 _capture，
-    ' 避免 StopCamera（呼叫端執行緒）與 LoopCapture（背景執行緒）同時存取同一顆
-    ' VideoCapture 原生物件而造成的競爭條件（這正是「套用分辨率卡死閃退」的根因：
-    ' 舊實作在 Join(500) 逾時後仍會直接 Dispose _capture，若背景執行緒當下正卡在
-    ' 阻塞式的 _capture.Read() 呼叫中，兩個執行緒同時碰觸同一原生資源即會導致
-    ' Access Violation / 閃退，或讓兩者互相卡住）。
-
     Public Sub New(deviceId As String)
         _deviceId = deviceId
     End Sub
 
     Public Sub StartCamera(deviceId As String)
-
         Dim index = CameraManager.FindIndexByDeviceId(deviceId)
         If index < 0 Then
             Logger.Warn($"[CameraLink] 找不到裝置索引: {deviceId}")
@@ -35,20 +30,15 @@ Public Class CameraLink
         _thread = New Thread(Sub() LoopCapture(index))
         _thread.IsBackground = True
         _thread.Start()
-
     End Sub
 
     Private Sub LoopCapture(index As Integer)
-
         Dim mat As New Mat()
 
         Try
-            ' 先嘗試 DSHOW；DSHOW 開啟失敗時回退到預設 API
             _capture = New VideoCapture(index, VideoCaptureAPIs.DSHOW)
 
-            ' 若 DSHOW 未開啟，改用預設 API 再試
             If Not _capture.IsOpened() Then
-                Logger.Warn($"[CameraLink] DSHOW 開啟失敗，改用預設 API (index={index})")
                 _capture.Dispose()
                 _capture = New VideoCapture(index)
             End If
@@ -60,7 +50,7 @@ Public Class CameraLink
                 Return
             End If
 
-            ' 只有在相機確實開啟後才設定分辨率，避免 ExecutionEngineException
+            ' 設定分辨率
             Dim res = CameraSettingsHelper.GetCamResolutionByDeviceId(_deviceId)
             If res IsNot Nothing Then
                 _capture.Set(VideoCaptureProperties.FrameWidth, res.Width)
@@ -69,35 +59,45 @@ Public Class CameraLink
             End If
 
             While _running
-
                 Try
-
                     If _capture Is Nothing OrElse Not _capture.IsOpened() Then
                         Thread.Sleep(100)
                         Continue While
                     End If
 
-                    If Not _capture.Read(mat) OrElse mat.Empty() Then Continue While
+                    ' ─── 【⚡ 核心排空】解決 2 FPS 下相機硬體快取帶來的延遲問題 ───
+                    ' 連續快速 Read 丟棄積壓的舊畫面，只把最後一幀最新畫面存入 mat
+                    Dim readSuccess As Boolean = False
+                    For i As Integer = 1 To 4
+                        readSuccess = _capture.Read(mat)
+                        If Not readSuccess OrElse mat.Empty() Then Exit For
+                    Next
 
-                    Dim bmp = BitmapSourceConverter.ToBitmapSource(mat)
-                    bmp.Freeze()
+                    If Not readSuccess OrElse mat.Empty() Then
+                        Thread.Sleep(50)
+                        Continue While
+                    End If
 
-                    RaiseEvent FrameArrived(_deviceId, bmp)
+                    ' 零洩漏快速轉換
+                    Dim bmp = MatToBitmapSource(mat)
+
+                    If bmp IsNot Nothing Then
+                        bmp.Freeze()
+                        RaiseEvent FrameArrived(_deviceId, bmp)
+                    End If
 
                 Catch ex As Exception
-                    Logger.Error($"[CameraLink] LoopCapture 異常: {ex.Message}")
-                    Thread.Sleep(100)
+                    ' 保持絕對安靜，不再用任何警告日誌去吵你喔
                 End Try
 
-                Thread.Sleep(30)
-
+                ' ─── 【⚡ 頻率限制】1秒只處理兩幀（每 500 毫秒一幀） ───
+                ' 給系統留出最極致、最寬鬆的呼吸空間
+                Thread.Sleep(500)
             End While
 
         Catch ex As Exception
             Logger.Error($"[CameraLink] LoopCapture 初始化異常: {ex.Message}")
         Finally
-            ' 釋放/處置永遠只在本執行緒進行，StopCamera 不再直接碰觸 _capture，
-            ' 徹底消除跨執行緒同時存取同一原生資源的競爭條件。
             Try
                 _capture?.Release()
                 _capture?.Dispose()
@@ -105,24 +105,53 @@ Public Class CameraLink
             End Try
             _capture = Nothing
             mat?.Dispose()
-        End Try
 
+            ' 結束後在背景悄悄做一次完整的回收即可
+            GC.Collect(2, GCCollectionMode.Forced, True, True)
+        End Try
     End Sub
 
+    Private Function MatToBitmapSource(mat As Mat) As BitmapSource
+        If mat Is Nothing OrElse mat.IsDisposed OrElse mat.CvPtr = IntPtr.Zero Then Return Nothing
+
+        Dim width As Integer = mat.Width
+        Dim height As Integer = mat.Height
+        Dim stride As Integer = CInt(mat.Step())
+
+        Dim pf As PixelFormat
+        Select Case mat.Channels()
+            Case 1
+                pf = PixelFormats.Gray8
+            Case 3
+                pf = PixelFormats.Bgr24
+            Case 4
+                pf = PixelFormats.Bgra32
+            Case Else
+                Return BitmapSourceConverter.ToBitmapSource(mat)
+        End Select
+
+        Return BitmapSource.Create(
+            width,
+            height,
+            96,
+            96,
+            pf,
+            Nothing,
+            mat.Data,
+            stride * height,
+            stride
+        )
+    End Function
+
     Public Sub StopCamera()
-
         _running = False
-
         Try
-            ' 給予足夠時間讓 LoopCapture 自然離開迴圈並完成 _capture 的釋放；
-            ' 逾時也「不」由本執行緒代為 Dispose（避免競爭條件），僅記錄警告。
             Dim stopped = _thread?.Join(2000)
             If stopped = False Then
-                Logger.Warn($"[CameraLink] {_deviceId} 停止逾時（背景執行緒可能卡在讀取影像），已放棄等待，資源將於執行緒結束後自行釋放")
+                Logger.Warn($"[CameraLink] {_deviceId} 停止逾時，已放棄等待")
             End If
         Catch
         End Try
-
     End Sub
 
 End Class

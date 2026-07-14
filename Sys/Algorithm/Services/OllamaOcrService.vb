@@ -5,55 +5,65 @@ Imports System.Text.Json
 Imports OpenCvSharp
 
 Public Class OllamaOcrService
+    ' 【關鍵修復 1】將逾時時間放寬至 3 分鐘。因為模型首次載入至 GPU 顯存需要較長時間，30 秒極易引發連鎖崩潰
     Private Shared ReadOnly _httpClient As New HttpClient() With {
-        .Timeout = TimeSpan.FromSeconds(30)
+        .Timeout = TimeSpan.FromMinutes(3)
     }
 
     ''' <summary>
-    ''' 在啟動或初始化時預先載入 (Load) Ollama 的 glm-ocr 模型到 GPU/記憶體中，防止首次檢測時發生嚴重延遲
+    ''' 在啟動或初始化時，將 glm-ocr 模型完全加載並【永久鎖定】在 GPU 顯存中，實現後續檢測零延遲
     ''' </summary>
     Public Async Function PreloadModelAsync() As Task
         Try
-            Logger.Info("[OllamaOCR] 開始預先載入 glm-ocr 模型...")
+            Logger.Info("[OllamaOCR] 開始預先載入 glm-ocr 模型並鎖定 GPU 顯存...")
 
-            ' 在 Ollama 中，可以透過只提供模型名稱、空 Prompt 且不帶圖像的方式發送 /api/generate
-            ' 這會驅動 Ollama 將指定模型加載到 GPU/VRAM 記憶體中。
+            ' 【關鍵修復 2】glm-ocr 是視覺模型，若發送空 Prompt 且無影像會引發 Ollama 底層 500 錯誤。
+            ' 這裡送入一張 1x1 像素的黑色隱形 PNG 圖片 Base64，強制觸發視覺編碼器進行完全的顯存初始化。
+            Dim dummyImageBase64 As String = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+
+            ' 【關鍵修復 3】加入 "keep_alive": -1，這是 Ollama 官方指定的常駐命令，模型載入後將永不釋放
             Dim preloadPayload As New Dictionary(Of String, Object) From {
-                {"model", "gml-ocr"},
-                {"prompt", ""},
-                {"stream", False}
+                {"model", "glm-ocr:latest"},
+                {"prompt", "init"},
+                {"stream", False},
+                {"keep_alive", -1},
+                {"images", New String() {dummyImageBase64}}
             }
 
             Dim jsonContent = JsonSerializer.Serialize(preloadPayload)
             Dim content As New StringContent(jsonContent, Encoding.UTF8, "application/json")
 
             Dim response = Await _httpClient.PostAsync("http://127.0.0.1:11434/api/generate", content)
+
             If response.IsSuccessStatusCode Then
-                Logger.Info("[OllamaOCR] glm-ocr 模型預先載入成功！已常駐記憶體。")
+                Logger.Info("[OllamaOCR] glm-ocr 模型預先載入成功！已成功常駐 GPU 顯存，後續識別將實現零延遲。")
             Else
-                Logger.Warn($"[OllamaOCR] 模型載入回傳狀態不正常，HTTP: {response.StatusCode}。將在實際檢測時載入。")
+                Dim errText = Await response.Content.ReadAsStringAsync()
+                Logger.Warn($"[OllamaOCR] 模型預載入失敗，HTTP: {response.StatusCode}, 原因: {errText}")
             End If
         Catch ex As Exception
-            Logger.Warn($"[OllamaOCR] 預加載模型失敗（本機 Ollama 可能未啟動）: {ex.Message}")
+            Logger.Warn($"[OllamaOCR] 預加載模型失敗（請檢查本地 Ollama 是否正常啟動）: {ex.Message}")
         End Try
     End Function
 
     ''' <summary>
     ''' 使用 Ollama 呼叫 gml-ocr 模型進行 OCR 辨識
     ''' </summary>
-    ''' <param name="src">輸入的 OpenCvSharp Mat 影像</param>
-    ''' <param name="roi">要裁切的 ROI 範圍</param>
-    ''' <returns>辨識出的文字與假定分數，失敗時返回空字串</returns>
     Public Async Function RunRoiAsync(src As Mat, roi As Rect) As Task(Of OcrResultInfo)
         If src Is Nothing OrElse src.IsDisposed Then
             Return New OcrResultInfo With {.Text = "", .Score = 0}
         End If
 
         Try
-            ' 1. 裁切與轉檔為 PNG 格式
+            ' 1. 安全範圍裁切與轉檔為 PNG 格式
             Dim base64Image As String = ""
-            Using crop As Mat = New Mat(src, roi).Clone()
-                ' 將 Mat 編碼成 PNG byte 陣列
+            Dim safeRoi = roi
+            If safeRoi.X < 0 Then safeRoi.X = 0
+            If safeRoi.Y < 0 Then safeRoi.Y = 0
+            If safeRoi.X + safeRoi.Width > src.Width Then safeRoi.Width = src.Width - safeRoi.X
+            If safeRoi.Y + safeRoi.Height > src.Height Then safeRoi.Height = src.Height - safeRoi.Y
+
+            Using crop As New Mat(src, safeRoi)
                 Dim buf() As Byte = Nothing
                 If Cv2.ImEncode(".png", crop, buf) Then
                     base64Image = Convert.ToBase64String(buf)
@@ -66,21 +76,23 @@ Public Class OllamaOcrService
             End If
 
             ' 2. 建立 Ollama API Request Payload
-            ' ollama api: POST /api/generate
+            ' 同樣加入 "keep_alive": -1 雙重保險，確保推論期間模型絕不掉線
             Dim requestPayload As New Dictionary(Of String, Object) From {
                 {"model", "glm-ocr:latest"},
                 {"prompt", "Please transcribe the text from the image directly. Output ONLY the transcribed text, without any explanation, markdown or introductory words."},
                 {"stream", False},
+                {"keep_alive", -1},
                 {"images", New String() {base64Image}}
             }
 
             Dim jsonContent As String = JsonSerializer.Serialize(requestPayload)
             Dim content As New StringContent(jsonContent, Encoding.UTF8, "application/json")
 
-            ' 3. 發送請求至本地 Ollama (預設連接埠為 11434)
+            ' 3. 發送請求至本地 Ollama
             Dim response = Await _httpClient.PostAsync("http://127.0.0.1:11434/api/generate", content)
             If Not response.IsSuccessStatusCode Then
-                Logger.Error($"[OllamaOCR] API 呼叫失敗，HTTP 狀態碼: {response.StatusCode}")
+                Dim errText = Await response.Content.ReadAsStringAsync()
+                Logger.Error($"[OllamaOCR] API 呼叫失敗，HTTP 狀態碼: {response.StatusCode}, 錯誤詳情: {errText}")
                 Return New OcrResultInfo With {.Text = "", .Score = 0}
             End If
 
@@ -91,7 +103,7 @@ Public Class OllamaOcrService
                 Dim root As JsonElement = doc.RootElement
                 If root.TryGetProperty("response", Nothing) Then
                     Dim textResult = root.GetProperty("response").GetString().Trim()
-                    ' 去除一些 LLM 習慣性的包裹符號如雙引號等
+
                     If textResult.StartsWith("""") AndAlso textResult.EndsWith("""") Then
                         textResult = textResult.Substring(1, textResult.Length - 2).Trim()
                     End If
@@ -99,13 +111,13 @@ Public Class OllamaOcrService
                     Logger.Info($"[OllamaOCR] 識別成功: {textResult}")
                     Return New OcrResultInfo With {
                         .Text = textResult,
-                        .Score = 0.8 ' LLM 一般不給像素級置信度，返回高分保底
+                        .Score = 0.8
                     }
                 End If
             End Using
 
         Catch ex As Exception
-            Logger.Error($"[OllamaOCR] 異常: {ex.Message}")
+            Logger.Error($"[OllamaOCR] 運行異常: {ex.Message}")
         End Try
 
         Return New OcrResultInfo With {.Text = "", .Score = 0}

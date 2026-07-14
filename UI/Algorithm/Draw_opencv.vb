@@ -69,8 +69,8 @@ Public Class Draw_opencv
                       config.RoiX >= 0 AndAlso config.RoiY >= 0)
         'ROI範圍
         If hasRoi Then
-            Dim marginX = CInt(config.RoiW * 0.85)
-            Dim marginY = CInt(config.RoiH * 0.85)
+            Dim marginX = CInt(config.RoiW * 1.45)
+            Dim marginY = CInt(config.RoiH * 1.45)
             Dim sx = Math.Max(0, config.RoiX - marginX)
             Dim sy = Math.Max(0, config.RoiY - marginY)
             Dim sw = Math.Min(input.Width - sx, config.RoiW + marginX * 2)

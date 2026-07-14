@@ -1,4 +1,4 @@
-﻿Imports System.Windows
+Imports System.Windows
 Imports System.Windows.Controls
 Imports System.ComponentModel
 Imports System.Collections.ObjectModel
@@ -157,28 +157,33 @@ If(My.Settings.AutoRun, 0, 1)
 
         If Not _isLoaded OrElse _suppressEvents Then Return
 
-        Dim cb = TryCast(sender, ComboBox)
-        If cb Is Nothing Then Return
-        Dim row = TryCast(cb.DataContext, CameraRow)
-        If row Is Nothing Then Return
+        _suppressEvents = True
+        Try
+            Dim cb = TryCast(sender, ComboBox)
+            If cb Is Nothing Then Return
+            Dim row = TryCast(cb.DataContext, CameraRow)
+            If row Is Nothing Then Return
 
-        Dim cam = TryCast(cb.SelectedItem, CameraInfo)
-        row.SelectedCamera = cam
+            Dim cam = TryCast(cb.SelectedItem, CameraInfo)
+            row.SelectedCamera = cam
 
-        RefreshAllCameraLists()
-        SaveCameraRows() ' 這會安全地把所有相機列表存入陣列 My.Settings.CameraDeviceIds
+            RefreshAllCameraLists()
+            SaveCameraRows() ' 這會安全地把所有相機列表存入陣列 My.Settings.CameraDeviceIds
 
-        ' 【核心連動修復】
-        ' 只有當使用者修改的是「相機 1」（Index = 0）時，才同步更新舊的單一欄位 CameraDeviceId。
-        ' 這樣修改「相機 2」時，才不會去覆寫並破壞主相機的設定，確保首頁讀取不會錯亂！
-        If CameraRows.IndexOf(row) = 0 Then
-            My.Settings.CameraDeviceId = cam?.DeviceId
-        End If
+            ' 【核心連動修復】
+            ' 只有當使用者修改的是「相機 1」（Index = 0）時，才同步更新舊的單一欄位 CameraDeviceId。
+            ' 這樣修改「相機 2」時，才不會去覆寫並破壞主相機的設定，確保首頁讀取不會錯亂！
+            If CameraRows.IndexOf(row) = 0 Then
+                My.Settings.CameraDeviceId = cam?.DeviceId
+            End If
 
-        My.Settings.Save()
+            My.Settings.Save()
 
-        ' 通知其他頁面相機設定已變更，不展開 SettingPage 自己的 reload
-        CameraManager.NotifyCameraChanged()
+            ' 通知其他頁面相機設定已變更，不展開 SettingPage 自己的 reload
+            CameraManager.NotifyCameraChanged()
+        Finally
+            _suppressEvents = False
+        End Try
 
     End Sub
 

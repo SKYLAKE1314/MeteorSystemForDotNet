@@ -1,4 +1,4 @@
-﻿Imports System.IO
+Imports System.IO
 Imports System.Text
 Imports System.Threading
 Imports System.Windows
@@ -30,6 +30,7 @@ Partial Class HomePage
     Private _isDetecting As Boolean = False
     Private _isPaused As Boolean = False
     Private _isMatchCameraPreWarmed As Boolean = False
+    Private _isMatchingInPreview As Boolean = False ' 防止實時匹配任務重疊雪崩
     Private Enum DetectionFlowStage
         Idle = 0
         Matching = 1
@@ -211,40 +212,27 @@ Partial Class HomePage
     End Sub
     Private Sub GlobalLogReceived(level As String, msg As String)
 
-        Dispatcher.Invoke(Sub()
-
-                              ' 這裡你可以：
-                              ' 1. 更新本頁 log
-                              ' 2. 或丟到共享 log window
-
-                              rtbLog.AppendText($"[{level}] {msg}" & Environment.NewLine)
-                              rtbLog.ScrollToEnd()
-
-                          End Sub)
+        ' 【死鎖修正】
+        ' Logger.WriteToWpfUI 已在 Dispatcher.Invoke 內先操作 RichTextBox，
+        ' 完成後才在 UI 執行緒上 RaiseEvent LogReceived。
+        ' 若此處用 Dispatcher.Invoke，UI 執行緒得待完自己，造成死鎖。
+        ' 改用 BeginInvoke 非同步派送。
+        ' 注意：Logger.SetWpfRichTextBox(rtbLog) 已經讓 Logger 直接寫入 rtbLog，
+        ' GlobalLogReceived 不需要再重複寫入同一個 RichTextBox。
+        ' 如果未來需要態連其他 UI 控件，可在這裡使用 BeginInvoke。
 
     End Sub
-    ' =========================================
-    ' Show Render
-    ' =========================================
-    ' =========================================
-    ' Show Render (修正版)
-    ' =========================================
     Public Async Sub ShowRender(mat As Mat)
-        ' 【防禦 1】基本有效性檢查
         If mat Is Nothing OrElse mat.IsDisposed OrElse mat.CvPtr = IntPtr.Zero Then Return
+        If _flowStage <> DetectionFlowStage.Matching Then Return
 
-        ' 如果當前不是定位匹配階段，直接顯示原生畫面
-        If _flowStage <> DetectionFlowStage.Matching Then
-            RenderImage.Source = mat.ToWriteableBitmap()
-            Return
-        End If
+        ' 雙重防重入鎖，避免多個 Task 同時在背景 match 導致 CPU 暴斃
+        If _isMatchingInPreview Then Return
+        _isMatchingInPreview = True
 
-        ' =========================
-        ' Template Name & Cache Check
-        ' =========================
         Dim templatePath = LastTemplateStore.Load()
         If String.IsNullOrWhiteSpace(templatePath) Then
-            RenderImage.Source = mat.ToWriteableBitmap()
+            _isMatchingInPreview = False
             Return
         End If
 
@@ -252,20 +240,16 @@ Partial Class HomePage
         Dim data = TemplateCache.GetTemplate(templateName)
 
         If data Is Nothing Then
-            RenderImage.Source = mat.ToWriteableBitmap()
+            _isMatchingInPreview = False
             Return
         End If
 
-        ' =================================================================
-        ' 【核心修復】同步更新子模板快取，並建立獨立複本安全傳入背景執行緒
-        ' =================================================================
         Dim groupPath = IO.Path.GetDirectoryName(templatePath)
         Dim subTemplatesToUse As New List(Of Tuple(Of Object, Mat))()
 
         SyncLock _renderCacheLock
             Try
                 If Not String.Equals(_currentCachedGroupPath, groupPath, StringComparison.OrdinalIgnoreCase) Then
-                    ' 釋放舊的實時子模板 Mat 快取
                     For Each item In _currentCachedSubTemplates
                         If item.Item2 IsNot Nothing AndAlso Not item.Item2.IsDisposed Then
                             item.Item2.Dispose()
@@ -273,7 +257,6 @@ Partial Class HomePage
                     Next
                     _currentCachedSubTemplates.Clear()
 
-                    ' 載入新的子模板
                     Dim subTemplateMetas = TemplateTrainingStore.GetTrainingSamples(groupPath)
                     If subTemplateMetas IsNot Nothing Then
                         For Each subMeta In subTemplateMetas
@@ -284,10 +267,8 @@ Partial Class HomePage
                         Next
                     End If
                     _currentCachedGroupPath = groupPath
-                    Logger.Debug($"[Render] 已載入實時子模板快取，數量={_currentCachedSubTemplates.Count}")
                 End If
 
-                ' 在鎖內 Clone 子模板以供本次 ShowRender 生命週期安全使用，避免異步釋放衝突
                 For Each item In _currentCachedSubTemplates
                     subTemplatesToUse.Add(Tuple.Create(item.Item1, item.Item2.Clone()))
                 Next
@@ -296,104 +277,75 @@ Partial Class HomePage
             End Try
         End SyncLock
 
-        ' 主線程立刻 Clone 當前影格，與全域 _lastFrameMat 徹底切斷生命週期關係！
         Dim matCopyForMatch As Mat = Nothing
-        Try
-            matCopyForMatch = mat.Clone()
-        Catch ex As Exception
-            System.Diagnostics.Debug.WriteLine($"[Render] 主線程 Clone 失敗: {ex.Message}")
-            ' 釋放本次克隆的子模板
-            For Each item In subTemplatesToUse
-                item.Item2.Dispose()
-            Next
-            Return
-        End Try
-
         Dim bestResult As Draw_opencv.ResultPack = Nothing
         Dim bestScore As Double = 0
-        Dim bestThreshold As Double = data.Config.Threshold
 
         Try
-            ' 1. 執行母版匹配（透過 ProcessAsync 進行 ROI、多層金字塔降採樣與絕對坐標還原）
+            matCopyForMatch = mat.Clone()
+
+            ' 1. 執行母版匹配
             Dim masterResult = Await Draw_opencv.ProcessAsync(matCopyForMatch, data.Template, data.Config)
             If masterResult IsNot Nothing Then
                 bestResult = masterResult
                 bestScore = masterResult.Score
-                bestThreshold = data.Config.Threshold
             End If
 
-            ' 2. 若母版未匹配 OK，且有子模板，則循環匹配子模板，實時顯示最高分或匹配 OK 的渲染
+            ' 2. 母版未 OK 時，比對子模板
             If (bestResult Is Nothing OrElse Not bestResult.IsOk) AndAlso subTemplatesToUse.Count > 0 Then
                 For Each item In subTemplatesToUse
                     Dim subMeta = item.Item1
                     Dim subMat = item.Item2
                     Dim subConfig As New TemplateConfig With {
-                        .Threshold = If(subMeta.MasterThreshold > 0, subMeta.MasterThreshold, data.Config.Threshold),
-                        .MatchMethod = subMeta.MatchMethod,
-                        .PyramidLevel = subMeta.PyramidLevel,
-                        .CannyLow = If(subMeta.CannyLow > 0, subMeta.CannyLow, data.Config.CannyLow),
-                        .CannyHigh = If(subMeta.CannyHigh > 0, subMeta.CannyHigh, data.Config.CannyHigh),
-                        .RoiX = data.Config.RoiX, .RoiY = data.Config.RoiY,
-                        .RoiW = data.Config.RoiW, .RoiH = data.Config.RoiH
-                    }
+                    .Threshold = If(subMeta.MasterThreshold > 0, subMeta.MasterThreshold, data.Config.Threshold),
+                    .MatchMethod = subMeta.MatchMethod,
+                    .PyramidLevel = subMeta.PyramidLevel,
+                    .CannyLow = If(subMeta.CannyLow > 0, subMeta.CannyLow, data.Config.CannyLow),
+                    .CannyHigh = If(subMeta.CannyHigh > 0, subMeta.CannyHigh, data.Config.CannyHigh),
+                    .RoiX = data.Config.RoiX, .RoiY = data.Config.RoiY,
+                    .RoiW = data.Config.RoiW, .RoiH = data.Config.RoiH
+                }
 
                     Dim subResult = Await Draw_opencv.ProcessAsync(matCopyForMatch, subMat, subConfig)
                     If subResult IsNot Nothing Then
-                        ' 如果此子模板匹配成功，或者分數比之前更好，則更新為最佳渲染影像
                         If bestResult Is Nothing OrElse (subResult.IsOk AndAlso Not bestResult.IsOk) OrElse (subResult.Score > bestScore) Then
                             If bestResult IsNot Nothing AndAlso bestResult.Mat IsNot Nothing Then
                                 bestResult.Mat.Dispose()
                             End If
                             bestResult = subResult
                             bestScore = subResult.Score
-                            bestThreshold = subConfig.Threshold
                         Else
                             subResult.Mat?.Dispose()
                         End If
-
-                        ' 若已匹配 OK 則提前跳出以節省實時渲染 CPU 開銷
                         If subResult.IsOk Then Exit For
                     End If
                 Next
             End If
 
-            ' 【核心釋放】當 Await 結束，背景運算都結束了，必須立刻釋放此影格副本
+            ' 釋放複製影格
             If matCopyForMatch IsNot Nothing AndAlso Not matCopyForMatch.IsDisposed Then
                 matCopyForMatch.Dispose()
                 matCopyForMatch = Nothing
             End If
 
-            If bestResult Is Nothing Then Return
-
-            ' 【防禦 2】二次檢查：異步運算回傳時，確認是否還在 Matching 階段
-            If _flowStage <> DetectionFlowStage.Matching Then
-                If bestResult.Mat IsNot Nothing AndAlso Not bestResult.Mat.IsDisposed Then
+            ' 3. Render 渲染繪製
+            If _flowStage = DetectionFlowStage.Matching AndAlso bestResult IsNot Nothing Then
+                If bestResult.Mat IsNot Nothing AndAlso Not bestResult.Mat.IsDisposed AndAlso bestResult.Mat.CvPtr <> IntPtr.Zero Then
+                    Using display = bestResult.Mat.Clone()
+                        RenderImage.Source = display.ToWriteableBitmap()
+                    End Using
                     bestResult.Mat.Dispose()
                 End If
-                Return
             End If
 
-            ' =========================
-            ' Render Overlay
-            ' =========================
-            If bestResult.Mat IsNot Nothing AndAlso Not bestResult.Mat.IsDisposed AndAlso bestResult.Mat.CvPtr <> IntPtr.Zero Then
-                Using display = bestResult.Mat.Clone()
-                    RenderImage.Source = display.ToWriteableBitmap()
-                End Using
-                bestResult.Mat.Dispose()
-            End If
-
-        Catch ex As ObjectDisposedException
-            ' 安靜跳過時間差釋放異常
         Catch ex As Exception
-            Logger.Error($"ShowRender error: {ex.Message}")
+            Logger.Error($"ShowRender 異常: {ex.Message}")
         Finally
-            ' 雙重保險：確保副本一定被釋放
+            ' 確保所有資源安全釋放，防堵記憶體洩漏
+            _isMatchingInPreview = False
             If matCopyForMatch IsNot Nothing AndAlso Not matCopyForMatch.IsDisposed Then
                 matCopyForMatch.Dispose()
             End If
-
-            ' 釋放所有被克隆的子模板副本，防止記憶體洩漏
             For Each item In subTemplatesToUse
                 If item.Item2 IsNot Nothing AndAlso Not item.Item2.IsDisposed Then
                     item.Item2.Dispose()
@@ -403,11 +355,7 @@ Partial Class HomePage
         End Try
     End Sub
     ' 實時畫面流回調
-    ' =================================================================
-    ' 【核心修復】實時畫面流回調（同步更新 Mat 快取，解決匹配錯亂與卡死）
-    ' =================================================================
     Private Sub UpdateFrame(sender As Object, e As EventArgs)
-        ' 1. 根據目前的流程階段，決定從哪台相機拿硬體畫面快取
         Dim targetCamId As String = _matchCameraId
 
         If _flowStage = DetectionFlowStage.Barcode OrElse _flowStage = DetectionFlowStage.Ocr Then
@@ -417,30 +365,28 @@ Partial Class HomePage
         If String.IsNullOrWhiteSpace(targetCamId) Then Return
 
         Try
-            ' 2. 從正確的相機通道獲取影像 (BitmapSource)
             Dim frame = CameraService.Instance.GetFrame(targetCamId)
             If frame Is Nothing Then Return
 
-            ' 3. 分流渲染與快取同步邏輯
             If _flowStage = DetectionFlowStage.Matching Then
-                ' 【關鍵修正】在進入 ShowRender 之前，必須將當前相機通路的最新畫面轉成 Mat 並更新全域暫存
-                ' 這樣 ShowRender 拿到的 _lastFrameMat 才是「活的、當下的實時畫面」，而不是歷史殘留畫面
-                Dim oldMat = _lastFrameMat
+                ' 如果背景匹配任務還在執行，直接把原生畫面丟給 UI（維持 60 FPS 預覽），不進行昂貴的 Mat 轉換與比對
+                If Not _isMatchingInPreview Then
+                    Dim oldMat = _lastFrameMat
+                    _lastFrameMat = frame.ToMat()
 
-                ' 即時將 BitmapSource 轉為 OpenCV 的 Mat 矩陣
-                _lastFrameMat = frame.ToMat()
+                    If oldMat IsNot Nothing AndAlso Not oldMat.IsDisposed Then
+                        oldMat.Dispose()
+                    End If
 
-                ' 安全釋放上一幀的 Mat 記憶體，防止託管與非託管記憶體洩漏 (Memory Leak)
-                If oldMat IsNot Nothing AndAlso Not oldMat.IsDisposed Then
-                    oldMat.Dispose()
-                End If
-
-                ' 呼叫匹配與渲染
-                If _lastFrameMat IsNot Nothing AndAlso Not _lastFrameMat.IsDisposed Then
-                    ShowRender(_lastFrameMat)
+                    If _lastFrameMat IsNot Nothing AndAlso Not _lastFrameMat.IsDisposed Then
+                        ShowRender(_lastFrameMat)
+                    End If
+                Else
+                    ' 匹配忙碌中，只更新畫面，不跑演算法
+                    RenderImage.Source = frame
                 End If
             Else
-                ' 非匹配定位階段（條碼、OCR 階段）：直接顯示原生相機畫面，不畫定位框，不跑 Match 演算法
+                ' 非匹配階段，直接顯示
                 RenderImage.Source = frame
             End If
 
@@ -500,13 +446,17 @@ Partial Class HomePage
     ''' </summary>
     ' 設定頁變更後的動態套用
     Private Sub OnCameraChanged()
-        Dispatcher.Invoke(Sub()
-                              Try
-                                  RefreshCameraComboBox() ' 更新本頁的 _matchCameraId 與 _ocrCameraId 變數
-                              Catch ex As Exception
-                                  Logger.Error($"[Camera] 刷新相機清單失敗: {ex.Message}")
-                              End Try
-                          End Sub)
+        ' 【死鎖修正】
+        ' CameraChanged 事件可能直接在 UI 執行緒上被呼叫（例如從 CameraComboBox_SelectionChanged）。
+        ' 若此時使用 Dispatcher.Invoke（同步），UI 執行緒會等待自己完成，造成死鎖。
+        ' 改用 Dispatcher.BeginInvoke（非同步派送）讓 UI 執行緒立即返回，避免死鎖。
+        Dispatcher.BeginInvoke(Sub()
+                                   Try
+                                       RefreshCameraComboBox() ' 更新本頁的 _matchCameraId 與 _ocrCameraId 變數
+                                   Catch ex As Exception
+                                       Logger.Error($"[Camera] 刷新相機清單失敗: {ex.Message}")
+                                   End Try
+                               End Sub)
 
         Task.Run(Sub()
                      Dim ids = My.Settings.CameraDeviceIds

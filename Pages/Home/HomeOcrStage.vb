@@ -1,4 +1,4 @@
-﻿Imports System.IO
+Imports System.IO
 Imports System.Text
 Imports System.Threading
 Imports System.Windows
@@ -98,87 +98,116 @@ Partial Class HomePage
                     Dispatcher.BeginInvoke(Sub() RenderImage.Source = frameCopy, System.Windows.Threading.DispatcherPriority.Render)
                 End If
 
-                Dim result = Await Task.Run(Async Function()
-                                                Dim localBestText As String = ""
-                                                Dim localBestScore As Double = 0
+                Dim flowResult As OcrFlowResult = Nothing
 
-                                                Using mat = BitmapSourceToMat(frameCopy)
-                                                    Dim roi = ResolveRoi(snapshot, mat)
+                If isAiMode Then
+                    ' AI 方式: 直接在當前(UI)執行緒呼叫非同步 Ollama 服務，不使用 Task.Run 避免巢狀 Task 與後期繫結問題
+                    Dim localBestText As String = ""
+                    Dim localBestScore As Double = 0
+                    Dim localIsMatched As Boolean = False
 
-                                                    If roi.Width < 10 OrElse roi.Height < 10 Then
-                                                        roi = New OpenCvSharp.Rect(0, 0, mat.Width, mat.Height)
-                                                    End If
+                    Using mat = BitmapSourceToMat(frameCopy)
+                        Dim roi = ResolveRoi(snapshot, mat)
+                        If roi.Width < 10 OrElse roi.Height < 10 Then
+                            roi = New OpenCvSharp.Rect(0, 0, mat.Width, mat.Height)
+                        End If
 
-                                                    If isAiMode Then
-                                                        ' AI 方式: 直接呼叫 Ollama 服務
-                                                        Dim ocrResult = Await AppRuntime.OllamaOCR.RunRoiAsync(mat, roi)
-                                                        If ocrResult IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(ocrResult.Text) Then
-                                                            Dim cleanedText = ocrResult.Text.Trim()
-                                                            Logger.Info($"[LLMOCR] 即時識別結果: '{cleanedText}' (Score={ocrResult.Score:F3})")
+                        Dim ocrResult = Await AppRuntime.OllamaOCR.RunRoiAsync(mat, roi)
+                        If ocrResult IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(ocrResult.Text) Then
+                            Dim cleanedText = ocrResult.Text.Trim()
+                            Logger.Info($"[LLMOCR] 即時識別結果: '{cleanedText}' (Score={ocrResult.Score:F3})")
 
-                                                            If expectedTexts.Count > 0 Then
-                                                                For Each expected In expectedTexts
-                                                                    If cleanedText.Contains(expected) Then
-                                                                        Logger.Info($"[FLOW] OllamaOCR 命中模板期望文本: 期望={expected}, 識別={cleanedText}")
-                                                                        Return New With {.Text = cleanedText, .Score = ocrResult.Score, .IsMatched = True}
-                                                                    End If
-                                                                Next
-                                                            End If
+                            If expectedTexts.Count > 0 Then
+                                For Each expected In expectedTexts
+                                    If cleanedText.Contains(expected) Then
+                                        Logger.Info($"[FLOW] OllamaOCR 命中模板期望文本: 期望={expected}, 識別={cleanedText}")
+                                        localIsMatched = True
+                                        Exit For
+                                    End If
+                                Next
+                            End If
 
-                                                            localBestScore = ocrResult.Score
-                                                            localBestText = cleanedText
+                            localBestScore = ocrResult.Score
+                            localBestText = cleanedText
+                        End If
+                    End Using
+
+                    flowResult = New OcrFlowResult With {
+                        .Text = localBestText,
+                        .Score = localBestScore,
+                        .IsMatched = localIsMatched
+                    }
+                Else
+                    ' 標準方式: 旋轉角度多重 OCR (CPU 密集型，交給背景 ThreadPool 執行)
+                    ' 使用同步 Function() As OcrFlowResult 讓 Task.Run 返回 Task(Of OcrFlowResult) 供正確 Await
+                    flowResult = Await Task.Run(
+                        Function() As OcrFlowResult
+                            Dim localBestText As String = ""
+                            Dim localBestScore As Double = 0
+
+                            Using mat = BitmapSourceToMat(frameCopy)
+                                Dim roi = ResolveRoi(snapshot, mat)
+                                If roi.Width < 10 OrElse roi.Height < 10 Then
+                                    roi = New OpenCvSharp.Rect(0, 0, mat.Width, mat.Height)
+                                End If
+
+                                Using roiMat = New Cv.Mat(mat, roi)
+                                    For Each angle In angles
+                                        Using rotatedRoi = RotateMat(roiMat, angle)
+                                            Dim fullRoi = New OpenCvSharp.Rect(0, 0, rotatedRoi.Width, rotatedRoi.Height)
+                                            Dim ocrResult = AppRuntime.OCR.RunRoi(rotatedRoi, fullRoi)
+
+                                            If ocrResult IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(ocrResult.Text) Then
+                                                Dim cleanedText = ocrResult.Text.Trim()
+                                                Logger.Info($"[OCR] 即時識別結果 (角度 {angle}°): '{cleanedText}' (Score={ocrResult.Score:F3})")
+
+                                                ' 只要設定了期望字串，且目前辨識結果包含它，立刻無視置信度直接回傳
+                                                If expectedTexts.Count > 0 Then
+                                                    For Each expected In expectedTexts
+                                                        If cleanedText.Contains(expected) Then
+                                                            Logger.Info($"[FLOW] OCR 命中模板期望文本 (無視置信度): 期望={expected}, 識別={cleanedText}")
+                                                            Return New OcrFlowResult With {
+                                                                .Text = cleanedText,
+                                                                .Score = ocrResult.Score,
+                                                                .IsMatched = True
+                                                            }
                                                         End If
-                                                    Else
-                                                        ' 標準方式: 旋轉角度多重 OCR
-                                                        Using roiMat = New Cv.Mat(mat, roi)
-                                                            For Each angle In angles
-                                                                Using rotatedRoi = RotateMat(roiMat, angle)
-                                                                    Dim fullRoi = New OpenCvSharp.Rect(0, 0, rotatedRoi.Width, rotatedRoi.Height)
-                                                                    Dim ocrResult = AppRuntime.OCR.RunRoi(rotatedRoi, fullRoi)
+                                                    Next
+                                                End If
 
-                                                                    If ocrResult IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(ocrResult.Text) Then
-                                                                        Dim cleanedText = ocrResult.Text.Trim()
-                                                                        Logger.Info($"[OCR] 即時識別結果 (角度 {angle}°): '{cleanedText}' (Score={ocrResult.Score:F3})")
+                                                ' 若無期望文本，則走原本的「最高分保底」邏輯
+                                                If ocrResult.Score > localBestScore Then
+                                                    localBestScore = ocrResult.Score
+                                                    localBestText = cleanedText
+                                                End If
+                                            End If
+                                        End Using
+                                    Next
+                                End Using
+                            End Using
 
-                                                                        ' 只要設定了期望字串，且目前辨識結果包含它，立刻無視置信度直接回傳
-                                                                        If expectedTexts.Count > 0 Then
-                                                                            For Each expected In expectedTexts
-                                                                                If cleanedText.Contains(expected) Then
-                                                                                    Logger.Info($"[FLOW] OCR 命中模板期望文本 (無視置信度): 期望={expected}, 識別={cleanedText}")
-                                                                                    Return New With {.Text = cleanedText, .Score = ocrResult.Score, .IsMatched = True}
-                                                                                End If
-                                                                            Next
-                                                                        End If
-
-                                                                        ' 若無期望文本，則走原本的「最高分保底」邏輯
-                                                                        If ocrResult.Score > localBestScore Then
-                                                                            localBestScore = ocrResult.Score
-                                                                            localBestText = cleanedText
-                                                                        End If
-                                                                    End If
-                                                                End Using
-                                                            Next
-                                                        End Using
-                                                    End If
-                                                End Using
-
-                                                Return New With {.Text = localBestText, .Score = localBestScore, .IsMatched = False}
-                                            End Function)
-
-                If result.IsMatched Then
-                    Return result.Text
+                            Return New OcrFlowResult With {
+                                .Text = localBestText,
+                                .Score = localBestScore,
+                                .IsMatched = False
+                            }
+                        End Function)
                 End If
 
-                If Not String.IsNullOrWhiteSpace(result.Text) Then
-                    If result.Score > bestScore Then
-                        bestScore = result.Score
-                        bestText = result.Text
+                If flowResult.IsMatched Then
+                    Return flowResult.Text
+                End If
+
+                If Not String.IsNullOrWhiteSpace(flowResult.Text) Then
+                    If flowResult.Score > bestScore Then
+                        bestScore = flowResult.Score
+                        bestText = flowResult.Text
                     End If
 
                     ' 無期望文本時的高置信度提前中斷
-                    If expectedTexts.Count = 0 AndAlso result.Score >= 0.8 Then
-                        Logger.Info($"[FLOW] OCR 高置信度識別成功 (無期望文本): {result.Text} (Score={result.Score:F3})")
-                        Return result.Text
+                    If expectedTexts.Count = 0 AndAlso flowResult.Score >= 0.8 Then
+                        Logger.Info($"[FLOW] OCR 高置信度識別成功 (無期望文本): {flowResult.Text} (Score={flowResult.Score:F3})")
+                        Return flowResult.Text
                     End If
                 End If
             Else
@@ -200,4 +229,10 @@ Partial Class HomePage
         Logger.Warn("[FLOW] OCR 超時，未識別到任何有效文本")
         Return ""
     End Function
+End Class
+
+Public Class OcrFlowResult
+    Public Property Text As String = ""
+    Public Property Score As Double = 0
+    Public Property IsMatched As Boolean = False
 End Class
