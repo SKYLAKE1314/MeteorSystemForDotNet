@@ -114,7 +114,7 @@ Partial Class HomePage
                                                         Dim ocrResult = Await AppRuntime.OllamaOCR.RunRoiAsync(mat, roi)
                                                         If ocrResult IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(ocrResult.Text) Then
                                                             Dim cleanedText = ocrResult.Text.Trim()
-                                                            Logger.Debug($"[OllamaOCR] Text={cleanedText} Score={ocrResult.Score:F3}")
+                                                            Logger.Info($"[LLMOCR] 即時識別結果: '{cleanedText}' (Score={ocrResult.Score:F3})")
 
                                                             If expectedTexts.Count > 0 Then
                                                                 For Each expected In expectedTexts
@@ -138,7 +138,7 @@ Partial Class HomePage
 
                                                                     If ocrResult IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(ocrResult.Text) Then
                                                                         Dim cleanedText = ocrResult.Text.Trim()
-                                                                        Logger.Debug($"[OCR] Angle={angle} Text={cleanedText} Score={ocrResult.Score:F3}")
+                                                                        Logger.Info($"[OCR] 即時識別結果 (角度 {angle}°): '{cleanedText}' (Score={ocrResult.Score:F3})")
 
                                                                         ' 只要設定了期望字串，且目前辨識結果包含它，立刻無視置信度直接回傳
                                                                         If expectedTexts.Count > 0 Then

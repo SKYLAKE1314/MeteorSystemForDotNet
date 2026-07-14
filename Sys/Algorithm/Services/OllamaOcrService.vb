@@ -10,6 +10,35 @@ Public Class OllamaOcrService
     }
 
     ''' <summary>
+    ''' 在啟動或初始化時預先載入 (Load) Ollama 的 glm-ocr 模型到 GPU/記憶體中，防止首次檢測時發生嚴重延遲
+    ''' </summary>
+    Public Async Function PreloadModelAsync() As Task
+        Try
+            Logger.Info("[OllamaOCR] 開始預先載入 glm-ocr 模型...")
+
+            ' 在 Ollama 中，可以透過只提供模型名稱、空 Prompt 且不帶圖像的方式發送 /api/generate
+            ' 這會驅動 Ollama 將指定模型加載到 GPU/VRAM 記憶體中。
+            Dim preloadPayload As New Dictionary(Of String, Object) From {
+                {"model", "gml-ocr"},
+                {"prompt", ""},
+                {"stream", False}
+            }
+
+            Dim jsonContent = JsonSerializer.Serialize(preloadPayload)
+            Dim content As New StringContent(jsonContent, Encoding.UTF8, "application/json")
+
+            Dim response = Await _httpClient.PostAsync("http://127.0.0.1:11434/api/generate", content)
+            If response.IsSuccessStatusCode Then
+                Logger.Info("[OllamaOCR] glm-ocr 模型預先載入成功！已常駐記憶體。")
+            Else
+                Logger.Warn($"[OllamaOCR] 模型載入回傳狀態不正常，HTTP: {response.StatusCode}。將在實際檢測時載入。")
+            End If
+        Catch ex As Exception
+            Logger.Warn($"[OllamaOCR] 預加載模型失敗（本機 Ollama 可能未啟動）: {ex.Message}")
+        End Try
+    End Function
+
+    ''' <summary>
     ''' 使用 Ollama 呼叫 gml-ocr 模型進行 OCR 辨識
     ''' </summary>
     ''' <param name="src">輸入的 OpenCvSharp Mat 影像</param>
@@ -70,7 +99,7 @@ Public Class OllamaOcrService
                     Logger.Info($"[OllamaOCR] 識別成功: {textResult}")
                     Return New OcrResultInfo With {
                         .Text = textResult,
-                        .Score = 0.95 ' LLM 一般不給像素級置信度，返回高分保底
+                        .Score = 0.8 ' LLM 一般不給像素級置信度，返回高分保底
                     }
                 End If
             End Using

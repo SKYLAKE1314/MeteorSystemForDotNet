@@ -37,9 +37,7 @@ Class Application
                            InitializeCore()
                        End Sub)
 
-        ' =========================
         ' Open Main UI
-        ' =========================
         Dim main As New MainWindow()
         main.Show()
 
@@ -86,6 +84,11 @@ Class Application
 
         AppRuntime.OCR = New PaddleOcrService()
         AppRuntime.OllamaOCR = New OllamaOcrService()
+
+        ' 於應用程式初始化階段，在背景安全執行 Ollama OCR (gml-ocr) 預先載入，避免檢測時首次載入延遲
+        Task.Run(Async Function()
+                     Await AppRuntime.OllamaOCR.PreloadModelAsync()
+                 End Function)
 
         AppProgress.Report(90, "初始化Barcode")
 

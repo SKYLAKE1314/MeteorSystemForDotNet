@@ -21,6 +21,11 @@ Partial Class HomePage
     Private _isStreaming As Boolean = False
     Private _wasStreamingBeforeUnload As Boolean = False
 
+    ' 實時預覽匹配快取
+    Private _currentCachedGroupPath As String = ""
+    Private _currentCachedSubTemplates As New List(Of Tuple(Of Object, Mat))()
+    Private _renderCacheLock As New Object()
+
     Private _detectLock As New Object()
     Private _isDetecting As Boolean = False
     Private _isPaused As Boolean = False
@@ -168,6 +173,17 @@ Partial Class HomePage
         RemoveHandler CameraManager.CameraChanged, AddressOf OnCameraChanged
         RemoveHandler CameraService.Instance.FrameArrived, AddressOf OnFrameArrived
 
+        ' 釋放實時預覽子模板快取記憶體
+        SyncLock _renderCacheLock
+            For Each item In _currentCachedSubTemplates
+                If item.Item2 IsNot Nothing AndAlso Not item.Item2.IsDisposed Then
+                    item.Item2.Dispose()
+                End If
+            Next
+            _currentCachedSubTemplates.Clear()
+            _currentCachedGroupPath = ""
+        End SyncLock
+
         ' 如果當前正在串流，且背景沒有執行任務錄影，離開頁面時才暫時關閉相機
         If _isStreaming Then
             Dim isRecording = (TaskVideoRecorder.Instance.GetCurrentInfo() IsNot Nothing)
@@ -241,65 +257,130 @@ Partial Class HomePage
         End If
 
         ' =================================================================
-        ' 【核心修復】主線程立刻 Clone，與全域 _lastFrameMat 徹底切斷生命週期關係！
+        ' 【核心修復】同步更新子模板快取，並建立獨立複本安全傳入背景執行緒
         ' =================================================================
-        ' 不要在 MatchAsync 內部才 Clone！必須在當前主線程立刻複製一份。
-        ' 這樣不論 UpdateFrame 接下來怎麼 Dispose 或更新 _lastFrameMat，背景 Task 都不會受到干擾。
+        Dim groupPath = IO.Path.GetDirectoryName(templatePath)
+        Dim subTemplatesToUse As New List(Of Tuple(Of Object, Mat))()
+
+        SyncLock _renderCacheLock
+            Try
+                If Not String.Equals(_currentCachedGroupPath, groupPath, StringComparison.OrdinalIgnoreCase) Then
+                    ' 釋放舊的實時子模板 Mat 快取
+                    For Each item In _currentCachedSubTemplates
+                        If item.Item2 IsNot Nothing AndAlso Not item.Item2.IsDisposed Then
+                            item.Item2.Dispose()
+                        End If
+                    Next
+                    _currentCachedSubTemplates.Clear()
+
+                    ' 載入新的子模板
+                    Dim subTemplateMetas = TemplateTrainingStore.GetTrainingSamples(groupPath)
+                    If subTemplateMetas IsNot Nothing Then
+                        For Each subMeta In subTemplateMetas
+                            Dim subMat = TemplateTrainingStore.LoadTrainingSampleImage(groupPath, subMeta.FileName)
+                            If subMat IsNot Nothing Then
+                                _currentCachedSubTemplates.Add(Tuple.Create(DirectCast(subMeta, Object), subMat))
+                            End If
+                        Next
+                    End If
+                    _currentCachedGroupPath = groupPath
+                    Logger.Debug($"[Render] 已載入實時子模板快取，數量={_currentCachedSubTemplates.Count}")
+                End If
+
+                ' 在鎖內 Clone 子模板以供本次 ShowRender 生命週期安全使用，避免異步釋放衝突
+                For Each item In _currentCachedSubTemplates
+                    subTemplatesToUse.Add(Tuple.Create(item.Item1, item.Item2.Clone()))
+                Next
+            Catch ex As Exception
+                System.Diagnostics.Debug.WriteLine($"[Render] 準備子模板快取失敗: {ex.Message}")
+            End Try
+        End SyncLock
+
+        ' 主線程立刻 Clone 當前影格，與全域 _lastFrameMat 徹底切斷生命週期關係！
         Dim matCopyForMatch As Mat = Nothing
         Try
             matCopyForMatch = mat.Clone()
         Catch ex As Exception
             System.Diagnostics.Debug.WriteLine($"[Render] 主線程 Clone 失敗: {ex.Message}")
+            ' 釋放本次克隆的子模板
+            For Each item In subTemplatesToUse
+                item.Item2.Dispose()
+            Next
             Return
         End Try
 
-        Try
-            ' 將這個絕對安全的獨立副本送進去運算
-            Dim result = Await TemplateMatcher.MatchAsync(
-                matCopyForMatch,
-                data.Template,
-                data.Config.Threshold,
-                data.Config.MatchMethod)
+        Dim bestResult As Draw_opencv.ResultPack = Nothing
+        Dim bestScore As Double = 0
+        Dim bestThreshold As Double = data.Config.Threshold
 
-            ' 【核心釋放】當 Await 結束，不論成功與否，背景運算都結束了，必須立刻釋放此副本
+        Try
+            ' 1. 執行母版匹配（透過 ProcessAsync 進行 ROI、多層金字塔降採樣與絕對坐標還原）
+            Dim masterResult = Await Draw_opencv.ProcessAsync(matCopyForMatch, data.Template, data.Config)
+            If masterResult IsNot Nothing Then
+                bestResult = masterResult
+                bestScore = masterResult.Score
+                bestThreshold = data.Config.Threshold
+            End If
+
+            ' 2. 若母版未匹配 OK，且有子模板，則循環匹配子模板，實時顯示最高分或匹配 OK 的渲染
+            If (bestResult Is Nothing OrElse Not bestResult.IsOk) AndAlso subTemplatesToUse.Count > 0 Then
+                For Each item In subTemplatesToUse
+                    Dim subMeta = item.Item1
+                    Dim subMat = item.Item2
+                    Dim subConfig As New TemplateConfig With {
+                        .Threshold = If(subMeta.MasterThreshold > 0, subMeta.MasterThreshold, data.Config.Threshold),
+                        .MatchMethod = subMeta.MatchMethod,
+                        .PyramidLevel = subMeta.PyramidLevel,
+                        .CannyLow = If(subMeta.CannyLow > 0, subMeta.CannyLow, data.Config.CannyLow),
+                        .CannyHigh = If(subMeta.CannyHigh > 0, subMeta.CannyHigh, data.Config.CannyHigh),
+                        .RoiX = data.Config.RoiX, .RoiY = data.Config.RoiY,
+                        .RoiW = data.Config.RoiW, .RoiH = data.Config.RoiH
+                    }
+
+                    Dim subResult = Await Draw_opencv.ProcessAsync(matCopyForMatch, subMat, subConfig)
+                    If subResult IsNot Nothing Then
+                        ' 如果此子模板匹配成功，或者分數比之前更好，則更新為最佳渲染影像
+                        If bestResult Is Nothing OrElse (subResult.IsOk AndAlso Not bestResult.IsOk) OrElse (subResult.Score > bestScore) Then
+                            If bestResult IsNot Nothing AndAlso bestResult.Mat IsNot Nothing Then
+                                bestResult.Mat.Dispose()
+                            End If
+                            bestResult = subResult
+                            bestScore = subResult.Score
+                            bestThreshold = subConfig.Threshold
+                        Else
+                            subResult.Mat?.Dispose()
+                        End If
+
+                        ' 若已匹配 OK 則提前跳出以節省實時渲染 CPU 開銷
+                        If subResult.IsOk Then Exit For
+                    End If
+                Next
+            End If
+
+            ' 【核心釋放】當 Await 結束，背景運算都結束了，必須立刻釋放此影格副本
             If matCopyForMatch IsNot Nothing AndAlso Not matCopyForMatch.IsDisposed Then
                 matCopyForMatch.Dispose()
                 matCopyForMatch = Nothing
             End If
 
-            If result Is Nothing Then Return
+            If bestResult Is Nothing Then Return
 
             ' 【防禦 2】二次檢查：異步運算回傳時，確認是否還在 Matching 階段
             If _flowStage <> DetectionFlowStage.Matching Then
-                ' 如果階段已經變了，直接把結果影像銷毀，拒絕渲染舊框
-                If result.ResultImage IsNot Nothing AndAlso Not result.ResultImage.IsDisposed Then
-                    result.ResultImage.Dispose()
+                If bestResult.Mat IsNot Nothing AndAlso Not bestResult.Mat.IsDisposed Then
+                    bestResult.Mat.Dispose()
                 End If
                 Return
             End If
 
             ' =========================
-            ' Render Overlay (畫框 + 分數)
+            ' Render Overlay
             ' =========================
-            If result.ResultImage IsNot Nothing AndAlso Not result.ResultImage.IsDisposed AndAlso result.ResultImage.CvPtr <> IntPtr.Zero Then
-                Using display = result.ResultImage.Clone()
-                    Dim text As String = $"Score: {result.Score:F3} (Stage: Matching)"
-                    Dim org As New OpenCvSharp.Point(20, 40)
-
-                    Cv2.PutText(
-                        display,
-                        text,
-                        org,
-                        HersheyFonts.HersheySimplex,
-                        1.0,
-                        If(result.IsOk, Scalar.Lime, Scalar.Yellow),
-                        2)
-
+            If bestResult.Mat IsNot Nothing AndAlso Not bestResult.Mat.IsDisposed AndAlso bestResult.Mat.CvPtr <> IntPtr.Zero Then
+                Using display = bestResult.Mat.Clone()
                     RenderImage.Source = display.ToWriteableBitmap()
                 End Using
-
-                ' 記得釋放 result 內帶出來的原圖，避免內存洩漏
-                result.ResultImage.Dispose()
+                bestResult.Mat.Dispose()
             End If
 
         Catch ex As ObjectDisposedException
@@ -311,6 +392,14 @@ Partial Class HomePage
             If matCopyForMatch IsNot Nothing AndAlso Not matCopyForMatch.IsDisposed Then
                 matCopyForMatch.Dispose()
             End If
+
+            ' 釋放所有被克隆的子模板副本，防止記憶體洩漏
+            For Each item In subTemplatesToUse
+                If item.Item2 IsNot Nothing AndAlso Not item.Item2.IsDisposed Then
+                    item.Item2.Dispose()
+                End If
+            Next
+            subTemplatesToUse.Clear()
         End Try
     End Sub
     ' 實時畫面流回調
