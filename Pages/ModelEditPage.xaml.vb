@@ -224,6 +224,22 @@ Class ModelEditPage
             MessageBox.Show(LanguageManager.T("ModelEdit_ErrorRevise") & ": " & ex.Message)
         End Try
     End Sub
+    ' 強制綁定視窗擁有者，修正莫名其妙的 Owner 為 Nothing 的問題，避免對話框失控。
+    Private Sub BindOwnerSafely(dlg As Window)
+        If dlg Is Nothing Then Return
+
+        Dim parentWindow As Window = Window.GetWindow(Me)
+
+        If parentWindow IsNot Nothing AndAlso Not Object.ReferenceEquals(parentWindow, dlg) Then
+            dlg.Owner = parentWindow
+        Else
+            ' 如果真的沒有父視窗，再退而求其次找 Application.MainWindow
+            Dim mainWindow = Application.Current?.MainWindow
+            If mainWindow IsNot Nothing AndAlso Not Object.ReferenceEquals(mainWindow, dlg) Then
+                dlg.Owner = mainWindow
+            End If
+        End If
+    End Sub
 
     Private Sub BtnTrain_Click(sender As Object, e As RoutedEventArgs)
         Dim btn = TryCast(sender, Button)
@@ -235,13 +251,11 @@ Class ModelEditPage
         Try
             Dim dlg As New TemplateTrainDialog(groupPath)
 
-            ' 安全地設定 Owner，避免自引用錯誤
-            Dim mainWindow = Application.Current?.MainWindow
-            If mainWindow IsNot Nothing AndAlso dlg IsNot mainWindow Then
-                dlg.Owner = mainWindow
-            End If
+            ' 交給蘇蘇來牢牢綁定 Owner，絕對不會讓它再失控了嗷~
+            BindOwnerSafely(dlg)
 
             dlg.ShowDialog()
+
             ' 訓練完成後清除快取，確保匹配時拿到最新子模板
             TemplateTrainingStore.InvalidateCache(groupPath)
             ReloadTemplateList()
@@ -297,17 +311,16 @@ Class ModelEditPage
 
         Try
             Dim dlg As New TemplateParamEditDialog(groupPath)
-            Dim mainWindow = Application.Current?.MainWindow
-            If mainWindow IsNot Nothing AndAlso dlg IsNot mainWindow Then
-                dlg.Owner = mainWindow
-            End If
+
+            ' 同樣的，編輯參數的視窗也要被牢牢綁住喔~
+            BindOwnerSafely(dlg)
+
             dlg.ShowDialog()
             ReloadTemplateList()
         Catch ex As Exception
             MessageBox.Show("編輯參數失敗: " & ex.Message)
         End Try
     End Sub
-
     Private Sub RefreshLanguageUI()
         TxtTitle.Text = LanguageManager.T("ModelEdit_Title")
         TbSearch.PlaceholderText = LanguageManager.T("ModelEdit_SearchPlaceholder")

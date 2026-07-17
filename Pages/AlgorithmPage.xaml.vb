@@ -1,10 +1,12 @@
 Imports OpenCvSharp
 Imports OpenCvSharp.WpfExtensions
 Imports System.Windows
+Imports System.Windows.Controls
 Imports System.Windows.Input
+Imports System.Windows.Media
+Imports System.Windows.Media.Imaging
 
 Imports CvRect = OpenCvSharp.Rect
-
 Imports CvPoint = OpenCvSharp.Point
 Imports WpfPoint = System.Windows.Point
 
@@ -14,10 +16,7 @@ Public Class AlgorithmPage
         InitializeComponent()
 
         AddHandler Me.Loaded, AddressOf AlgorithmPage_Loaded
-
         AddHandler LanguageManager.LanguageChanged, AddressOf RefreshLanguageUI
-
-
     End Sub
 
     ' =========================
@@ -54,35 +53,28 @@ Public Class AlgorithmPage
     ' Loaded
     ' =========================
     Private Async Sub AlgorithmPage_Loaded(sender As Object, e As RoutedEventArgs)
-
         RefreshLanguageUI()
 
         Await Task.Run(Sub()
-
                        End Sub)
 
         ' ⭐ 模板 restore 也背景處理
         Dim lastTemplatePath = LastTemplateStore.Load()
 
         If Not String.IsNullOrWhiteSpace(lastTemplatePath) Then
-
             Dim data = Await Task.Run(Function()
                                           Return TemplateManager.LoadTemplate(lastTemplatePath)
                                       End Function)
 
             If data IsNot Nothing Then
-
                 Dispatcher.Invoke(Sub()
                                       ApplyTemplate(data.Template, data.Config)
                                       TemplateStatusText.Text = "已回復"
                                   End Sub)
-
             End If
-
         End If
-
-
     End Sub
+
 #Region "獲取圖像"
     Private Async Sub GetSource_Click(sender As Object, e As RoutedEventArgs)
         Try
@@ -119,7 +111,6 @@ Public Class AlgorithmPage
             Dim frame = CameraService.Instance.GetFrame(_selectedCameraId)
 
             ' 若無快取幀，訂閱 FrameArrived 等待第一幀（最長 8 秒）
-            ' 比 Thread.Sleep 輪詢更可靠：DSHOW 初始化通常需要 3～8 秒
             If frame Is Nothing Then
                 Dim tcs As New TaskCompletionSource(Of BitmapSource)()
                 Dim targetId = _selectedCameraId
@@ -175,13 +166,12 @@ Public Class AlgorithmPage
         End Try
     End Sub
 #End Region
+
     ' =========================
     ' Load Image
     ' =========================
     Private Sub LoadSource_Click(sender As Object, e As RoutedEventArgs)
-
         SafeRun(Sub()
-
                     Dim path = DialogHelper.OpenImage()
                     If String.IsNullOrWhiteSpace(path) Then Return
 
@@ -192,10 +182,9 @@ Public Class AlgorithmPage
 
                     _autoParamsAppliedOnce = False  ' 新圖：下次生成才套用自動參數
                     ResetUI()
-
                 End Sub)
-
     End Sub
+
     ' =========================
     ' 縮放
     ' =========================
@@ -205,35 +194,28 @@ Public Class AlgorithmPage
     Private isPanning As Boolean = False
     Private lastPanPoint As WpfPoint
     Private Sub Viewer_MouseWheel(sender As Object, e As MouseWheelEventArgs)
-
         Dim scale As ScaleTransform = Nothing
 
         If sender Is ViewerBorder Then
             scale = ImageScale
-
         ElseIf sender Is TemplateBorder Then
             scale = TemplateScale
-
         ElseIf sender Is ResultBorder Then
             scale = ResultScale
         End If
 
         If scale Is Nothing Then Return
 
-        Dim zoomFactor As Double =
-        If(e.Delta > 0, 1.1, 0.9)
+        Dim zoomFactor As Double = If(e.Delta > 0, 1.1, 0.9)
 
         scale.ScaleX *= zoomFactor
         scale.ScaleY *= zoomFactor
-
     End Sub
 
     Private Sub Viewer_MouseDown(sender As Object, e As MouseButtonEventArgs)
-
         If e.MiddleButton <> MouseButtonState.Pressed Then Return
 
         isPanning = True
-
         currentBorder = CType(sender, Border)
 
         If sender Is ViewerBorder Then
@@ -245,13 +227,11 @@ Public Class AlgorithmPage
         End If
 
         lastPanPoint = e.GetPosition(currentBorder)
-
     End Sub
 
     Private currentTranslate As TranslateTransform
     Private currentBorder As Border
     Private Sub Viewer_MouseMove(sender As Object, e As MouseEventArgs)
-
         If Not isPanning Then Return
 
         Dim pos = e.GetPosition(currentBorder)
@@ -263,24 +243,19 @@ Public Class AlgorithmPage
         currentTranslate.Y += dy
 
         lastPanPoint = pos
-
     End Sub
 
     Private Sub Viewer_MouseUp(sender As Object, e As MouseButtonEventArgs)
-
         isPanning = False
-
     End Sub
+
     '觸控調優
     Private Sub ImageHost_ManipulationDelta(sender As Object, e As ManipulationDeltaEventArgs)
-
         zoom *= e.DeltaManipulation.Scale.X
-
         zoom = Math.Max(0.2, Math.Min(5.0, zoom))
 
         ImageScale.ScaleX = zoom
         ImageScale.ScaleY = zoom
-
     End Sub
 
     ' =========================
@@ -295,10 +270,8 @@ Public Class AlgorithmPage
     End Sub
 
     Private Sub RoiCanvas_MouseLeftButtonUp(sender As Object, e As MouseButtonEventArgs)
-
         Try
             _roiCtrl.MouseUp()
-
             _roi = _roiCtrl.Roi
 
             If _roi.Width <= 0 OrElse _roi.Height <= 0 Then
@@ -312,14 +285,12 @@ Public Class AlgorithmPage
             Logger.Error("ROI錯誤：" & ex.ToString())
             ErrorDialogHelper.ShowError("ROI錯誤: " & ex.Message)
         End Try
-
     End Sub
 
     ' =========================
     ' Create Template
     ' =========================
     Private Async Sub CreateTemplate_Click(sender As Object, e As RoutedEventArgs)
-
         Try
             If _srcMat Is Nothing Then
                 MessageBox.Show("No image")
@@ -367,8 +338,7 @@ Public Class AlgorithmPage
 
             TemplateImage.Source = ImageConvertHelper.ToBitmap(result.Item2)
 
-            ' 只在第一次生成時將自動計算參數套用到 UI 滑塊；
-            ' 之後保留使用者手動調整的值，不覆寫
+            ' 只在第一次生成時將自動計算參數套送到 UI 滑塊；之後保留使用者手動調整的值，不覆寫
             If Not _autoParamsApplied Then
                 ApplyAutoParams(result.Item3)
                 _autoParamsApplied = True
@@ -379,45 +349,58 @@ Public Class AlgorithmPage
         Catch ex As Exception
             MessageBox.Show(ex.ToString())
         End Try
-
     End Sub
 
     ' =========================
     ' Match image
     ' =========================
     Private Sub LoadMatch_Click(sender As Object, e As RoutedEventArgs)
-
         SafeRun(Sub()
-
                     If _templateMat Is Nothing Then Return
 
                     Dim path = DialogHelper.OpenImage()
                     If String.IsNullOrWhiteSpace(path) Then Return
 
                     _matchMat = ImageFileService.Load(path)
-
                     RunTemplateMatch()
-
                 End Sub)
-
     End Sub
 
     Private Sub SaveTemplate_Click(sender As Object, e As RoutedEventArgs)
-
         SafeRun(Sub()
-
                     If _templateMat Is Nothing Then Return
 
-                    ' 第一次儲存才詢問父資料夾名稱
+                    If Not String.IsNullOrWhiteSpace(_currentTemplateName) Then
+                        Dim msg = $"目前記憶體中還保留著上一個模板組的名字：【{_currentTemplateName}】喔~" & vbCrLf &
+                                  $"相機孔位：Cam {_selectedCameraSlot + 1}" & vbCrLf & vbCrLf &
+                                  "主人是要覆蓋更新這個舊模板嗎？" & vbCrLf &
+                                  "（選【是】覆蓋舊模板，選【否】為這次的心血建立全新的模板組）"
+
+                        Dim ans = MessageBox.Show(msg, "儲存確認", MessageBoxButton.YesNoCancel, MessageBoxImage.Question)
+
+                        If ans = MessageBoxResult.Cancel Then
+                            Return ' 乖乖聽話取消儲存
+                        End If
+
+                        If ans = MessageBoxResult.No Then
+                            ' 主人想要新的！強制清空舊名字，這樣下面就會重新彈出輸入框了嗷！
+                            _currentTemplateName = ""
+                        End If
+                    End If
+
+                    ' 第一次儲存（或是被上面清空時），詢問新的父資料夾名稱
                     If String.IsNullOrWhiteSpace(_currentTemplateName) Then
                         Dim name = Microsoft.VisualBasic.InputBox(
-                            "請輸入模板組名稱（兩個相機共用此名稱）",
+                            "請輸入全新的模板組名稱（兩個相機將共用此名稱嗷~）",
                             "建立模板組",
                             $"Template_{DateTime.Now:yyyyMMdd_HHmmss}")
+
                         If String.IsNullOrWhiteSpace(name) Then
-                            MessageBox.Show("已取消")
+                            MessageBox.Show("已取消保存")
                             Return
                         End If
+
+                        ' 過濾掉不能當作資料夾名稱的非法字元
                         For Each c In IO.Path.GetInvalidFileNameChars()
                             name = name.Replace(c, "_"c)
                         Next
@@ -425,9 +408,7 @@ Public Class AlgorithmPage
                     End If
 
                     Dim config As New TemplateConfig
-
                     With config
-                        '.CameraDeviceId = _selectedCameraId ' 記錄建模相機
                         .CameraDeviceId = _templateCameraId ' 記錄建模相機
                         .Threshold = ThresholdSlider.Value
                         .MatchMethod = MatchMethodBox.SelectedIndex
@@ -453,10 +434,9 @@ Public Class AlgorithmPage
                     If String.IsNullOrWhiteSpace(path) Then Return
 
                     Dim snapshot As New TemplateSnapshot
-
                     With snapshot
                         .TemplatePath = path
-                        .CameraDeviceId = config.CameraDeviceId ' 依建模相機
+                        .CameraDeviceId = config.CameraDeviceId
                         .Threshold = config.Threshold
                         .MatchMethod = config.MatchMethod
                         .RoiX = config.RoiX
@@ -479,18 +459,16 @@ Public Class AlgorithmPage
                     ' 彈出編輯對話窗
                     Dim dlg As New TemplateEditDialog(snapshot, Nothing)
 
-                    ' 1. 強制指定為 System.Windows.Window
+                    ' 強制指定 Owner，確保對話窗不會亂跑
                     Dim parentWindow As System.Windows.Window = System.Windows.Window.GetWindow(Me)
-
-                    ' 2. 二次檢查時也同樣使用完整名稱
                     If parentWindow IsNot Nothing AndAlso parentWindow IsNot dlg Then
                         dlg.Owner = parentWindow
                     Else
-                        ' Fallback 機制
                         If Application.Current?.MainWindow IsNot Nothing AndAlso Application.Current.MainWindow IsNot dlg Then
                             dlg.Owner = Application.Current.MainWindow
                         End If
                     End If
+
                     Dim res = dlg.ShowDialog()
 
                     If res <> True Then
@@ -501,53 +479,35 @@ Public Class AlgorithmPage
                     TemplateSnapshotStore.Save(snapshot)
                     LastTemplateStore.Save(path)
 
-                    MessageBox.Show($"已保存：{_currentTemplateName}/cam{_selectedCameraSlot + 1}")
+                    MessageBox.Show($"已牢牢保存：{_currentTemplateName}/cam{_selectedCameraSlot + 1} 嗷！")
 
                 End Sub)
-
     End Sub
-
-
-    ' =========================
-    ' Load template manually
-    ' =========================
     Private Sub LoadTemplate_Click(sender As Object, e As RoutedEventArgs)
-
         SafeRun(Sub()
-
                     Dim data = TemplateManager.LoadTemplate()
                     If data Is Nothing Then Return
 
                     ApplyTemplate(data.Template, data.Config)
-
                     LastTemplateStore.Save(data.TemplatePath)
-
                     MessageBox.Show("模板載入成功")
-
                 End Sub)
-
     End Sub
 
-    ' =========================
-    ' Revise loaded template
-    ' =========================
     Private Sub ReviseTemplate_Click(sender As Object, e As RoutedEventArgs)
-
         SafeRun(Sub()
-
                     If _templateMat Is Nothing Then
                         MessageBox.Show("請先載入或生成模板")
                         Return
                     End If
 
-                    ' 以磁碟快照為基礎，但用目前 UI 的 OCR/Barcode 期望文字覆蓋，
-                    ' 避免剛生成未儲存的模板顯示舊模板的資料（導致「換掉母版內容」的感覺）
+                    ' 以磁碟快照為基礎，但用目前 UI 的 OCR/Barcode 期望文字覆蓋
                     Dim snapshot = TemplateSnapshotStore.Load()
                     If snapshot Is Nothing Then
                         snapshot = New TemplateSnapshot()
                     End If
 
-                    ' 以目前 UI 狀態覆蓋期望文字（確保對話框顯示的是當前模板的資料）
+                    ' 以目前 UI 狀態覆蓋期望文字
                     snapshot.OcrExpectedText = RoiText.Text
                     snapshot.BarcodeExpectedText = ResultText.Text
 
@@ -560,26 +520,21 @@ Public Class AlgorithmPage
                         Return
                     End If
 
-                    ' 同步修訂後的期望文字回 UI 文字框，
-                    ' 確保後續「儲存模板」時能讀取到修訂後的最新值
+                    ' 同步修訂後的期望文字回 UI 文字框
                     RoiText.Text = If(snapshot.OcrExpectedText, "")
                     ResultText.Text = If(snapshot.BarcodeExpectedText, "")
 
                     ' 保存修訂後的 snapshot
                     TemplateSnapshotStore.Save(snapshot)
                     MessageBox.Show("模板修訂已保存")
-
                 End Sub)
-
     End Sub
 
     ' =========================
     ' Show revision history
     ' =========================
     Private Sub ShowRevisions_Click(sender As Object, e As RoutedEventArgs)
-
         SafeRun(Sub()
-
                     Dim snapshot = TemplateSnapshotStore.Load()
                     If snapshot Is Nothing OrElse snapshot.Revisions Is Nothing OrElse snapshot.Revisions.Count = 0 Then
                         MessageBox.Show("無修訂歷史")
@@ -620,18 +575,11 @@ Public Class AlgorithmPage
 
                     wnd.Content = textBox
                     wnd.ShowDialog()
-
                 End Sub)
-
     End Sub
 
-    ' =========================
-    ' Show or update template edit dialog
-    ' =========================
     Private Sub ShowTemplateEditDialog(Optional ocrText As String = "", Optional barcodeText As String = "")
-
         SafeRun(Sub()
-
                     Try
                         ' 建立新的 snapshot
                         Dim snapshot As New TemplateSnapshot
@@ -654,18 +602,12 @@ Public Class AlgorithmPage
                     Catch ex As Exception
                         Logger.Error("打開模板編輯窗失敗: " & ex.Message)
                     End Try
-
                 End Sub)
-
     End Sub
 
-
     Private Sub ApplyTemplate(mat As Mat, config As TemplateConfig)
-
         _templateMat = mat
-
         TemplateImage.Source = ImageConvertHelper.ToBitmap(mat)
-
         ThresholdSlider.Value = config.Threshold
         MatchMethodBox.SelectedIndex = config.MatchMethod
 
@@ -675,14 +617,10 @@ Public Class AlgorithmPage
             config.RoiW,
             config.RoiH
         )
-
     End Sub
 
-    ' =========================
     ' Run match
-    ' =========================
     Private Sub RunTemplateMatch()
-
         If _matchMat Is Nothing OrElse _templateMat Is Nothing Then Return
 
         Dim result = TemplateMatcher.Match(
@@ -702,16 +640,11 @@ Public Class AlgorithmPage
             End If
         End If
 
-        ResultImage.Source =
-            ImageConvertHelper.ToBitmap(result.ResultImage)
-
+        ResultImage.Source = ImageConvertHelper.ToBitmap(result.ResultImage)
     End Sub
 
-    ' =========================
     ' Reset UI
-    ' =========================
     Private Sub ResetUI()
-
         _autoParamsApplied = False
         RoiCanvas.Children.Clear()
         _roi = New CvRect()
@@ -724,14 +657,12 @@ Public Class AlgorithmPage
 
         RoiStatusText.Text = "未選擇"
         TemplateStatusText.Text = "未生成"
-
     End Sub
 
     ' OCR
     Private _ocr As PaddleOcrService = AppRuntime.OCR
 
     Private Sub OcrRegion_Click(sender As Object, e As RoutedEventArgs)
-
         Try
             If _srcMat Is Nothing Then
                 MessageBox.Show("請先載入圖片")
@@ -743,36 +674,43 @@ Public Class AlgorithmPage
                 Return
             End If
 
-            Dim roiMat As New Mat(_srcMat, _roi)
-            ResultImage.Source = ImageConvertHelper.ToBitmap(roiMat)
+            ' 1. 先安全裁切出使用者選取的原始 ROI 影像
+            Using rawRoiMat As New Mat(_srcMat, _roi)
+                ' 2. 使用與 WaitOcrResultAsync 100% 相同演算法進行影像增強
+                Using enhancedRoiMat = EnhanceOcrImage(rawRoiMat)
+                    ' 為了直觀，將增強後的結果顯示給建模人員看
+                    ResultImage.Source = ImageConvertHelper.ToBitmap(enhancedRoiMat)
 
-            Dim result = _ocr.RunRoi(_srcMat, _roi)
-            If result Is Nothing Then Return
+                    ' 3. 在經過對比拉伸與銳利化的小圖上進行 OCR 識別
+                    ' 建立對應 enhancedRoiMat 大小的全區 ROI
+                    Dim localRoi = New OpenCvSharp.Rect(0, 0, enhancedRoiMat.Width, enhancedRoiMat.Height)
+                    Dim result = _ocr.RunRoi(enhancedRoiMat, localRoi)
 
-            Dim text As String = result.Text
-            Dim score As Double = result.Score
+                    If result Is Nothing Then Return
 
-            If String.IsNullOrWhiteSpace(text) Then
-                text = "[OCR EMPTY]"
-            End If
+                    Dim text As String = result.Text
+                    Dim score As Double = result.Score
 
-            RoiText.Text = text
-            ScoreText.Text = score.ToString("F3")
+                    If String.IsNullOrWhiteSpace(text) Then
+                        text = "[OCR EMPTY]"
+                    End If
 
-            ShowTemplateEditDialog(ocrText:=text)
+                    RoiText.Text = text
+                    ScoreText.Text = score.ToString("F3")
+
+                    ShowTemplateEditDialog(ocrText:=text)
+                End Using
+            End Using
 
         Catch ex As Exception
             MessageBox.Show(ex.Message)
         End Try
-
     End Sub
 
 #Region "Barcode"
     Private _decoder As BarcodeDecodeService = AppRuntime.Barcode
     Private Sub DecodeRegion_Click(sender As Object, e As RoutedEventArgs)
-
         Try
-
             If _srcMat Is Nothing Then
                 MessageBox.Show("請先載入圖片")
                 Return
@@ -796,7 +734,6 @@ Public Class AlgorithmPage
         Catch ex As Exception
             MessageBox.Show("錯誤：" & ex.Message)
         End Try
-
     End Sub
 #End Region
 
@@ -809,8 +746,7 @@ Public Class AlgorithmPage
     End Structure
 
     ''' <summary>
-    ''' 依 ROI 圖像統計自動計算最佳匹配參數（在背景執行緒呼叫）。
-    ''' Canny 閾值採用中位數 sigma 規則（lower=0.67×v, upper=1.33×v）。
+    ''' 依 ROI 圖像統計自動計算最佳匹配參數
     ''' </summary>
     Private Function ComputeAutoParams(src As Mat, roi As CvRect) As AutoTemplateParams
         Dim p As New AutoTemplateParams()
@@ -819,7 +755,6 @@ Public Class AlgorithmPage
         Dim roiArea As Double = CDbl(roi.Width) * CDbl(roi.Height)
         Dim ratio As Double = If(srcArea > 0, roiArea / srcArea, 0.1)
 
-        ' Pyramid from ROI-to-source area ratio
         If ratio < 0.03 Then
             p.Pyramid = 3
         ElseIf ratio < 0.1 Then
@@ -828,7 +763,6 @@ Public Class AlgorithmPage
             p.Pyramid = 1
         End If
 
-        ' Canny from image median pixel (0.33-sigma rule)
         p.CannyLow = 80
         p.CannyHigh = 160
         Try
@@ -854,46 +788,73 @@ Public Class AlgorithmPage
             Logger.Warn("[AutoParams] Canny計算失敗，使用預設值: " & ex.Message)
         End Try
 
-        ' MinArea: 0.1% of ROI pixel count, clamped 30~500
         p.MinArea = CInt(Math.Max(30, Math.Min(500, roiArea * 0.001)))
 
         Return p
     End Function
 
-    ''' <summary>將自動計算的參數同步到 UI 滑塊（不更動閾值，保持使用者設定值）。</summary>
+    ''' <summary>將自動計算的參數同步到 UI 滑塊。</summary>
     Private Sub ApplyAutoParams(ap As AutoTemplateParams)
         PyramidSlider.Value = Math.Max(PyramidSlider.Minimum, Math.Min(PyramidSlider.Maximum, ap.Pyramid))
         CannyLowSlider.Value = Math.Max(CannyLowSlider.Minimum, Math.Min(CannyLowSlider.Maximum, ap.CannyLow))
         CannyHighSlider.Value = Math.Max(CannyHighSlider.Minimum, Math.Min(CannyHighSlider.Maximum, ap.CannyHigh))
         MinAreaSlider.Value = Math.Max(MinAreaSlider.Minimum, Math.Min(MinAreaSlider.Maximum, ap.MinArea))
     End Sub
-    ' =========================
-    ' Safe run
-    ' =========================
-    Private Sub SafeRun(action As Action)
 
+    ' Safe run
+    Private Sub SafeRun(action As Action)
         Try
             action()
         Catch ex As Exception
             ExceptionHelper.ShowError(ex)
         End Try
-
     End Sub
 
     Public Sub RefreshLanguageUI()
-
-        TxtTitle.Text =
-            LanguageManager.T("Algo_Title")
-
-        BtnLoadSource.Content =
-            LanguageManager.T("Algo_LoadSource")
-
-        BtnCreateTemplate.Content =
-            LanguageManager.T("Algo_CreateTemplate")
-
-        BtnLoadMatch.Content =
-            LanguageManager.T("Algo_LoadMatch")
-
+        TxtTitle.Text = LanguageManager.T("Algo_Title")
+        BtnLoadSource.Content = LanguageManager.T("Algo_LoadSource")
+        BtnCreateTemplate.Content = LanguageManager.T("Algo_CreateTemplate")
+        BtnLoadMatch.Content = LanguageManager.T("Algo_LoadMatch")
     End Sub
+
+    ''' <summary>
+    Private Function EnhanceOcrImage(src As Mat) As Mat
+        If src Is Nothing OrElse src.IsDisposed OrElse src.Empty() Then Return src
+        Try
+            Dim gray As New Mat()
+            If src.Channels() = 3 Then
+                Cv2.CvtColor(src, gray, ColorConversionCodes.BGR2GRAY)
+            Else
+                gray = src.Clone()
+            End If
+
+            ' 1. 使用 CLAHE 進行局部對比度拉伸（去除反光和暗影）
+            Dim enhanced = New Mat()
+            Using clahe = Cv2.CreateCLAHE(3.0, New OpenCvSharp.Size(8, 8))
+                clahe.Apply(gray, enhanced)
+            End Using
+            gray.Dispose()
+
+            ' 2. 微量銳利化（提升文字邊緣清晰度）
+            Dim sharpened = New Mat()
+            Cv2.GaussianBlur(enhanced, sharpened, New OpenCvSharp.Size(0, 0), 3)
+            Cv2.AddWeighted(enhanced, 1.5, sharpened, -0.5, 0, sharpened)
+            enhanced.Dispose()
+
+            ' 3. 轉回 BGR 格式（供 PaddleOcr 使用）
+            Dim result As New Mat()
+            Cv2.CvtColor(sharpened, result, ColorConversionCodes.GRAY2BGR)
+            sharpened.Dispose()
+
+            Return result
+        Catch ex As Exception
+            Return src.Clone()
+        End Try
+    End Function
+
+    ' 輔助轉換方法
+    Private Function BitmapSourceToMat(source As BitmapSource) As Mat
+        Return OpenCvSharp.WpfExtensions.BitmapSourceConverter.ToMat(source)
+    End Function
 
 End Class

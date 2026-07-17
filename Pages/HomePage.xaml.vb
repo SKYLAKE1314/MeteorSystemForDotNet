@@ -396,10 +396,6 @@ Partial Class HomePage
             System.Diagnostics.Debug.WriteLine($"UpdateFrame 同步與轉換發生異常: {ex.Message}")
         End Try
     End Sub
-    Private Sub BtnClearLog_Click(sender As Object, e As RoutedEventArgs)
-        ' 將 Document 設為新的 FlowDocument 即達成了清空效果
-        rtbLog.Document = New FlowDocument()
-    End Sub
     ''' <summary>
     ''' 從 CameraManager 快取重新載入相機清單並更新 ComboBox，
     ''' 盡量保留使用者當前的選擇（若該相機仍存在於清單中）。

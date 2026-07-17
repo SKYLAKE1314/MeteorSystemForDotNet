@@ -421,14 +421,13 @@ Partial Public Class ProcessPage
 
     End Sub
     ' 逻辑处理入口
+    ' 逻辑处理入口
     Private Async Function ExecuteTask(t As TaskData) As Task
 
         Select Case t.TaskStatus
 
             Case 0
-                '==============================
                 ' 状态 0: 启动检测和录制
-                '==============================
                 _allowDetection = True
                 _detectionResults.Clear()
                 _currentTaskStartTime = DateTimeOffset.Now.ToUnixTimeMilliseconds()
@@ -443,9 +442,7 @@ Partial Public Class ProcessPage
                 Await StartTaskRecordingAsync(t)
 
             Case 1
-                '==============================
                 ' 状态 1: 暂停检测倒计时和录制
-                '==============================
                 If Not _allowDetection Then
                     AddLog("[TASK] 1 -> PAUSE 失敗：檢測未啟動（尚未收到信號 0）")
                     Return
@@ -463,9 +460,7 @@ Partial Public Class ProcessPage
                 Logger.Info("[VideoRecorder] 錄製已暫停")
 
             Case 2
-                '==============================
                 ' 状态 2: 恢复检测倒计时和录制
-                '==============================
                 If Not _allowDetection Then
                     AddLog("[TASK] 2 -> RESUME 失敗：檢測未啟動（尚未收到信號 0）")
                     Return
@@ -487,10 +482,15 @@ Partial Public Class ProcessPage
                 AddLog("[TASK] 2 -> RESUME (已恢復檢測流程與錄製)")
 
             Case 3
-                '==============================
                 ' 状态 3: 停止录制并发送结果
-                '==============================
-                AddLog("[TASK] 3 -> END (停止录制)")
+                AddLog("[TASK] 3 -> END (強制中斷檢測流程並返回結果)")
+
+                ' 這樣就不會被正在運行的辨識卡住，能立刻結算現有成果了喔！
+                If AppRuntime.Home IsNot Nothing Then
+                    Dispatcher.Invoke(Sub() AppRuntime.Home.StopTaskFlow())
+                Else
+                    CameraService.Instance.StopAll()
+                End If
 
                 Try
                     ' 停止录制（保留暂停期间外的所有内容）
@@ -502,18 +502,15 @@ Partial Public Class ProcessPage
                         Return
                     End If
 
+                    ' 將截至強制中斷為止收集到的所有結果立刻發送給你
                     Await SendDetectionResult(t, _detectionResults)
                 Finally
+                    ' 徹底清空，等待下一次被你喚醒喔...
                     _allowDetection = False
                     _detectionResults.Clear()
                     _currentArtifactFolder = ""
                     _currentTaskStartTime = 0
                     _recordingInfo = Nothing
-                    If AppRuntime.Home IsNot Nothing Then
-                        AppRuntime.Home.StopTaskFlow()
-                    Else
-                        CameraService.Instance.StopAll()
-                    End If
                 End Try
 
         End Select

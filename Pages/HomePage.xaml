@@ -149,14 +149,6 @@
                        FontSize="14"
                        FontWeight="SemiBold"
                        VerticalAlignment="Center"/>
-
-                        <ui:Button DockPanel.Dock="Right"
-                       Content="清除"
-                       FontSize="11"
-                       Height="24"
-                       Padding="8,0"
-                       Appearance="Secondary"
-                       Click="BtnClearLog_Click"/>
                     </DockPanel>
 
                     <Border Grid.Row="2"
