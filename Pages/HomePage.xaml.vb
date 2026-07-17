@@ -54,8 +54,8 @@ Partial Class HomePage
     Private Const VoicePromptDetectionPaused As String = "DetectionPaused.wav"              ' 收到信號 1：暫停錄製與檢測
     Private Const VoicePromptDetectionReady As String = "DetectionReady.wav"                ' 收到信號 0：相機就緒，可以開始檢測
     Private Const VoicePromptCorrect As String = "Correct.wav"                              ' 正確（解碼/OCR 成功）
-    Private Const VoicePromptError As String = "NoTemplate.wav"
-    Private Const VoicePromptNoTemplate As String = "Error.wav"                             ' 找不到供應商對應模板時播報
+    Private Const VoicePromptError As String = "Error.wav"
+    Private Const VoicePromptNoTemplate As String = "NoTemplate.wav"                             ' 找不到供應商對應模板時播報
     Private Const StageTimeoutMs As Integer = 60000
     Private Const StageLoopDelayMs As Integer = 30
 
@@ -70,6 +70,8 @@ Partial Class HomePage
 
     Private ReadOnly _ocr As PaddleOcrService =
     AppRuntime.OCR
+
+    Private _activePreviewWin As LivePreviewWindow = Nothing
 
     ' Page Loaded
     Private Async Sub Page_Loaded(sender As Object, e As RoutedEventArgs) Handles Me.Loaded
@@ -154,7 +156,7 @@ Partial Class HomePage
             RemoveHandler CameraManager.CameraChanged, AddressOf OnCameraChanged
             AddHandler CameraManager.CameraChanged, AddressOf OnCameraChanged
 
-            ' 【核心修復】註冊 WPF 渲染引擎回調，每當 UI 準備繪製下一幀時，自動執行 UpdateFrame
+            ' 註冊 WPF 渲染引擎回調，每當 UI 準備繪製下一幀時，自動執行 UpdateFrame
             RemoveHandler CompositionTarget.Rendering, AddressOf UpdateFrame
             AddHandler CompositionTarget.Rendering, AddressOf UpdateFrame
             _isStreaming = True
@@ -171,7 +173,7 @@ Partial Class HomePage
         ' 儲存當前串流狀態，供返回首頁時自動恢復
         _wasStreamingBeforeUnload = _isStreaming
 
-        ' 【核心修復】離開頁面時必須解除註冊，防止背景線程持續索取已關閉的硬體資源
+        ' 離開頁面時必須解除註冊，防止背景線程持續索取已關閉的硬體資源
         RemoveHandler CompositionTarget.Rendering, AddressOf UpdateFrame
         RemoveHandler CameraManager.CameraChanged, AddressOf OnCameraChanged
         RemoveHandler CameraService.Instance.FrameArrived, AddressOf OnFrameArrived
@@ -201,6 +203,30 @@ Partial Class HomePage
             _isStreaming = False
         End If
     End Sub
+
+    Public Function ForceCompleteCurrentDetection() As DetectionResult
+        Dim res As DetectionResult = Nothing
+        SyncLock _detectLock
+            res = _activeDetectionResult
+        End SyncLock
+
+        ' 如果有做到一半的結果，強制將它標記為完成並轉換 Base64 圖片
+        If res IsNot Nothing AndAlso res.Mat IsNot Nothing Then
+            res.IsFinal = True
+            If String.IsNullOrWhiteSpace(res.Stage) Then
+                res.Stage = "FORCED_STOP"
+            End If
+
+            Try
+                FillImageBase64(res)
+            Catch ex As Exception
+                Logger.Error("[FLOW] 搶救圖片轉 Base64 失敗: " & ex.Message)
+            End Try
+        End If
+
+        Return res
+    End Function
+
     Public Sub RefreshLanguageUI()
 
         BtnLoadImage.Content = LanguageManager.T("Home_BtnLoadImage")
@@ -214,7 +240,6 @@ Partial Class HomePage
     End Sub
     Private Sub GlobalLogReceived(level As String, msg As String)
 
-        ' 【死鎖修正】
         ' Logger.WriteToWpfUI 已在 Dispatcher.Invoke 內先操作 RichTextBox，
         ' 完成後才在 UI 執行緒上 RaiseEvent LogReceived。
         ' 若此處用 Dispatcher.Invoke，UI 執行緒得待完自己，造成死鎖。
@@ -228,7 +253,7 @@ Partial Class HomePage
         If mat Is Nothing OrElse mat.IsDisposed OrElse mat.CvPtr = IntPtr.Zero Then Return
         If _flowStage <> DetectionFlowStage.Matching Then Return
 
-        ' 雙重防重入鎖，避免多個 Task 同時在背景 match 導致 CPU 暴斃
+        ' 雙重防重入鎖，避免多個 Task 同時在背景 match 導致 CPU 吃滿
         If _isMatchingInPreview Then Return
         _isMatchingInPreview = True
 
@@ -390,6 +415,9 @@ Partial Class HomePage
             Else
                 ' 非匹配階段，直接顯示
                 RenderImage.Source = frame
+                If _activePreviewWin IsNot Nothing Then
+                    _activePreviewWin.UpdateFrame(frame)
+                End If
             End If
 
         Catch ex As Exception

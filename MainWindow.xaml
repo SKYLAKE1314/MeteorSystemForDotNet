@@ -1,4 +1,4 @@
-﻿<Window x:Class="MainWindow"
+<Window x:Class="MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:MetroSystemForDotNet"
@@ -22,35 +22,42 @@
             <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled"/>
         </Style>
         <Style x:Key="NavItemStyle" TargetType="ListBoxItem">
-            <Setter Property="Height" Value="56"/>
-            <Setter Property="Margin" Value="0,6"/>
+            <Setter Property="Height" Value="50"/>
+            <Setter Property="Margin" Value="0,4"/>
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
                         <Border x:Name="Root"
-                                CornerRadius="12"
-                                Background="#1A1E29"
-                                Padding="16">
+                                CornerRadius="10"
+                                Background="Transparent"
+                                Padding="8,8">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="4"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
                                 <Border x:Name="Indicator"
-                                        Width="4"
-                                        CornerRadius="2"
+                                        Width="3"
+                                        Height="20"
+                                        CornerRadius="1.5"
+                                        HorizontalAlignment="Left"
                                         Background="Transparent"/>
                                 <TextBlock Grid.Column="1"
+                                           x:Name="ItemText"
                                            Text="{TemplateBinding Content}"
                                            Foreground="#E6E8EE"
-                                           FontSize="16"
-                                           VerticalAlignment="Center"/>
+                                           FontSize="15"
+                                           FontWeight="Medium"
+                                           HorizontalAlignment="Left"
+                                           Margin="16,0,0,0"
+                                           VerticalAlignment="Center"
+                                           TextWrapping="NoWrap"/>
                             </Grid>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Root" Property="Background" Value="#23283A"/>
+                                <Setter TargetName="Root" Property="Background" Value="#1A23283A"/>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter TargetName="Indicator"
@@ -59,9 +66,12 @@
                                 <Setter TargetName="Root"
                                         Property="Background"
                                         Value="#2A3148"/>
-                                <Setter Property="Foreground"
-                                        Value="{StaticResource AccentColor}"/>
                             </Trigger>
+                            <DataTrigger Binding="{Binding IsChecked, ElementName=CollapseBtn}" Value="True">
+                                <Setter TargetName="ItemText" Property="HorizontalAlignment" Value="Center"/>
+                                <Setter TargetName="ItemText" Property="Margin" Value="0"/>
+                                <Setter TargetName="ItemText" Property="FontSize" Value="14"/>
+                            </DataTrigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -99,24 +109,25 @@
             </Grid.ColumnDefinitions>
 
             <!-- 左側導航欄 -->
-            <Border Grid.Column="0" Background="#161A26" Padding="20" CornerRadius="0,0,0,0">
+            <Border Grid.Column="0" Background="#161A26" Padding="12,20,12,20" CornerRadius="0,0,0,0">
                 <StackPanel>
                     <ToggleButton x:Name="CollapseBtn"
-              Width="32"
-              Height="32"
-              Content="☰"
-              Background="Transparent"
-              Foreground="{StaticResource AccentColor}"
-              BorderThickness="0"
-              HorizontalAlignment="Left"
-              Checked="CollapseBtn_Checked"
-              Unchecked="CollapseBtn_Unchecked"/>
+                                  Width="32"
+                                  Height="32"
+                                  Content="☰"
+                                  Background="Transparent"
+                                  Foreground="{StaticResource AccentColor}"
+                                  BorderThickness="0"
+                                  HorizontalAlignment="Left"
+                                  Margin="8,0,0,0"
+                                  Checked="CollapseBtn_Checked"
+                                  Unchecked="CollapseBtn_Unchecked"/>
                     <TextBlock x:Name="SideTitle"
-           Text="METEOR SYSTEM"
-           FontSize="18"
-           FontWeight="SemiBold"
-           Foreground="{StaticResource AccentColor}"
-           Margin="8,0,0,24"/>
+                               Text="METEOR SYSTEM"
+                               FontSize="18"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource AccentColor}"
+                               Margin="8,16,0,24"/>
                     
                     <ListBox x:Name="NavList"
                              Style="{StaticResource NavListBoxStyle}"

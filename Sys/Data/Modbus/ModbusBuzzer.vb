@@ -1,4 +1,4 @@
-﻿Imports Modbus.Device
+Imports Modbus.Device
 Imports System.Net.Sockets
 Imports System.Threading
 
@@ -165,6 +165,11 @@ Namespace IoBoard
                     Connect()
                 End If
 
+                If _master Is Nothing Then
+                    Logger?.Invoke("[Buzzer] 連線失敗，無法設定 Coil。")
+                    Return
+                End If
+
                 Try
                     _master.WriteSingleCoil(_unitId, coilAddress, onState)
 
@@ -242,6 +247,11 @@ Namespace IoBoard
 
                 If _master Is Nothing Then
                     Connect()
+                End If
+
+                If _master Is Nothing Then
+                    Logger?.Invoke($"[Buzzer] 連線失敗，無法讀取 DI[{diIndex}]。")
+                    Return False
                 End If
 
                 Try

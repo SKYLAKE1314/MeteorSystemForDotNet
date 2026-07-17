@@ -12,9 +12,6 @@ Imports Cv = OpenCvSharp
 
 Partial Class HomePage
 
-    ' =================================================================
-    ' 【核心修復】解析定位相機 ID（原 ResolveDetectCameraId）
-    ' =================================================================
     Private Function ResolveMatchCameraId() As String
         If Not String.IsNullOrWhiteSpace(_matchCameraId) Then
             Return _matchCameraId
@@ -37,9 +34,6 @@ Partial Class HomePage
         Return fallback
     End Function
 
-    ' =================================================================
-    ' 【核心修復】獲取定位幀：改為調用定位相機
-    ' =================================================================
     Private Async Function GetDetectFrameAsync() As Task(Of BitmapSource)
         Dim camId = ResolveMatchCameraId()
         If String.IsNullOrWhiteSpace(camId) Then

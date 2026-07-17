@@ -1,4 +1,4 @@
-﻿Imports System.Threading
+Imports System.Threading
 Imports System.Windows
 Imports System.Windows.Media
 Imports System.Windows.Media.Imaging
@@ -71,23 +71,26 @@ Public Class CameraLink
                         Continue While
                     End If
 
-                    ' 最多快速 Grab 2 次來清除緩存積壓。 Grab 只抓取不解碼，極快且不破壞 mat 記憶體
-                    Using temp As New Mat()
-                        Dim hasNewer As Boolean = False
-                        For i As Integer = 1 To 2
-                            If _capture.Grab() Then
-                                _capture.Retrieve(temp)
-                                hasNewer = True
-                            Else
-                                Exit For
-                            End If
-                        Next
-                        ' 只有當確實安全拿到更新鮮、且不為空的畫面時，才放心地進行覆蓋
-                        If hasNewer AndAlso Not temp.Empty() Then
-                            mat.Dispose()
-                            mat = temp.Clone()
+                    ' 快速 Grab 2 次清除緩存積壓，不進行 Retrieve 解碼
+                    Dim hasNewer As Boolean = False
+                    For i As Integer = 1 To 2
+                        If _capture.Grab() Then
+                            hasNewer = True
+                        Else
+                            Exit For
                         End If
-                    End Using
+                    Next
+
+                    ' 只有最後一幀才執行 Retrieve（解碼），省去中間幀的解碼開銷！
+                    If hasNewer Then
+                        Dim temp As New Mat()
+                        If _capture.Retrieve(temp) AndAlso Not temp.Empty() Then
+                            mat.Dispose()
+                            mat = temp
+                        Else
+                            temp.Dispose()
+                        End If
+                    End If
 
                     ' 零洩漏快速轉換
                     Dim bmp = MatToBitmapSource(mat)

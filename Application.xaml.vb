@@ -1,4 +1,4 @@
-﻿Imports System.Net.NetworkInformation
+Imports System.Net.NetworkInformation
 Imports System.Threading.Tasks
 Imports System.Windows
 Imports MetroSystemForDotNet.AppProgress
@@ -6,6 +6,33 @@ Imports MetroSystemForDotNet.AppProgress
 Class Application
 
     Private Async Sub Application_Startup(sender As Object, e As StartupEventArgs) Handles Me.Startup
+
+        ' ─── 單一執行個體重複啟動防護與 Kill 彈窗 ───
+        Try
+            Dim currentProc = System.Diagnostics.Process.GetCurrentProcess()
+            Dim runningProcs = System.Diagnostics.Process.GetProcessesByName(currentProc.ProcessName)
+            Dim otherProc = runningProcs.FirstOrDefault(Function(p) p.Id <> currentProc.Id)
+
+            If otherProc IsNot Nothing Then
+                Dim result = MessageBox.Show(
+                    "系統檢測到另一個 MeteorSystem 正在運行中。" & vbCrLf & vbCrLf &
+                    "是否強制終止（Kill）該執行個體並繼續啟動？" & vbCrLf &
+                    "（選擇「否」將退出本次啟動）",
+                    "偵測到重複啟動",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning)
+
+                If result = MessageBoxResult.Yes Then
+                    otherProc.Kill()
+                    otherProc.WaitForExit(3000)
+                Else
+                    Application.Current.Shutdown()
+                    Return
+                End If
+            End If
+        Catch ex As Exception
+            Logger.Warn($"[Startup] 重複啟動防護檢測異常: {ex.Message}")
+        End Try
 
         ' 讀取上次儲存的語言
         Dim lang As String = My.Settings.Language
@@ -98,6 +125,21 @@ Class Application
 
         System.Threading.Thread.Sleep(300)
 
+    End Sub
+
+    Private Sub Application_Exit(sender As Object, e As ExitEventArgs) Handles Me.Exit
+        Try
+            Logger.Info("[Exit] 應用程式正在結束，釋放所有硬體與連線資源...")
+            ' 1. 停止所有相機流
+            CameraService.Instance.StopAll()
+            ' 2. 停止 WebSocket 伺服器
+            If AppRuntime.Process IsNot Nothing Then
+                AppRuntime.Process.StopServer()
+            End If
+        Catch
+        End Try
+        ' 3. 強制退出處理序，防止背景執行緒殘留
+        System.Environment.Exit(0)
     End Sub
 
 End Class

@@ -1,4 +1,4 @@
-﻿Imports System.Windows
+Imports System.Windows
 Imports System.Windows.Controls
 
 Class MainWindow
@@ -152,47 +152,47 @@ Class MainWindow
     End Sub
 
     ' =========================
-    ' 折疊（不再寫死文字）
+    ' 折疊（Google Style 抽屜選單）
     ' =========================
     Private Sub CollapseBtn_Checked(sender As Object, e As RoutedEventArgs)
-
-        NavColumn.Width = New GridLength(60)
+        NavColumn.Width = New GridLength(72)
         SideTitle.Visibility = Visibility.Collapsed
-
-        For Each item As ListBoxItem In NavList.Items
-            item.Content = ""
-        Next
-
     End Sub
 
     Private Sub CollapseBtn_Unchecked(sender As Object, e As RoutedEventArgs)
-
         NavColumn.Width = New GridLength(240)
         SideTitle.Visibility = Visibility.Visible
-
-        RefreshLanguageUI()
-
     End Sub
 
     ' =========================
     ' ⭐ 全局語言刷新（核心）
     ' =========================
     Public Sub RefreshLanguageUI()
-
         Dim items = NavList.Items
-
         If items.Count < 6 Then Return
 
-        CType(items(0), ListBoxItem).Content = LanguageManager.T("Nav_Run")
-        CType(items(1), ListBoxItem).Content = LanguageManager.T("Nav_AI")
-        CType(items(2), ListBoxItem).Content = LanguageManager.T("Nav_Algorithm")
-        CType(items(3), ListBoxItem).Content = LanguageManager.T("Nav_ModelEdit")
-        CType(items(4), ListBoxItem).Content = LanguageManager.T("Nav_Process")
-        CType(items(5), ListBoxItem).Content = LanguageManager.T("Nav_Setting")
+        UpdateItemText(items(0), "Nav_Run")
+        UpdateItemText(items(1), "Nav_AI")
+        UpdateItemText(items(2), "Nav_Algorithm")
+        UpdateItemText(items(3), "Nav_ModelEdit")
+        UpdateItemText(items(4), "Nav_Process")
+        UpdateItemText(items(5), "Nav_Setting")
 
         SideTitle.Text = LanguageManager.T("Side_Title")
         MainTitleText.Text = LanguageManager.T("Main_Title")
+    End Sub
 
+    Private Sub UpdateItemText(item As Object, key As String)
+        Dim listBoxItem = TryCast(item, ListBoxItem)
+        If listBoxItem Is Nothing Then Return
+
+        Dim grid = TryCast(listBoxItem.Content, Grid)
+        If grid IsNot Nothing AndAlso grid.Children.Count > 1 Then
+            Dim txtBlock = TryCast(grid.Children(1), TextBlock)
+            If txtBlock IsNot Nothing Then
+                txtBlock.Text = LanguageManager.T(key)
+            End If
+        End If
     End Sub
 
 End Class

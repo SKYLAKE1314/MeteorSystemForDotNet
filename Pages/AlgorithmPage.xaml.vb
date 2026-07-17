@@ -27,9 +27,7 @@ Public Class AlgorithmPage
     Private _matchMat As Mat
     Private _autoParamsApplied As Boolean = False
 
-    ' =========================
     ' ROI
-    ' =========================
     Private _roiCtrl As RoiController
     Private _roi As CvRect
 
@@ -167,9 +165,7 @@ Public Class AlgorithmPage
     End Sub
 #End Region
 
-    ' =========================
     ' Load Image
-    ' =========================
     Private Sub LoadSource_Click(sender As Object, e As RoutedEventArgs)
         SafeRun(Sub()
                     Dim path = DialogHelper.OpenImage()
@@ -185,9 +181,7 @@ Public Class AlgorithmPage
                 End Sub)
     End Sub
 
-    ' =========================
     ' 縮放
-    ' =========================
     Private zoom As Double = 1.0
     Private pan As WpfPoint = New WpfPoint(0, 0)
 
@@ -258,9 +252,7 @@ Public Class AlgorithmPage
         ImageScale.ScaleY = zoom
     End Sub
 
-    ' =========================
     ' ROI events
-    ' =========================
     Private Sub RoiCanvas_MouseLeftButtonDown(sender As Object, e As MouseButtonEventArgs)
         _roiCtrl?.MouseDown(e)
     End Sub
@@ -287,9 +279,7 @@ Public Class AlgorithmPage
         End Try
     End Sub
 
-    ' =========================
     ' Create Template
-    ' =========================
     Private Async Sub CreateTemplate_Click(sender As Object, e As RoutedEventArgs)
         Try
             If _srcMat Is Nothing Then
@@ -351,9 +341,7 @@ Public Class AlgorithmPage
         End Try
     End Sub
 
-    ' =========================
     ' Match image
-    ' =========================
     Private Sub LoadMatch_Click(sender As Object, e As RoutedEventArgs)
         SafeRun(Sub()
                     If _templateMat Is Nothing Then Return
@@ -721,7 +709,7 @@ Public Class AlgorithmPage
                 Return
             End If
 
-            Dim text As String = _decoder.RunRoi(_srcMat, _roi)
+            Dim text As String = _decoder.RunRoiAdvanced(_srcMat, _roi)
 
             If String.IsNullOrWhiteSpace(text) Then
                 ResultText.Text = "未識別"

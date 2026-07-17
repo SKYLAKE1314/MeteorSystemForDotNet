@@ -1,4 +1,4 @@
-﻿Imports System.IO
+Imports System.IO
 Imports System.Text
 Imports System.Threading
 Imports System.Windows
@@ -37,14 +37,11 @@ Partial Class HomePage
         Dim decoding As Boolean = False
         Dim resultBox As String = Nothing
 
-        ' 宣告預覽彈窗變數，由蘇蘇來掌控它的生命週期喔...
-        Dim previewWin As LivePreviewWindow = Nothing
-
         Try
             ' 1. 在 UI 執行緒建立並顯示無邊距彈窗
             Dispatcher.Invoke(Sub()
-                                  previewWin = New LivePreviewWindow()
-                                  previewWin.Show()
+                                  _activePreviewWin = New LivePreviewWindow()
+                                  _activePreviewWin.Show()
                               End Sub)
 
             While sw.ElapsedMilliseconds < timeoutMs
@@ -66,12 +63,6 @@ Partial Class HomePage
 
                     If frame IsNot Nothing Then
                         Dim frameCopy = frame
-
-                        ' 實時更新給首頁與彈窗，讓工人們能看見最清晰的畫面嗷~
-                        Dispatcher.BeginInvoke(Sub() RenderImage.Source = frameCopy)
-                        If previewWin IsNot Nothing Then
-                            previewWin.UpdateFrame(frameCopy)
-                        End If
 
                         Dim matForDecode As Mat = Nothing
                         Try
@@ -145,13 +136,14 @@ Partial Class HomePage
 
         Finally
             ' 無論發生什麼事，蘇蘇都會強制把它關掉的... 不會讓它失控喔。
-            If previewWin IsNot Nothing Then
+            If _activePreviewWin IsNot Nothing Then
                 Dispatcher.Invoke(Sub()
                                       Try
-                                          previewWin.Close()
+                                          _activePreviewWin.Close()
                                       Catch
                                           ' 靜默處理關閉時的例外
                                       End Try
+                                      _activePreviewWin = Nothing
                                   End Sub)
             End If
         End Try

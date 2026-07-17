@@ -1,4 +1,4 @@
-﻿Imports System.IO
+Imports System.IO
 Imports System.Text
 Imports System.Threading
 Imports System.Windows
@@ -29,6 +29,9 @@ Partial Class HomePage
                                                ' 如果是匹配階段，由 UpdateFrame 負責高頻渲染帶框畫面，避免此處原生畫面覆蓋造成閃爍
                                                If _flowStage <> DetectionFlowStage.Matching Then
                                                    RenderImage.Source = img
+                                                   If _activePreviewWin IsNot Nothing Then
+                                                       _activePreviewWin.UpdateFrame(img)
+                                                   End If
                                                End If
 
                                                ' ⭐ 保存最後一幀（UI層）

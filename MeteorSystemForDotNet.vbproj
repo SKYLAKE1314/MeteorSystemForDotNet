@@ -108,6 +108,9 @@
     <None Update="Voice\DetectionPaused.wav">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="Voice\DetectionReady.wav">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="Voice\DetectionResumed.wav">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

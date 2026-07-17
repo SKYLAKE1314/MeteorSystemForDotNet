@@ -1,4 +1,4 @@
-﻿Public Class CameraService
+Public Class CameraService
 
     Private Shared ReadOnly _inst As New CameraService()
 
@@ -24,27 +24,25 @@
 
         If String.IsNullOrWhiteSpace(deviceId) Then Return
 
-        ' 如果已經在執行中，不重複啟動
         SyncLock _cameras
+            ' 如果已經在執行中，不重複啟動
             If _cameras.ContainsKey(deviceId) Then Return
-        End SyncLock
 
-        Dim cam As New CameraLink(deviceId)
+            Dim cam As New CameraLink(deviceId)
 
-        AddHandler cam.FrameArrived,
-            Sub(id As String, img As BitmapSource)
+            AddHandler cam.FrameArrived,
+                Sub(id As String, img As BitmapSource)
 
-                SyncLock _frames
-                    _frames(id) = img
-                End SyncLock
+                    SyncLock _frames
+                        _frames(id) = img
+                    End SyncLock
 
-                RaiseEvent FrameArrived(id, img)
+                    RaiseEvent FrameArrived(id, img)
 
-            End Sub
+                End Sub
 
-        cam.StartCamera(deviceId)
+            cam.StartCamera(deviceId)
 
-        SyncLock _cameras
             _cameras(deviceId) = cam
         End SyncLock
 

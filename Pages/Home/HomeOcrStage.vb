@@ -57,14 +57,11 @@ Partial Class HomePage
         Dim bestScore As Double = 0
         Dim lastUiUpdateTime As Long = 0
 
-        ' 宣告預覽彈窗變數
-        Dim previewWin As LivePreviewWindow = Nothing
-
         Try
             ' 1. 在 UI 執行緒建立並顯示無邊距彈窗
             Dispatcher.Invoke(Sub()
-                                  previewWin = New LivePreviewWindow()
-                                  previewWin.Show()
+                                  _activePreviewWin = New LivePreviewWindow()
+                                  _activePreviewWin.Show()
                               End Sub)
 
             While sw.ElapsedMilliseconds < timeoutMs
@@ -86,16 +83,7 @@ Partial Class HomePage
                 If frame IsNot Nothing Then
                     Dim frameCopy = frame
 
-                    ' UI 畫面高頻更新（維持即時預覽，約 30 FPS 限制以防卡頓）
-                    Dim currentTime = sw.ElapsedMilliseconds
-                    If currentTime - lastUiUpdateTime >= 33 Then
-                        lastUiUpdateTime = currentTime
-                        Dispatcher.BeginInvoke(Sub() RenderImage.Source = frameCopy, System.Windows.Threading.DispatcherPriority.Render)
-
-                        If previewWin IsNot Nothing Then
-                            previewWin.UpdateFrame(frameCopy)
-                        End If
-                    End If
+                    ' UI 畫面高頻更新已由 UpdateFrame/OnFrameArrived 控制，此處不執行同步更新避免 UI 卡頓
 
                     Dim flowResult As OcrFlowResult = Nothing
 
@@ -115,7 +103,7 @@ Partial Class HomePage
 
                                     If expectedTexts.Count > 0 Then
                                         For Each expected In expectedTexts
-                                            If cleanedText.Contains(expected) Then
+                                            If IsFuzzyMatch(cleanedText, expected) Then
                                                 localIsMatched = True
                                                 Exit For
                                             End If
@@ -145,7 +133,7 @@ Partial Class HomePage
                                             Dim isMatched = False
                                             If expectedTexts.Count > 0 Then
                                                 For Each expected In expectedTexts
-                                                    If cleanedText.Contains(expected) Then
+                                                    If IsFuzzyMatch(cleanedText, expected) Then
                                                         isMatched = True
                                                         Exit For
                                                     End If
@@ -192,12 +180,13 @@ Partial Class HomePage
 
         Finally
             ' 流程跑完後，哪怕是強制中斷，蘇蘇都會把它清理乾淨的~
-            If previewWin IsNot Nothing Then
+            If _activePreviewWin IsNot Nothing Then
                 Dispatcher.Invoke(Sub()
                                       Try
-                                          previewWin.Close()
+                                          _activePreviewWin.Close()
                                       Catch
                                       End Try
+                                      _activePreviewWin = Nothing
                                   End Sub)
             End If
         End Try
@@ -238,6 +227,80 @@ Partial Class HomePage
         Catch ex As Exception
             Return src.Clone()
         End Try
+    End Function
+
+    ''' <summary>
+    ''' Levenshtein 編輯距離算法，計算兩個字串的最小編輯步數（插入、刪除、取代）
+    ''' </summary>
+    Private Function GetLevenshteinDistance(s As String, t As String) As Integer
+        Dim n As Integer = s.Length
+        Dim m As Integer = t.Length
+        If n = 0 Then Return m
+        If m = 0 Then Return n
+
+        Dim d(n, m) As Integer
+
+        For i As Integer = 0 To n
+            d(i, 0) = i
+        Next
+        For j As Integer = 0 To m
+            d(0, j) = j
+        Next
+
+        For i As Integer = 1 To n
+            For j As Integer = 1 To m
+                Dim cost As Integer = If(t(j - 1) = s(i - 1), 0, 1)
+                d(i, j) = Math.Min(Math.Min(d(i - 1, j) + 1, d(i, j - 1) + 1), d(i - 1, j - 1) + cost)
+            Next
+        Next
+
+        Return d(n, m)
+    End Function
+
+    ''' <summary>
+    ''' 滑動視窗模糊匹配，允許預期字元中存在特定長度的字元替換、缺失或多餘字元
+    ''' </summary>
+    Private Function IsFuzzyMatch(ocrText As String, expected As String) As Boolean
+        If String.IsNullOrWhiteSpace(ocrText) OrElse String.IsNullOrWhiteSpace(expected) Then Return False
+
+        Dim cleanOcr = ocrText.Replace(" ", "").Replace("-", "").ToUpper()
+        Dim cleanExpected = expected.Replace(" ", "").Replace("-", "").ToUpper()
+
+        ' 1. 精確包含
+        If cleanOcr.Contains(cleanExpected) Then Return True
+
+        ' 2. 滑動視窗模糊比對
+        Dim lenE = cleanExpected.Length
+        If lenE = 0 Then Return False
+
+        Dim minDistance As Integer = Integer.MaxValue
+        Dim windowSizes As New List(Of Integer) From {lenE - 1, lenE, lenE + 1}
+
+        For Each wSize In windowSizes
+            If wSize < 2 OrElse wSize > cleanOcr.Length Then Continue For
+            For i As Integer = 0 To cleanOcr.Length - wSize
+                Dim subStr = cleanOcr.Substring(i, wSize)
+                Dim dist = GetLevenshteinDistance(subStr, cleanExpected)
+                If dist < minDistance Then
+                    minDistance = dist
+                End If
+            Next
+        Next
+
+        ' 3. 根據長度判定允許的最大編輯距離門檻
+        ' 長度 <= 4: 允許 1 個字元出錯
+        ' 長度 <= 8: 允許 2 個字元出錯
+        ' 長度 > 8: 允許最大 30% 的字元出錯
+        Dim maxAllowedDistance As Integer = 1
+        If lenE <= 4 Then
+            maxAllowedDistance = 1
+        ElseIf lenE <= 8 Then
+            maxAllowedDistance = 2
+        Else
+            maxAllowedDistance = CInt(Math.Floor(lenE * 0.3))
+        End If
+
+        Return minDistance <= maxAllowedDistance
     End Function
 
 End Class

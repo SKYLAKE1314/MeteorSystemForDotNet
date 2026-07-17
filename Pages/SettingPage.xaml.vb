@@ -513,4 +513,5 @@ If(My.Settings.AutoRun, 0, 1)
             Logger.Warn($"[Setting] 開機自啟設定失敗: {ex.Message}")
         End Try
     End Sub
+
 End Class
