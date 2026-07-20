@@ -52,7 +52,7 @@ Public Class CameraPickDialog
             Dim slot As Integer = -1
             If savedIds IsNot Nothing Then
                 For i = 0 To savedIds.Count - 1
-                    If String.Equals(savedIds(i), cam.DeviceId, StringComparison.OrdinalIgnoreCase) Then
+                    If CameraManager.IsSameDevice(savedIds(i), cam.DeviceId) Then
                         slot = i
                         Exit For
                     End If

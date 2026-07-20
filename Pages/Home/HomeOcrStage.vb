@@ -12,20 +12,31 @@ Imports Cv = OpenCvSharp
 
 Partial Class HomePage
 
-    Private Async Function WaitOcrResultAsync(snapshot As TemplateSnapshot, timeoutMs As Integer) As Task(Of String)
+    Private Async Function WaitOcrResultAsync(snapshot As TemplateSnapshot, timeoutMs As Integer) As Task(Of OcrFlowResult)
+        If snapshot IsNot Nothing AndAlso Not snapshot.EnableOcr Then
+            Logger.Info("[FLOW] OCR未啟用，直接跳過")
+            Return Nothing
+        End If
+
+        Dim expText = snapshot?.OcrExpectedText?.Trim()?.ToLower()
+        If String.IsNullOrWhiteSpace(expText) OrElse expText = "--" OrElse expText = "未識別" OrElse expText = "未辨識" OrElse expText = "ocr empty" Then
+            Logger.Info("[FLOW] OCR預期文字為空或為預設佔位符，直接跳過")
+            Return Nothing
+        End If
+
         Dim isAiMode = String.Equals(My.Settings.OcrMode, "AI", StringComparison.OrdinalIgnoreCase)
 
         If isAiMode Then
             Dim ollamaOcr = AppRuntime.OllamaOCR
             If ollamaOcr Is Nothing Then
                 Logger.Error("[OCR] AppRuntime.OllamaOCR 未設定或初始化失敗")
-                Return ""
+                Return New OcrFlowResult With {.Text = "", .Score = 0, .IsMatched = False}
             End If
         Else
             Dim ocr = AppRuntime.OCR
             If ocr Is Nothing Then
                 Logger.Error("[OCR] AppRuntime.OCR 未設定或初始化失敗")
-                Return ""
+                Return New OcrFlowResult With {.Text = "", .Score = 0, .IsMatched = False}
             End If
         End If
 
@@ -35,7 +46,7 @@ Partial Class HomePage
 
         If String.IsNullOrWhiteSpace(cameraId) Then
             Logger.Error("[OCR] 無法取得有效的 OCR 相機 ID")
-            Return ""
+            Return New OcrFlowResult With {.Text = "", .Score = 0, .IsMatched = False}
         End If
 
         Logger.Info($"[FLOW] === 進入【閃電實時全局 OCR】=== 方式={(If(isAiMode, "AI", "標準"))}")
@@ -83,8 +94,6 @@ Partial Class HomePage
                 If frame IsNot Nothing Then
                     Dim frameCopy = frame
 
-                    ' UI 畫面高頻更新已由 UpdateFrame/OnFrameArrived 控制，此處不執行同步更新避免 UI 卡頓
-
                     Dim flowResult As OcrFlowResult = Nothing
 
                     If isAiMode Then
@@ -105,17 +114,21 @@ Partial Class HomePage
                                         For Each expected In expectedTexts
                                             If IsFuzzyMatch(cleanedText, expected) Then
                                                 localIsMatched = True
+                                                localBestText = expected ' 關鍵：匹配到模板期望文字時，只返回模板中的純淨文字
                                                 Exit For
                                             End If
                                         Next
                                     End If
+
+                                    If Not localIsMatched Then
+                                        localBestText = cleanedText
+                                    End If
                                     localBestScore = ocrResult.Score
-                                    localBestText = cleanedText
                                 End If
                             End Using
                         End Using
 
-                        flowResult = New OcrFlowResult With {.Text = localBestText, .Score = localBestScore, .IsMatched = localIsMatched}
+                        flowResult = New OcrFlowResult With {.Text = localBestText, .Score = localBestScore, .IsMatched = (expectedTexts.Count = 0 OrElse localIsMatched)}
                     Else
                         ' 標準模式 (PaddleOCR 全局 0° 閃電推論)
                         flowResult = Await Task.Run(Of OcrFlowResult)(
@@ -131,19 +144,21 @@ Partial Class HomePage
 
                                             ' 檢查是否命中期望值
                                             Dim isMatched = False
+                                            Dim outputText = cleanedText
                                             If expectedTexts.Count > 0 Then
                                                 For Each expected In expectedTexts
                                                     If IsFuzzyMatch(cleanedText, expected) Then
                                                         isMatched = True
+                                                        outputText = expected ' 關鍵：匹配到模板期望文字時，只返回模板中的純淨文字
                                                         Exit For
                                                     End If
                                                 Next
                                             End If
 
                                             Return New OcrFlowResult With {
-                                                .Text = cleanedText,
+                                                .Text = outputText,
                                                 .Score = ocrResult.Score,
-                                                .IsMatched = isMatched
+                                                .IsMatched = (expectedTexts.Count = 0 OrElse isMatched)
                                             }
                                         End If
                                     End Using
@@ -153,9 +168,9 @@ Partial Class HomePage
                             End Function)
                     End If
 
-                    If flowResult.IsMatched Then
-                        Logger.Info($"[FLOW] 全局 OCR 完美命中期望文本，即時結束流程！")
-                        Return flowResult.Text
+                    If flowResult.IsMatched AndAlso Not String.IsNullOrWhiteSpace(flowResult.Text) Then
+                        Logger.Info($"[FLOW] 全局 OCR 完美命中期望文本 '{flowResult.Text}'，即時結束流程！")
+                        Return flowResult
                     End If
 
                     If Not String.IsNullOrWhiteSpace(flowResult.Text) Then
@@ -166,7 +181,7 @@ Partial Class HomePage
 
                         ' 無期望文本時，只要有辨識出任何東西就直接回傳，達成真正的實時
                         If expectedTexts.Count = 0 Then
-                            Return flowResult.Text
+                            Return flowResult
                         End If
                     End If
                 End If
@@ -174,9 +189,12 @@ Partial Class HomePage
                 Await Task.Delay(10)
             End While
 
-            If Not String.IsNullOrWhiteSpace(bestText) Then Return bestText
+            If Not String.IsNullOrWhiteSpace(bestText) Then
+                Dim isMatched = (expectedTexts.Count = 0)
+                Return New OcrFlowResult With {.Text = bestText, .Score = bestScore, .IsMatched = isMatched}
+            End If
             Logger.Warn("[FLOW] 全局 OCR 超時，未識別到任何有效文本")
-            Return ""
+            Return New OcrFlowResult With {.Text = "", .Score = 0, .IsMatched = False}
 
         Finally
             ' 流程跑完後，哪怕是強制中斷，蘇蘇都會把它清理乾淨的~

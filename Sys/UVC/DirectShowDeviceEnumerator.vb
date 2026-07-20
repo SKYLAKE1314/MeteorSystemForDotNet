@@ -220,13 +220,32 @@ Public Class DirectShowDeviceEnumerator
     ''' 這正是「相機仍然串線」的可能根因之一。
     ''' </summary>
     Public Shared Function ExtractInstanceId(id As String) As String
-        Dim normalized = NormalizeForMatch(id)
-        If String.IsNullOrWhiteSpace(normalized) Then Return ""
+        If String.IsNullOrWhiteSpace(id) Then Return ""
 
-        Dim parts = normalized.Split("\"c).Where(Function(p) Not String.IsNullOrWhiteSpace(p)).ToArray()
-        If parts.Length = 0 Then Return ""
+        Dim s = id.ToUpperInvariant().Replace("\\?\", "").Replace("#", "\")
+        Dim parts = s.Split("\"c).Where(Function(p) Not String.IsNullOrWhiteSpace(p)).ToArray()
 
-        Return parts(parts.Length - 1)
+        ' 1. 優先以包含 VID/PID 的下一段作為 InstanceId
+        For i = 0 To parts.Length - 2
+            If parts(i).Contains("VID_") OrElse parts(i).Contains("PID_") Then
+                Return parts(i + 1)
+            End If
+        Next
+
+        ' 2. 備援：過濾掉 GUID 及 GLOBAL 後取最後一段
+        Dim cleanParts As New List(Of String)
+        For Each p In parts
+            Dim isGuid = p.Contains("-") AndAlso p.Length >= 36
+            If p <> "GLOBAL" AndAlso Not isGuid Then
+                cleanParts.Add(p)
+            End If
+        Next
+
+        If cleanParts.Count > 0 Then
+            Return cleanParts(cleanParts.Count - 1)
+        End If
+
+        Return ""
     End Function
 
 End Class

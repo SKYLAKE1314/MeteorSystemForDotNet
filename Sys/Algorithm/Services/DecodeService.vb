@@ -225,11 +225,7 @@ Public Class BarcodeDecodeService
     End Function
 
     Private Function IsPlausibleBarcodeText(text As String) As Boolean
-        If String.IsNullOrWhiteSpace(text) Then Return False
-        Dim trimmed = text.Trim()
-        If trimmed.Length < 3 Then Return False
-        If trimmed.Distinct().Count() = 1 Then Return False
-        Return True
+        Return Not String.IsNullOrWhiteSpace(text)
     End Function
 
     Private Function SharpenImage(mat As Mat) As Mat

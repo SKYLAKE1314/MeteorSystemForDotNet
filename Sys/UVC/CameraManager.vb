@@ -1,4 +1,4 @@
-﻿Imports System.Management
+Imports System.Management
 Imports OpenCvSharp
 
 Public Class CameraManager
@@ -24,7 +24,6 @@ Public Class CameraManager
     ' =================================================================
     ' 【核心修復】取得相機清單（加入 WMI 安全防卡死防禦機制）
     ' =================================================================
-    ' =================================================================
     ' 【核心修復】取得相機清單（精確對接 DsDeviceInfo 型態）
     ' =================================================================
     Public Shared Function GetCameras() As List(Of CameraInfo)
@@ -32,43 +31,44 @@ Public Class CameraManager
         Dim result As New List(Of CameraInfo)
         Dim wmiDevices As New List(Of CameraInfo)
 
+        ' 1. 查詢 WMI 取得所有相機設備（增加 Service='usbvideo' 擴大搜尋，防止漏掉工業或特定相機）
         Try
-            ' ── WMI 防卡死安全設定 ──────────────────────────────
             Dim options As New EnumerationOptions With {
                 .ReturnImmediately = True,
                 .Rewindable = False,
                 .DirectRead = True,
-                .Timeout = New TimeSpan(0, 0, 5) ' 超過 5 秒未回應強行逾時，不卡死系統啟動
+                .Timeout = New TimeSpan(0, 0, 5)
             }
 
             Dim searcher As New ManagementObjectSearcher(
                 "root\CIMV2",
-                "SELECT Name, PNPDeviceID FROM Win32_PnPEntity WHERE PNPClass='Camera' OR PNPClass='Image'",
+                "SELECT Name, PNPDeviceID FROM Win32_PnPEntity WHERE PNPClass='Camera' OR PNPClass='Image' OR Service='usbvideo'",
                 options)
 
-            ' 遍歷 WMI 結果
             For Each obj As ManagementObject In searcher.Get()
                 Try
                     Dim nameStr = obj("Name")?.ToString()
                     Dim devIdStr = obj("PNPDeviceID")?.ToString()
 
                     If Not String.IsNullOrWhiteSpace(devIdStr) Then
-                        wmiDevices.Add(New CameraInfo With {
-                            .Name = If(String.IsNullOrWhiteSpace(nameStr), "未知相機", nameStr),
-                            .DeviceId = devIdStr,
-                            .Index = -1
-                        })
+                        ' 避免重複添加相同 PNPDeviceID
+                        If Not wmiDevices.Any(Function(w) String.Equals(w.DeviceId, devIdStr, StringComparison.OrdinalIgnoreCase)) Then
+                            wmiDevices.Add(New CameraInfo With {
+                                .Name = If(String.IsNullOrWhiteSpace(nameStr), "未知相機", nameStr),
+                                .DeviceId = devIdStr,
+                                .Index = -1
+                            })
+                        End If
                     End If
                 Catch ex As Exception
                     System.Diagnostics.Debug.WriteLine($"[WMI Device Parse Error] {ex.Message}")
                 End Try
             Next
         Catch ex As Exception
-            Logger.Error($"[CameraManager] WMI 查詢發生嚴重錯誤或逾時: {ex.Message}，將直接啟用 DirectShow 列舉。")
+            Logger.Error($"[CameraManager] WMI 查詢發生嚴重錯誤: {ex.Message}")
         End Try
 
-        ' ── DirectShow：精確對接您的 DirectShowDeviceEnumerator.DsDeviceInfo ──
-        ' 【核心修復】型態變更為 DirectShowDeviceEnumerator.DsDeviceInfo 解決編譯錯誤
+        ' 2. 獲取 DirectShow 裝置列表（OpenCV DSHOW 開啟相機的真實順序來源）
         Dim dsDevices As List(Of DirectShowDeviceEnumerator.DsDeviceInfo) = Nothing
         Try
             dsDevices = DirectShowDeviceEnumerator.GetDevices()
@@ -82,6 +82,7 @@ Public Class CameraManager
             Return GetCamerasByProbing(wmiDevices)
         End If
 
+        ' 3. 精確匹配 WMI 與 DirectShow
         Dim usedWmi As New HashSet(Of CameraInfo)
 
         For Each ds In dsDevices
@@ -115,7 +116,7 @@ Public Class CameraManager
                 result.Add(matched)
             Else
                 ' WMI 找不到對應資料時，仍以 DirectShow 資訊建立一筆記錄
-                Logger.Warn($"[CameraManager] DirectShow 裝置 index={ds.Index} ({ds.Name}) 找不到對應的 WMI 記錄，改用 DevicePath 作為唯一碼")
+                Logger.Warn($"[CameraManager] DirectShow 裝置 index={ds.Index} ({ds.Name}) 找不到對應的 WMI 記錄，改用 DevicePath 作為唯一識別碼")
                 result.Add(New CameraInfo With {
                     .Name = ds.Name,
                     .DeviceId = If(Not String.IsNullOrWhiteSpace(ds.DevicePath), ds.DevicePath, $"DSHOW_INDEX_{ds.Index}"),
@@ -126,7 +127,9 @@ Public Class CameraManager
 
         ' 依 Index 排序，確保清單順序穩定
         Return result.OrderBy(Function(c) c.Index).ToList()
+
     End Function
+
     ''' <summary>
     ''' 備援方案：當 DirectShow COM 列舉失敗（例如環境不支援）時，
     ''' 退回舊的「依序探測 OpenCV index」方式，至少確保相機清單不會完全空白。
@@ -163,13 +166,26 @@ Public Class CameraManager
         If _cameraCache Is Nothing Then Return -1
 
         Dim cam = _cameraCache.FirstOrDefault(Function(x)
-                                                  Return String.Equals(x.DeviceId, deviceId, StringComparison.OrdinalIgnoreCase)
+                                                  Return IsSameDevice(x.DeviceId, deviceId)
                                               End Function)
 
         If cam Is Nothing Then Return -1
 
         Return cam.Index
 
+    End Function
+
+    Public Shared Function IsSameDevice(id1 As String, id2 As String) As Boolean
+        If String.IsNullOrWhiteSpace(id1) OrElse String.IsNullOrWhiteSpace(id2) Then Return False
+        If String.Equals(id1, id2, StringComparison.OrdinalIgnoreCase) Then Return True
+
+        Dim inst1 = DirectShowDeviceEnumerator.ExtractInstanceId(id1)
+        Dim inst2 = DirectShowDeviceEnumerator.ExtractInstanceId(id2)
+        If Not String.IsNullOrWhiteSpace(inst1) AndAlso Not String.IsNullOrWhiteSpace(inst2) Then
+            Return String.Equals(inst1, inst2, StringComparison.OrdinalIgnoreCase)
+        End If
+
+        Return False
     End Function
 
     Public Shared Function GetCachedCameras() As List(Of CameraInfo)

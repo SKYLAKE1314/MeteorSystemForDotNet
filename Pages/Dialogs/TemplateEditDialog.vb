@@ -12,6 +12,8 @@ Public Class TemplateEditDialog
     Private TbBarcodeDecoded As TextBox
     Private TbBarcodeExpected As TextBox
     Private TbComment As TextBox
+    Private ChkEnableOcr As CheckBox
+    Private ChkEnableBarcode As CheckBox
     Private BtnSave As Button
     Private BtnCancel As Button
 
@@ -61,13 +63,27 @@ Public Class TemplateEditDialog
         contentPanel.Children.Add(titleBlock)
 
         ' ===== OCR Section =====
+        Dim ocrHeaderPanel As New StackPanel()
+        ocrHeaderPanel.Orientation = Orientation.Horizontal
+        ocrHeaderPanel.Margin = New Thickness(0, 10, 0, 5)
+
         Dim ocrLabel As New TextBlock()
         ocrLabel.Text = "OCR 識別結果"
         ocrLabel.FontSize = 12
         ocrLabel.FontWeight = FontWeights.SemiBold
         ocrLabel.Foreground = New SolidColorBrush(Color.FromRgb(&H40, &H40, &H40))
-        ocrLabel.Margin = New Thickness(0, 10, 0, 5)
-        contentPanel.Children.Add(ocrLabel)
+        ocrLabel.VerticalAlignment = VerticalAlignment.Center
+
+        ChkEnableOcr = New CheckBox()
+        ChkEnableOcr.Content = "啟用 OCR"
+        ChkEnableOcr.IsChecked = Snapshot.EnableOcr
+        ChkEnableOcr.Margin = New Thickness(15, 0, 0, 0)
+        ChkEnableOcr.VerticalAlignment = VerticalAlignment.Center
+
+        ocrHeaderPanel.Children.Add(ocrLabel)
+        ocrHeaderPanel.Children.Add(ChkEnableOcr)
+
+        contentPanel.Children.Add(ocrHeaderPanel)
 
         Dim ocrGrid As New Grid()
 
@@ -127,13 +143,27 @@ Public Class TemplateEditDialog
         contentPanel.Children.Add(ocrGrid)
 
         ' ===== Barcode Section =====
+        Dim barcodeHeaderPanel As New StackPanel()
+        barcodeHeaderPanel.Orientation = Orientation.Horizontal
+        barcodeHeaderPanel.Margin = New Thickness(0, 10, 0, 5)
+
         Dim barcodeLabel As New TextBlock()
         barcodeLabel.Text = "條碼識別結果"
         barcodeLabel.FontSize = 12
         barcodeLabel.FontWeight = FontWeights.SemiBold
         barcodeLabel.Foreground = New SolidColorBrush(Color.FromRgb(&H40, &H40, &H40))
-        barcodeLabel.Margin = New Thickness(0, 10, 0, 5)
-        contentPanel.Children.Add(barcodeLabel)
+        barcodeLabel.VerticalAlignment = VerticalAlignment.Center
+
+        ChkEnableBarcode = New CheckBox()
+        ChkEnableBarcode.Content = "啟用解碼"
+        ChkEnableBarcode.IsChecked = Snapshot.EnableBarcode
+        ChkEnableBarcode.Margin = New Thickness(15, 0, 0, 0)
+        ChkEnableBarcode.VerticalAlignment = VerticalAlignment.Center
+
+        barcodeHeaderPanel.Children.Add(barcodeLabel)
+        barcodeHeaderPanel.Children.Add(ChkEnableBarcode)
+
+        contentPanel.Children.Add(barcodeHeaderPanel)
 
         Dim barcodeGrid As New Grid()
         barcodeGrid.ColumnDefinitions.Add(New ColumnDefinition() With {.Width = New GridLength(1, GridUnitType.Star)})
@@ -278,6 +308,8 @@ Public Class TemplateEditDialog
         snapshot.OcrExpectedText = TbOcrExpected.Text
         snapshot.BarcodeDecodedText = TbBarcodeDecoded.Text
         snapshot.BarcodeExpectedText = TbBarcodeExpected.Text
+        snapshot.EnableOcr = ChkEnableOcr.IsChecked.GetValueOrDefault(False)
+        snapshot.EnableBarcode = ChkEnableBarcode.IsChecked.GetValueOrDefault(False)
     End Sub
 
     Private Sub BtnCancel_Click(sender As Object, e As RoutedEventArgs)
@@ -290,6 +322,8 @@ Public Class TemplateEditDialog
             Snapshot.OcrExpectedText = TbOcrExpected.Text
             Snapshot.BarcodeDecodedText = TbBarcodeDecoded.Text
             Snapshot.BarcodeExpectedText = TbBarcodeExpected.Text
+            Snapshot.EnableOcr = ChkEnableOcr.IsChecked.GetValueOrDefault(False)
+            Snapshot.EnableBarcode = ChkEnableBarcode.IsChecked.GetValueOrDefault(False)
 
             If Snapshot.Revisions Is Nothing Then
                 Snapshot.Revisions = New List(Of TemplateRevision)()

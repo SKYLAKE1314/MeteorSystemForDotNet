@@ -697,7 +697,7 @@ Public Class AlgorithmPage
 
 #Region "Barcode"
     Private _decoder As BarcodeDecodeService = AppRuntime.Barcode
-    Private Sub DecodeRegion_Click(sender As Object, e As RoutedEventArgs)
+    Private Async Sub DecodeRegion_Click(sender As Object, e As RoutedEventArgs)
         Try
             If _srcMat Is Nothing Then
                 MessageBox.Show("請先載入圖片")
@@ -709,7 +709,12 @@ Public Class AlgorithmPage
                 Return
             End If
 
-            Dim text As String = _decoder.RunRoiAdvanced(_srcMat, _roi)
+            ResultText.Text = "解碼中..."
+
+            ' 在背景線程非同步運行，避免阻塞 UI 執行緒
+            Dim text As String = Await Task.Run(Function()
+                                                    Return _decoder.RunRoiAdvanced(_srcMat, _roi)
+                                                End Function)
 
             If String.IsNullOrWhiteSpace(text) Then
                 ResultText.Text = "未識別"

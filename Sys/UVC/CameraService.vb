@@ -17,84 +17,88 @@ Public Class CameraService
     Private Sub New()
     End Sub
 
+    Private Function ResolveCanonicalDeviceId(deviceId As String) As String
+        If String.IsNullOrWhiteSpace(deviceId) Then Return deviceId
+        Dim cached = CameraManager.GetCachedCameras()
+        If cached IsNot Nothing Then
+            Dim cam = cached.FirstOrDefault(Function(c) CameraManager.IsSameDevice(c.DeviceId, deviceId))
+            If cam IsNot Nothing Then
+                Return cam.DeviceId
+            End If
+        End If
+        Return deviceId
+    End Function
+
     ' =========================
     ' 啟動指定相機
     ' =========================
     Public Sub StartCamera(deviceId As String)
-
         If String.IsNullOrWhiteSpace(deviceId) Then Return
+        Dim canonicalId = ResolveCanonicalDeviceId(deviceId)
 
         SyncLock _cameras
             ' 如果已經在執行中，不重複啟動
-            If _cameras.ContainsKey(deviceId) Then Return
+            If _cameras.ContainsKey(canonicalId) Then Return
 
-            Dim cam As New CameraLink(deviceId)
+            Dim cam As New CameraLink(canonicalId)
 
             AddHandler cam.FrameArrived,
                 Sub(id As String, img As BitmapSource)
-
                     SyncLock _frames
                         _frames(id) = img
                     End SyncLock
-
                     RaiseEvent FrameArrived(id, img)
-
                 End Sub
 
-            cam.StartCamera(deviceId)
-
-            _cameras(deviceId) = cam
+            cam.StartCamera(canonicalId)
+            _cameras(canonicalId) = cam
         End SyncLock
-
     End Sub
 
     Public Sub StopCamera(deviceId As String)
-
+        Dim canonicalId = ResolveCanonicalDeviceId(deviceId)
         Dim cam As CameraLink = Nothing
+
         SyncLock _cameras
-            If _cameras.TryGetValue(deviceId, cam) Then
-                _cameras.Remove(deviceId)
+            If _cameras.TryGetValue(canonicalId, cam) Then
+                _cameras.Remove(canonicalId)
             End If
         End SyncLock
         cam?.StopCamera()
 
         SyncLock _frames
-            _frames.Remove(deviceId)
+            _frames.Remove(canonicalId)
         End SyncLock
-
     End Sub
 
     ' =========================
     ' 啟動全部相機
     ' =========================
     Public Sub StartAll()
-
         Dim ids = My.Settings.CameraDeviceIds
         If ids Is Nothing OrElse ids.Count = 0 Then Return
 
         For Each id In ids
             StartCamera(id)
         Next
-
     End Sub
 
     ' =========================
     ' 取得指定相機畫面
     ' =========================
     Public Function GetFrame(deviceId As String) As BitmapSource
+        Dim canonicalId = ResolveCanonicalDeviceId(deviceId)
 
         SyncLock _frames
-            If _frames.ContainsKey(deviceId) Then
-                Return _frames(deviceId)
+            If _frames.ContainsKey(canonicalId) Then
+                Return _frames(canonicalId)
             End If
         End SyncLock
 
         Return Nothing
-
     End Function
 
     Public Sub StopAll()
-
         Dim cams As List(Of CameraLink)
         SyncLock _cameras
             cams = _cameras.Values.ToList()
@@ -108,7 +112,6 @@ Public Class CameraService
         SyncLock _frames
             _frames.Clear()
         End SyncLock
-
     End Sub
 
 End Class

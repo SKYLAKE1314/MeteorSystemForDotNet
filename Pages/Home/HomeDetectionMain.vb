@@ -1,4 +1,4 @@
-﻿Imports System.IO
+Imports System.IO
 Imports System.Text
 Imports System.Threading
 Imports System.Windows
@@ -129,8 +129,29 @@ Partial Class HomePage
             ' ← 進入條碼階段
             SetFlowStage(DetectionFlowStage.Barcode)
 
-            ' 不論OK還是NG，匹配後都播報"匹配完成，請掃描"
-            PlayPromptVoice(VoicePromptMatchCompleteScan)
+            ' 判斷條碼與 OCR 是否預計會跳過
+            Dim barcodeSkippedPreCheck As Boolean = False
+            Dim ocrSkippedPreCheck As Boolean = False
+            If snapshot IsNot Nothing Then
+                Dim bText = snapshot.BarcodeExpectedText?.Trim()?.ToLower()
+                If Not snapshot.EnableBarcode OrElse String.IsNullOrWhiteSpace(bText) OrElse bText = "--" OrElse bText = "未識別" OrElse bText = "未辨識" OrElse bText = "barcode empty" Then
+                    barcodeSkippedPreCheck = True
+                End If
+
+                Dim oText = snapshot.OcrExpectedText?.Trim()?.ToLower()
+                If Not snapshot.EnableOcr OrElse String.IsNullOrWhiteSpace(oText) OrElse oText = "--" OrElse oText = "未識別" OrElse oText = "未辨識" OrElse oText = "ocr empty" Then
+                    ocrSkippedPreCheck = True
+                End If
+            End If
+
+            ' 不論OK還是NG，匹配後根據後續階段進行語音播報
+            If Not barcodeSkippedPreCheck Then
+                PlayPromptVoice(VoicePromptMatchCompleteScan)
+            ElseIf Not ocrSkippedPreCheck Then
+                PlayPromptVoice(VoicePromptMatchCompleteOcr)
+            Else
+                PlayPromptVoice(VoicePromptMatchCompleteFlowFinished)
+            End If
             Logger.Info($"[RESULT] 匹配 - OK={result.IsOk}, Score={result.Score:F3}")
             Logger.Info($"[FLOW] 匹配完成，開始解碼")
 
@@ -203,20 +224,28 @@ Partial Class HomePage
             Else
                 Logger.Info($"[RESULT] 條碼 - 成功: {code}")
                 PlayPromptVoice(VoicePromptCorrect)
-            End If
 
-            PlayPromptVoice(VoicePromptDecodeCompleteOcr)
+                ' 條碼完成後播報：如果後面還有 OCR 則播報 "解碼完成，請OCR"，否則播報 "解碼完成，流程已結束"
+                If Not ocrSkippedPreCheck Then
+                    PlayPromptVoice(VoicePromptDecodeCompleteOcr)
+                Else
+                    PlayPromptVoice(VoicePromptDecodeCompleteFlowFinished)
+                End If
+            End If
             Logger.Info("[FLOW] 開始 OCR")
 
-            Dim name = Await WaitOcrResultAsync(snapshot, StageTimeoutMs)
-            ' Nothing=跳過  /  ""=超時  /  非空=成功
-            Dim ocrSkipped = (name Is Nothing)
+            Dim ocrRes = Await WaitOcrResultAsync(snapshot, StageTimeoutMs)
+            Dim ocrSkipped = (ocrRes Is Nothing)
+            Dim name = If(ocrSkipped, Nothing, ocrRes.Text)
             Dim ocrTimeout = (Not ocrSkipped AndAlso String.IsNullOrEmpty(name))
+            Dim ocrMatched = (ocrSkipped OrElse (ocrRes IsNot Nothing AndAlso ocrRes.IsMatched))
 
             If ocrSkipped Then
                 Logger.Info("[RESULT] OCR - 已跳過")
             ElseIf ocrTimeout Then
                 Logger.Warn("[RESULT] OCR - 超時")
+            ElseIf Not ocrMatched Then
+                Logger.Warn($"[RESULT] OCR - 文本不匹配: {name}")
             Else
                 Logger.Info($"[RESULT] OCR - 成功: {name}")
             End If
@@ -226,7 +255,7 @@ Partial Class HomePage
             SyncLock _detectLock
                 If _activeDetectionItem IsNot Nothing Then
                     _activeDetectionItem.recognizedPartName = name
-                    If ocrTimeout Then _activeDetectionItem.resultType = "MISMATCH"
+                    If ocrTimeout OrElse Not ocrMatched Then _activeDetectionItem.resultType = "MISMATCH"
                 End If
                 finalOutput = _activeDetectionResult
                 If finalOutput Is Nothing Then

@@ -45,17 +45,23 @@ Partial Class HomePage
     Private _activeDetectionResult As DetectionResult
     Private _activeDetectionItem As DetectionItem
 
-    Private Const VoicePromptMatchCompleteScan As String = "MatchCompletedPleaseScan.wav"
-    Private Const VoicePromptDecodeCompleteOcr As String = "DecodeCompletedPleaseOCR.wav"
-    Private Const VoicePromptSingleFlowCompleted As String = "SingleFlowCompleted.wav"
-    Private Const VoicePromptStageTimeout As String = "StageTimeout.wav"                    ' 階段超時
-    Private Const VoicePromptStageSkipped As String = "StageSkipped.wav"                    ' 階段已跳過
-    Private Const VoicePromptStageRecover As String = "StageRecover.wav"                    ' 收到信號 2：恢復錄製與檢測
-    Private Const VoicePromptDetectionPaused As String = "DetectionPaused.wav"              ' 收到信號 1：暫停錄製與檢測
-    Private Const VoicePromptDetectionReady As String = "DetectionReady.wav"                ' 收到信號 0：相機就緒，可以開始檢測
-    Private Const VoicePromptCorrect As String = "Correct.wav"                              ' 正確（解碼/OCR 成功）
-    Private Const VoicePromptError As String = "Error.wav"
-    Private Const VoicePromptNoTemplate As String = "NoTemplate.wav"                             ' 找不到供應商對應模板時播報
+    ' 語音播報設定 (.wav 檔名對照)
+    Private Const VoicePromptMatchCompleteScan As String = "MatchCompletedPleaseScan.wav"             ' 匹配完成，請掃描 (有條碼階段)
+    Private Const VoicePromptMatchCompleteOcr As String = "MatchCompletedPleaseOCR.wav"              ' 匹配完成，請OCR (無條碼，有OCR階段)
+    Private Const VoicePromptMatchCompleteFlowFinished As String = "MatchCompletedFlowFinished.wav"  ' 匹配完成，流程已結束 (無條碼且無OCR)
+
+    Private Const VoicePromptDecodeCompleteOcr As String = "DecodeCompletedPleaseOCR.wav"            ' 解碼完成，請OCR (條碼完成後有OCR)
+    Private Const VoicePromptDecodeCompleteFlowFinished As String = "DecodeCompletedFlowFinished.wav" ' 解碼完成，流程已結束 (條碼完成後無OCR)
+
+    Private Const VoicePromptSingleFlowCompleted As String = "SingleFlowCompleted.wav"                ' 單次檢測流程結束
+    Private Const VoicePromptStageTimeout As String = "StageTimeout.wav"                             ' 階段超時
+    Private Const VoicePromptStageSkipped As String = "StageSkipped.wav"                             ' 階段已跳過
+    Private Const VoicePromptStageRecover As String = "StageRecover.wav"                             ' 收到信號 2：恢復錄製與檢測
+    Private Const VoicePromptDetectionPaused As String = "DetectionPaused.wav"                       ' 收到信號 1：暫停錄製與檢測
+    Private Const VoicePromptDetectionReady As String = "DetectionReady.wav"                         ' 收到信號 0：相機就緒，可以開始檢測
+    Private Const VoicePromptCorrect As String = "Correct.wav"                                       ' 正確（解碼/OCR 成功）
+    Private Const VoicePromptError As String = "Error.wav"                                           ' 錯誤
+    Private Const VoicePromptNoTemplate As String = "NoTemplate.wav"                                 ' 找不到供應商對應模板時播報
     Private Const StageTimeoutMs As Integer = 60000
     Private Const StageLoopDelayMs As Integer = 30
 
@@ -460,7 +466,7 @@ Partial Class HomePage
 
         ' 實時檢測界面上的 ComboBox 顯示目前正在工作的相機（依階段決定）
         Dim currentWorkingId = If(_flowStage = DetectionFlowStage.Ocr OrElse _flowStage = DetectionFlowStage.Barcode, _ocrCameraId, _matchCameraId)
-        Dim toSelect = allCameras.FirstOrDefault(Function(c) String.Equals(c.DeviceId, currentWorkingId, StringComparison.OrdinalIgnoreCase))
+        Dim toSelect = allCameras.FirstOrDefault(Function(c) CameraManager.IsSameDevice(c.DeviceId, currentWorkingId))
 
         CameraComboBox.SelectedItem = toSelect
         Logger.Info($"[Camera] 實時頁面相機載入成功。定位相機：{_matchCameraId}，OCR相機：{_ocrCameraId}")
@@ -472,7 +478,6 @@ Partial Class HomePage
     ''' </summary>
     ' 設定頁變更後的動態套用
     Private Sub OnCameraChanged()
-        ' 【死鎖修正】
         ' CameraChanged 事件可能直接在 UI 執行緒上被呼叫（例如從 CameraComboBox_SelectionChanged）。
         ' 若此時使用 Dispatcher.Invoke（同步），UI 執行緒會等待自己完成，造成死鎖。
         ' 改用 Dispatcher.BeginInvoke（非同步派送）讓 UI 執行緒立即返回，避免死鎖。

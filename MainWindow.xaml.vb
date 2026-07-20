@@ -24,9 +24,7 @@ Class MainWindow
 
     End Sub
 
-    ' =========================
     ' 托盤圖示初始化
-    ' =========================
     Private Sub InitTrayIcon()
         _trayIcon = New System.Windows.Forms.NotifyIcon()
         _trayIcon.Text = "MeteorSystem"
@@ -85,9 +83,7 @@ Class MainWindow
 
     End Sub
 
-    ' =========================
     ' 預載頁面
-    ' =========================
     Private Sub PreloadPages()
         If AppRuntime.Home Is Nothing Then
             AppRuntime.Home = New HomePage()
@@ -104,9 +100,7 @@ Class MainWindow
         PageCache("ProcessPage") = AppRuntime.Process
         PageCache("SettingPage") = New SettingPage()
     End Sub
-    ' =========================
-    ' 導航
-    ' =========================
+    ' 導航欄
     Private Sub NavigateTo(pageName As String)
 
         If String.IsNullOrWhiteSpace(pageName) Then Return
@@ -151,22 +145,20 @@ Class MainWindow
 
     End Sub
 
-    ' =========================
-    ' 折疊（Google Style 抽屜選單）
-    ' =========================
+    ' 折疊欄
     Private Sub CollapseBtn_Checked(sender As Object, e As RoutedEventArgs)
         NavColumn.Width = New GridLength(72)
         SideTitle.Visibility = Visibility.Collapsed
+        RefreshLanguageUI()
     End Sub
 
     Private Sub CollapseBtn_Unchecked(sender As Object, e As RoutedEventArgs)
         NavColumn.Width = New GridLength(240)
         SideTitle.Visibility = Visibility.Visible
+        RefreshLanguageUI()
     End Sub
 
-    ' =========================
-    ' ⭐ 全局語言刷新（核心）
-    ' =========================
+    ' 全局語言刷新
     Public Sub RefreshLanguageUI()
         Dim items = NavList.Items
         If items.Count < 6 Then Return
@@ -186,13 +178,21 @@ Class MainWindow
         Dim listBoxItem = TryCast(item, ListBoxItem)
         If listBoxItem Is Nothing Then Return
 
-        Dim grid = TryCast(listBoxItem.Content, Grid)
-        If grid IsNot Nothing AndAlso grid.Children.Count > 1 Then
-            Dim txtBlock = TryCast(grid.Children(1), TextBlock)
-            If txtBlock IsNot Nothing Then
-                txtBlock.Text = LanguageManager.T(key)
-            End If
+        Dim fullText = LanguageManager.T(key)
+        If CollapseBtn.IsChecked = True Then
+            listBoxItem.Content = GetShortText(fullText)
+        Else
+            listBoxItem.Content = fullText
         End If
     End Sub
+
+    Private Function GetShortText(text As String) As String
+        If String.IsNullOrEmpty(text) Then Return ""
+        Dim trimmed = text.Trim()
+        If trimmed.StartsWith("AI", StringComparison.OrdinalIgnoreCase) Then
+            Return "AI"
+        End If
+        Return trimmed.Substring(0, Math.Min(1, trimmed.Length))
+    End Function
 
 End Class

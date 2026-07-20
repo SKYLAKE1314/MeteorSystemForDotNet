@@ -21,6 +21,12 @@ Partial Class HomePage
             Return Nothing
         End If
 
+        Dim expText = snapshot?.BarcodeExpectedText?.Trim()?.ToLower()
+        If String.IsNullOrWhiteSpace(expText) OrElse expText = "--" OrElse expText = "未識別" OrElse expText = "未辨識" OrElse expText = "barcode empty" Then
+            Logger.Info("[FLOW] 條碼預期文字為空或為預設佔位符，直接跳過")
+            Return Nothing
+        End If
+
         Dim cameraId = _ocrCameraId
         If String.IsNullOrWhiteSpace(cameraId) Then cameraId = _matchCameraId
         If String.IsNullOrWhiteSpace(cameraId) Then cameraId = GetCamId(0)
@@ -149,25 +155,14 @@ Partial Class HomePage
         End Try
     End Function
     ''' <summary>
-    ''' 過濾明顯不合理的解碼結果（例如過短、全同字元的雜訊誤判），
     ''' 降低多角度/增強預處理策略下產生假陽性的機率。
     ''' </summary>
     Private Function IsPlausibleBarcodeText(text As String) As Boolean
-        If String.IsNullOrWhiteSpace(text) Then Return False
-
-        Dim trimmed = text.Trim()
-
-        ' 條碼通常至少有效字元數 >= 3
-        If trimmed.Length < 3 Then Return False
-
-        ' 全部為相同字元（例如 "111" 或 "---"）視為雜訊
-        If trimmed.Distinct().Count() = 1 Then Return False
-
-        Return True
+        Return Not String.IsNullOrWhiteSpace(text)
     End Function
 
     ''' <summary>
-    ''' 高級條碼解碼（多執行緒安全版）
+    ''' 高級條碼解碼
     ''' </summary>
     Private Function TryAdvancedBarcodeDecode(decoder As Object, mat As Mat, snapshot As TemplateSnapshot) As String
         Dim tasks As New List(Of Task(Of String))

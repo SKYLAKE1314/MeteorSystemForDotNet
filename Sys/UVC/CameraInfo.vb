@@ -1,4 +1,4 @@
-﻿Public Class CameraInfo
+Public Class CameraInfo
 
     Public Property Name As String
 
@@ -33,8 +33,11 @@
     ''' </summary>
     Private Function ExtractShortDeviceId(deviceId As String) As String
         Try
-            ' 通常 PNPDeviceID 的格式是: ACPI\PNP0A08\0 或 USB\VID_XXXX&PID_XXXX\SERIALNUMBER@N
-            ' 提取最後的唯一標識部分（通常在 @ 符號之後或最後的數字段）
+            Dim instanceId = DirectShowDeviceEnumerator.ExtractInstanceId(deviceId)
+            If Not String.IsNullOrWhiteSpace(instanceId) Then
+                Return instanceId
+            End If
+
             If deviceId.Contains("@") Then
                 Dim parts = deviceId.Split("@"c)
                 Return "@" & parts(parts.Length - 1)
@@ -42,11 +45,10 @@
                 Dim parts = deviceId.Split("\"c)
                 Return parts(parts.Length - 1)
             Else
-                ' 如果格式不符合，返回最後 6 個字符
                 Return If(deviceId.Length > 6, deviceId.Substring(deviceId.Length - 6), deviceId)
             End If
         Catch
-            Return deviceId.Substring(Math.Max(0, deviceId.Length - 6))
+            Return deviceId.Substring(Math.Max(0, Math.Min(6, deviceId.Length)))
         End Try
     End Function
 

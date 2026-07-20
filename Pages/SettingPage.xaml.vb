@@ -276,7 +276,7 @@ If(My.Settings.AutoRun, 0, 1)
                 }
 
                     camRow.SelectedCamera =
-                    camList.FirstOrDefault(Function(c) c.DeviceId = id)
+                    camList.FirstOrDefault(Function(c) CameraManager.IsSameDevice(c.DeviceId, id))
 
                     ' 載入已儲存的分辨率（在 suppressEvents 期間，不觸發 Resolution_SelectionChanged）
                     Dim resList = CameraResolutionOption.CommonResolutions()
@@ -306,7 +306,7 @@ If(My.Settings.AutoRun, 0, 1)
             If String.IsNullOrWhiteSpace(recordingId) AndAlso CameraRows.Count > 0 AndAlso CameraRows(0).SelectedCamera IsNot Nothing Then
                 recordingId = CameraRows(0).SelectedCamera.DeviceId
             End If
-            RecordingCameraComboBox.SelectedItem = RecordingCameraList.FirstOrDefault(Function(c) c.DeviceId = recordingId)
+            RecordingCameraComboBox.SelectedItem = RecordingCameraList.FirstOrDefault(Function(c) CameraManager.IsSameDevice(c.DeviceId, recordingId))
 
             ' 自動化
             If My.Settings.AutoRun Then
