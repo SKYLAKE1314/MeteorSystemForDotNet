@@ -61,19 +61,19 @@ Partial Class HomePage
                 ToList())
         End If
 
-        Dim sw As New Stopwatch()
-        sw.Start()
-
         Dim bestText As String = ""
         Dim bestScore As Double = 0
-        Dim lastUiUpdateTime As Long = 0
 
         Try
             ' 1. 在 UI 執行緒建立並顯示無邊距彈窗
             Dispatcher.Invoke(Sub()
                                   _activePreviewWin = New LivePreviewWindow()
+                                  _activePreviewWin.UpdateOcrResult("OCR 辨識中...")
                                   _activePreviewWin.Show()
                               End Sub)
+
+            Dim sw As New Stopwatch()
+            sw.Start()
 
             While sw.ElapsedMilliseconds < timeoutMs
                 If IsSkipRequested(DetectionFlowStage.Ocr) Then
@@ -168,12 +168,19 @@ Partial Class HomePage
                             End Function)
                     End If
 
-                    If flowResult.IsMatched AndAlso Not String.IsNullOrWhiteSpace(flowResult.Text) Then
-                        Logger.Info($"[FLOW] 全局 OCR 完美命中期望文本 '{flowResult.Text}'，即時結束流程！")
-                        Return flowResult
-                    End If
-
                     If Not String.IsNullOrWhiteSpace(flowResult.Text) Then
+                        Dim tempText = flowResult.Text
+                        Dispatcher.Invoke(Sub()
+                                              If _activePreviewWin IsNot Nothing Then
+                                                  _activePreviewWin.UpdateOcrResult(tempText)
+                                              End If
+                                          End Sub)
+
+                        If flowResult.IsMatched Then
+                            Logger.Info($"[FLOW] 全局 OCR 完美命中期望文本 '{flowResult.Text}'，即時結束流程！")
+                            Return flowResult
+                        End If
+
                         If flowResult.Score > bestScore Then
                             bestScore = flowResult.Score
                             bestText = flowResult.Text
@@ -186,7 +193,7 @@ Partial Class HomePage
                     End If
                 End If
 
-                Await Task.Delay(10)
+                Await Task.Delay(5)
             End While
 
             If Not String.IsNullOrWhiteSpace(bestText) Then
@@ -197,7 +204,6 @@ Partial Class HomePage
             Return New OcrFlowResult With {.Text = "", .Score = 0, .IsMatched = False}
 
         Finally
-            ' 流程跑完後，哪怕是強制中斷，蘇蘇都會把它清理乾淨的~
             If _activePreviewWin IsNot Nothing Then
                 Dispatcher.Invoke(Sub()
                                       Try

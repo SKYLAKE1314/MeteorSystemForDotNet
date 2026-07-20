@@ -1,4 +1,4 @@
-﻿Imports OpenCvSharp
+Imports OpenCvSharp
 Imports System.Threading.Tasks
 
 Public Class TemplateMatcher
@@ -208,7 +208,6 @@ Public Class TemplateMatcher
             End Function)
 
     End Function
-
     Private Shared Function MatchCore(
     source As Mat,
     template As Mat,
@@ -231,6 +230,16 @@ Public Class TemplateMatcher
             Else
                 template.CopyTo(grayTpl)
             End If
+
+            ' 1.5 使用 CLAHE 進行自適應局部直方圖均衡化，大幅增強特徵細節，提升匹配易度與穩定度
+            Try
+                Using clahe = Cv2.CreateCLAHE(clipLimit:=2.0, tileGridSize:=New Size(8, 8))
+                    clahe.Apply(graySrc, graySrc)
+                    clahe.Apply(grayTpl, grayTpl)
+                End Using
+            Catch ex As Exception
+                Logger.Warn($"[MATCH] 套用 CLAHE 失敗已忽略: {ex.Message}")
+            End Try
 
             ' 計算搜尋大圖的平均值與標準差。標準差 (StdDev) 代表圖像紋理的複雜度。
             ' 如果大圖是純黑、純白、純色或幾乎沒紋理的雜訊，標準差會極低（通常 < 8）。
@@ -301,6 +310,35 @@ Public Class TemplateMatcher
                             ok = False
                             score = 0
                             Logger.Debug($"[MATCH] 判定攔截：匹配區域標準差過低 ({mStd.Val0:F2})，此為虛假高分點。")
+                        Else
+                            ' 🚀 三次驗證：直方圖相關性校驗 (Correlation) 徹底過濾錯誤產品的虛假高分
+                            Try
+                                Using histTpl As New Mat(), histRoi As New Mat()
+                                    Dim histSize() As Integer = {256}
+                                    Dim ranges() As Rangef = {New Rangef(0, 256)}
+                                    Dim channels() As Integer = {0}
+
+                                    Cv2.CalcHist({grayTpl}, channels, Nothing, histTpl, 1, histSize, ranges)
+                                    Cv2.CalcHist({matchedRoi}, channels, Nothing, histRoi, 1, histSize, ranges)
+
+                                    Cv2.Normalize(histTpl, histTpl, 0, 1, NormTypes.MinMax)
+                                    Cv2.Normalize(histRoi, histRoi, 0, 1, NormTypes.MinMax)
+
+                                    Dim histCorr = Cv2.CompareHist(histTpl, histRoi, HistCompMethods.Correl)
+
+                                    ' 如果直方圖相關性低於 0.6，說明雖然輪廓可能有相似點但材質或內部結構完全不同，屬於錯誤產品
+                                    If histCorr < 0.6 Then
+                                        Dim penalty = 0.5 + (histCorr / 0.6) * 0.5
+                                        score *= penalty
+                                        ok = score >= threshold
+                                        Logger.Debug($"[MATCH] 直方圖相似度防禦：corr={histCorr:F3} 低於閾值 0.6，分數懲罰後為: {score:F3}")
+                                    Else
+                                        Logger.Debug($"[MATCH] 直方圖相似度校驗通過：corr={histCorr:F3}")
+                                    End If
+                                End Using
+                            Catch ex As Exception
+                                Logger.Warn($"直方圖校驗異常已忽略: {ex.Message}")
+                            End Try
                         End If
                     End Using
                 End If

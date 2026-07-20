@@ -108,7 +108,7 @@
   "Train_ErrLoadSample": "Failed to load training sample: ",
   "Train_InvalidTemplatePath": "Invalid template path",
   "Train_CompletePolygonFirst": "Please complete the polygon ROI first (Double-click to complete)",
-  "Train_SampleAddedSuccess": "Training template added (black border interference automatically removed)!",
+  "Train_SampleAddedSuccess": "Training template added !",
   "Train_ErrAddSample": "Failed to add training template: ",
   "Train_Analyzing": "Analyzing...",
   "Train_ErrAutoAnalyze": "Auto-analysis failed: ",

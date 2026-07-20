@@ -1,4 +1,4 @@
-﻿<Window x:Class="LivePreviewWindow"
+<Window x:Class="LivePreviewWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="實時預覽" Height="480" Width="640"
@@ -6,7 +6,9 @@
         ShowInTaskbar="False" WindowStartupLocation="CenterScreen"
         Background="Black" BorderBrush="#FF00A2E8" BorderThickness="4">
     <Grid>
-        <Image x:Name="PreviewImage" Stretch="Uniform" />
+        <Image x:Name="PreviewImage" Stretch="Uniform" 
+               RenderOptions.BitmapScalingMode="LowQuality" 
+               RenderOptions.EdgeMode="Aliased" />
 
         <Border Background="#99000000" VerticalAlignment="Top" Padding="10">
             <TextBlock Text=" 正在進行視覺辨識，請將目標對準畫面水平垂直中心..." 
@@ -22,5 +24,12 @@
                 </GeometryGroup>
             </Path.Data>
         </Path>
+
+        <Border x:Name="OcrResultBorder" Background="#B3000000" VerticalAlignment="Bottom" Padding="15" Visibility="Collapsed">
+            <StackPanel HorizontalAlignment="Center">
+                <TextBlock Text="OCR / 條碼 識別結果：" Foreground="Yellow" FontSize="16" HorizontalAlignment="Center" Margin="0,0,0,5"/>
+                <TextBlock x:Name="OcrResultText" Text="--" Foreground="Cyan" FontSize="26" FontWeight="Bold" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"/>
+            </StackPanel>
+        </Border>
     </Grid>
 </Window>

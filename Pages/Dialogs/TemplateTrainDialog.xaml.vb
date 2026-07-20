@@ -1,4 +1,4 @@
-﻿Imports OpenCvSharp
+Imports OpenCvSharp
 Imports OpenCvSharp.WpfExtensions
 Imports System.Threading.Tasks
 Imports System.Linq
@@ -137,11 +137,10 @@ Public Class TemplateTrainDialog
                 Return
             End If
 
-            Using mat = BitmapSourceConverter.ToMat(frame)
+            Using mat = ImageConvertHelper.ToMat(frame)
                 LoadImageFromMat(mat.Clone())
             End Using
 
-            CameraService.Instance.StopCamera(cameraId)
             If _sourceMat IsNot Nothing Then
                 Await AutoAnalyzeParamsAsync(_sourceMat)
             End If

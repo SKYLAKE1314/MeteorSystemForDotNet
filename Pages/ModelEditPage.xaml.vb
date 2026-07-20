@@ -251,7 +251,6 @@ Class ModelEditPage
         Try
             Dim dlg As New TemplateTrainDialog(groupPath)
 
-            ' 交給蘇蘇來牢牢綁定 Owner，絕對不會讓它再失控了嗷~
             BindOwnerSafely(dlg)
 
             dlg.ShowDialog()
@@ -312,7 +311,6 @@ Class ModelEditPage
         Try
             Dim dlg As New TemplateParamEditDialog(groupPath)
 
-            ' 同樣的，編輯參數的視窗也要被牢牢綁住喔~
             BindOwnerSafely(dlg)
 
             dlg.ShowDialog()

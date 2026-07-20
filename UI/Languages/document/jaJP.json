@@ -108,7 +108,7 @@
   "Train_ErrLoadSample": "学習サンプルの読み込みに失敗しました: ",
   "Train_InvalidTemplatePath": "テンプレートパスが無効です",
   "Train_CompletePolygonFirst": "先に多角形ROIを完了させてください（ダブルクリックで完了）",
-  "Train_SampleAddedSuccess": "学習テンプレートを追加しました（黒枠の干渉は自動的に除去されました）！",
+  "Train_SampleAddedSuccess": "学習テンプレートを追加しました!",
   "Train_ErrAddSample": "学習テンプレートの追加に失敗しました: ",
   "Train_Analyzing": "分析中...",
   "Train_ErrAutoAnalyze": "自動分析に失敗しました: ",

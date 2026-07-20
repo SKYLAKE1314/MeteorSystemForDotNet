@@ -220,7 +220,6 @@ Partial Class HomePage
 
             If barcodeSkipped Then
                 Logger.Info("[RESULT] 條碼 - 已跳過")
-                PlayPromptVoice(VoicePromptStageSkipped)
             Else
                 Logger.Info($"[RESULT] 條碼 - 成功: {code}")
                 PlayPromptVoice(VoicePromptCorrect)
@@ -276,7 +275,7 @@ Partial Class HomePage
             Logger.Info("[SUMMARY] ============================")
 
             If ocrSkipped Then
-                PlayPromptVoice(VoicePromptStageSkipped)
+                ' 模板本身無 OCR，不播報 StageSkipped
             ElseIf ocrTimeout Then
                 PlayPromptVoice(VoicePromptStageTimeout)
             Else

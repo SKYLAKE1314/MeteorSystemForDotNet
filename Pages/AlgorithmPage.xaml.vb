@@ -371,7 +371,6 @@ Public Class AlgorithmPage
                         End If
 
                         If ans = MessageBoxResult.No Then
-                            ' 主人想要新的！強制清空舊名字，這樣下面就會重新彈出輸入框了嗷！
                             _currentTemplateName = ""
                         End If
                     End If
@@ -379,7 +378,7 @@ Public Class AlgorithmPage
                     ' 第一次儲存（或是被上面清空時），詢問新的父資料夾名稱
                     If String.IsNullOrWhiteSpace(_currentTemplateName) Then
                         Dim name = Microsoft.VisualBasic.InputBox(
-                            "請輸入全新的模板組名稱（兩個相機將共用此名稱嗷~）",
+                            "請輸入全新的模板組名稱",
                             "建立模板組",
                             $"Template_{DateTime.Now:yyyyMMdd_HHmmss}")
 
@@ -421,7 +420,10 @@ Public Class AlgorithmPage
                     Dim path = TemplateManager.SaveTemplate(_templateMat, config, _currentTemplateName, _selectedCameraSlot)
                     If String.IsNullOrWhiteSpace(path) Then Return
 
-                    Dim snapshot As New TemplateSnapshot
+                    Dim snapshot = TemplateSnapshotStore.Load()
+                    If snapshot Is Nothing Then
+                        snapshot = New TemplateSnapshot()
+                    End If
                     With snapshot
                         .TemplatePath = path
                         .CameraDeviceId = config.CameraDeviceId
@@ -467,7 +469,7 @@ Public Class AlgorithmPage
                     TemplateSnapshotStore.Save(snapshot)
                     LastTemplateStore.Save(path)
 
-                    MessageBox.Show($"已牢牢保存：{_currentTemplateName}/cam{_selectedCameraSlot + 1} 嗷！")
+                    MessageBox.Show($"已保存：{_currentTemplateName}/cam{_selectedCameraSlot + 1} 啦！")
 
                 End Sub)
     End Sub
@@ -566,15 +568,33 @@ Public Class AlgorithmPage
                 End Sub)
     End Sub
 
-    Private Sub ShowTemplateEditDialog(Optional ocrText As String = "", Optional barcodeText As String = "")
+    Private Sub ShowTemplateEditDialog(Optional ocrText As String = Nothing, Optional barcodeText As String = Nothing)
         SafeRun(Sub()
                     Try
-                        ' 建立新的 snapshot
-                        Dim snapshot As New TemplateSnapshot
-                        snapshot.OcrRecognizedText = ocrText
-                        snapshot.BarcodeDecodedText = barcodeText
-                        snapshot.OcrExpectedText = RoiText.Text
-                        snapshot.BarcodeExpectedText = ResultText.Text
+                        ' 優先載入目前已儲存的快照，保持狀態連續性，不遺失任何已設定欄位
+                        Dim snapshot = TemplateSnapshotStore.Load()
+                        If snapshot Is Nothing Then
+                            snapshot = New TemplateSnapshot()
+                        End If
+
+                        ' 只在有新辨識/解碼結果傳入時，才覆寫對應欄位；其餘保持原樣！
+                        If ocrText IsNot Nothing Then
+                            snapshot.OcrRecognizedText = ocrText
+                            snapshot.OcrExpectedText = ocrText
+                        End If
+                        If barcodeText IsNot Nothing Then
+                            snapshot.BarcodeDecodedText = barcodeText
+                            snapshot.BarcodeExpectedText = barcodeText
+                        End If
+
+                        ' 同步目前 UI 的期望值（非空且非預設值時才覆蓋）
+                        If Not String.IsNullOrWhiteSpace(RoiText.Text) AndAlso RoiText.Text <> "--" AndAlso RoiText.Text <> "未選擇" AndAlso RoiText.Text <> "未識別" AndAlso RoiText.Text <> "解碼中..." AndAlso RoiText.Text <> "識別中..." Then
+                            snapshot.OcrExpectedText = RoiText.Text
+                        End If
+
+                        If Not String.IsNullOrWhiteSpace(ResultText.Text) AndAlso ResultText.Text <> "--" AndAlso ResultText.Text <> "未選擇" AndAlso ResultText.Text <> "未識別" AndAlso ResultText.Text <> "解碼中..." Then
+                            snapshot.BarcodeExpectedText = ResultText.Text
+                        End If
 
                         ' 建立對話窗並顯示
                         Dim dlg As New TemplateEditDialog(snapshot, Nothing)
@@ -582,9 +602,16 @@ Public Class AlgorithmPage
                         Dim res = dlg.ShowDialog()
 
                         If res = True Then
-                            ' 用戶確認了編輯
-                            RoiText.Text = dlg.Snapshot.OcrExpectedText
-                            ResultText.Text = dlg.Snapshot.BarcodeExpectedText
+                            ' 用戶確認了編輯，回寫 UI 畫面
+                            If Not String.IsNullOrWhiteSpace(dlg.Snapshot.OcrExpectedText) Then
+                                RoiText.Text = dlg.Snapshot.OcrExpectedText
+                            End If
+                            If Not String.IsNullOrWhiteSpace(dlg.Snapshot.BarcodeExpectedText) Then
+                                ResultText.Text = dlg.Snapshot.BarcodeExpectedText
+                            End If
+
+                            ' 保存這一次最新的快照，以便在 algorithm 頁存檔或切換區域時不會遺失
+                            TemplateSnapshotStore.Save(dlg.Snapshot)
                         End If
 
                     Catch ex As Exception
@@ -847,7 +874,7 @@ Public Class AlgorithmPage
 
     ' 輔助轉換方法
     Private Function BitmapSourceToMat(source As BitmapSource) As Mat
-        Return OpenCvSharp.WpfExtensions.BitmapSourceConverter.ToMat(source)
+        Return ImageConvertHelper.ToMat(source)
     End Function
 
 End Class

@@ -47,6 +47,7 @@ Partial Class HomePage
             ' 1. 在 UI 執行緒建立並顯示無邊距彈窗
             Dispatcher.Invoke(Sub()
                                   _activePreviewWin = New LivePreviewWindow()
+                                  _activePreviewWin.UpdateOcrResult("條碼辨識中...")
                                   _activePreviewWin.Show()
                               End Sub)
 
@@ -121,6 +122,12 @@ Partial Class HomePage
 
                                                  If Not String.IsNullOrWhiteSpace(text) Then
                                                      resultBox = text.Trim()
+                                                     Dim tempText = resultBox
+                                                     Dispatcher.Invoke(Sub()
+                                                                           If _activePreviewWin IsNot Nothing Then
+                                                                               _activePreviewWin.UpdateOcrResult(tempText)
+                                                                           End If
+                                                                       End Sub)
                                                  End If
                                              End Using
                                          Catch ex As Exception
@@ -134,14 +141,13 @@ Partial Class HomePage
                     End If
                 End If
 
-                Await Task.Delay(15)
+                Await Task.Delay(5)
             End While
 
             Logger.Warn("[FLOW] 解碼超時")
             Return ""
 
         Finally
-            ' 無論發生什麼事，蘇蘇都會強制把它關掉的... 不會讓它失控喔。
             If _activePreviewWin IsNot Nothing Then
                 Dispatcher.Invoke(Sub()
                                       Try

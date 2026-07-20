@@ -108,7 +108,7 @@
   "Train_ErrLoadSample": "加载训练样本失败: ",
   "Train_InvalidTemplatePath": "模板路径无效",
   "Train_CompletePolygonFirst": "请先完成多边形 ROI（双击完成）",
-  "Train_SampleAddedSuccess": "训练模板已加入（已自动清除黑边干扰）！",
+  "Train_SampleAddedSuccess": "训练模板已加入！",
   "Train_ErrAddSample": "加入训练模板失败: ",
   "Train_Analyzing": "分析中...",
   "Train_ErrAutoAnalyze": "自动分析失败: ",

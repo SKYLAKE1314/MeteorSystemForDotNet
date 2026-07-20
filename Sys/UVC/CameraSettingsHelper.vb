@@ -34,7 +34,7 @@ Public Module CameraSettingsHelper
             Dim ids = My.Settings.CameraDeviceIds
             If ids Is Nothing Then Return Nothing
             For i = 0 To ids.Count - 1
-                If ids(i) = deviceId Then
+                If CameraManager.IsSameDevice(ids(i), deviceId) Then
                     Return GetCamResolution(i)
                 End If
             Next

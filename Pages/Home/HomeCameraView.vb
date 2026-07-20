@@ -40,30 +40,10 @@ Partial Class HomePage
                                            End Sub)
     End Sub
     Private Sub BtnStart_Click(sender As Object, e As RoutedEventArgs)
-
         Try
-
             If _isStreaming Then Return
 
-            ' 從 ComboBox 獲取選定的相機
-            Dim selectedCam = TryCast(CameraComboBox.SelectedItem, CameraInfo)
-            If selectedCam IsNot Nothing Then
-                ' 如果手動點選，依目前階段更新對應的相機暫存
-                If _flowStage = DetectionFlowStage.Barcode OrElse _flowStage = DetectionFlowStage.Ocr Then
-                    _ocrCameraId = selectedCam.DeviceId
-                Else
-                    _matchCameraId = selectedCam.DeviceId
-                End If
-                Logger.Info($"手動選定相機: {selectedCam.DisplayName}")
-            ElseIf String.IsNullOrWhiteSpace(_matchCameraId) Then
-                Logger.Error("未選擇相機設備")
-                MessageBox.Show("請先選擇相機設備")
-                Return
-            End If
-
-            AddHandler CameraService.Instance.FrameArrived, AddressOf OnFrameArrived
-
-            ' 既然開啟串流，就把兩台工作相機都安全啟動（如果是同一台硬體，Service 內部會自動忽略重複啟動）
+            ' 啟動定位與解碼相機
             If Not String.IsNullOrWhiteSpace(_matchCameraId) Then
                 CameraService.Instance.StartCamera(_matchCameraId)
             End If
@@ -72,13 +52,30 @@ Partial Class HomePage
                 CameraService.Instance.StartCamera(_ocrCameraId)
             End If
 
+            ' 啟動當前手動選定的預覽相機
+            If Not String.IsNullOrWhiteSpace(_previewCameraId) Then
+                CameraService.Instance.StartCamera(_previewCameraId)
+            End If
+
             _isStreaming = True
-            Logger.Info("相機已啟動（雙相機通道就緒）")
+            Logger.Info("相機串流已啟動")
 
         Catch ex As Exception
             MessageBox.Show(ex.Message)
         End Try
+    End Sub
 
+    Private Sub BtnStop_Click(sender As Object, e As RoutedEventArgs)
+        Try
+            If Not _isStreaming Then Return
+
+            CameraService.Instance.StopAll()
+            _isStreaming = False
+            Logger.Info("相機已停止")
+
+        Catch ex As Exception
+            MessageBox.Show(ex.Message)
+        End Try
     End Sub
 
     ' =========================================
@@ -92,57 +89,18 @@ Partial Class HomePage
         Try
             Dim cam = TryCast(CameraComboBox.SelectedItem, CameraInfo)
             If cam IsNot Nothing Then
+                _previewCameraId = cam.DeviceId
+                Logger.Info($"[UI手動變更] 已切換預覽相機為: {cam.DisplayName}")
 
-                Dim savedIds = My.Settings.CameraDeviceIds
-                If savedIds Is Nothing Then savedIds = New System.Collections.Specialized.StringCollection()
-
-                ' 確保 StringCollection 陣列長度至少有 2，防止索引越界
-                While savedIds.Count < 2
-                    savedIds.Add(cam.DeviceId)
-                End While
-
-                ' 根據目前首頁正處於什麼階段，決定這一次的手動切換是改「相機 1」還是「相機 2」
-                If _flowStage = DetectionFlowStage.Barcode OrElse _flowStage = DetectionFlowStage.Ocr Then
-                    _ocrCameraId = cam.DeviceId
-                    savedIds(1) = cam.DeviceId
-                    Logger.Info($"[UI手動變更] 已更新相機 2 (OCR/條碼) 為: {cam.DisplayName}")
-                Else
-                    _matchCameraId = cam.DeviceId
-                    savedIds(0) = cam.DeviceId
-                    My.Settings.CameraDeviceId = cam.DeviceId ' 保持與舊的單一欄位相容
-                    Logger.Info($"[UI手動變更] 已更新相機 1 (定位匹配) 為: {cam.DisplayName}")
-                End If
-
-                ' 儲存陣列，並通知全域變更（這會觸發相機服務重啟硬體）
-                My.Settings.CameraDeviceIds = savedIds
-                My.Settings.Save()
-
-                CameraManager.NotifyCameraChanged()
+                ' 啟動此相機（若尚未啟動）
+                CameraService.Instance.StartCamera(cam.DeviceId)
             End If
         Catch ex As Exception
             Logger.Error($"相機選擇變更失敗: {ex.Message}")
         End Try
     End Sub
 
-    Private Sub BtnStop_Click(sender As Object, e As RoutedEventArgs)
 
-        Try
-
-            If Not _isStreaming Then Return
-
-            RemoveHandler CameraService.Instance.FrameArrived, AddressOf OnFrameArrived
-
-            CameraService.Instance.StopAll()
-
-            _isStreaming = False
-
-            Logger.Info("相機已停止（畫面已凍結）")
-
-        Catch ex As Exception
-            MessageBox.Show(ex.Message)
-        End Try
-
-    End Sub
     Private Sub BtnSave_Click(sender As Object, e As RoutedEventArgs)
 
         Try

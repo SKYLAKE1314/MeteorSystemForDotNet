@@ -44,6 +44,7 @@ Partial Class HomePage
     Private _skipCurrentStageRequested As Boolean = False
     Private _activeDetectionResult As DetectionResult
     Private _activeDetectionItem As DetectionItem
+    Private _previewCameraId As String = ""
 
     ' 語音播報設定 (.wav 檔名對照)
     Private Const VoicePromptMatchCompleteScan As String = "MatchCompletedPleaseScan.wav"             ' 匹配完成，請掃描 (有條碼階段)
@@ -102,8 +103,6 @@ Partial Class HomePage
             ' 如果先前離開時處於串流狀態，自動恢復相機與串流更新，防止畫面凍結！
             If _wasStreamingBeforeUnload Then
                 Logger.Info("[FLOW] 返回首頁，自動恢復相機串流...")
-                RemoveHandler CameraService.Instance.FrameArrived, AddressOf OnFrameArrived
-                AddHandler CameraService.Instance.FrameArrived, AddressOf OnFrameArrived
 
                 ' 啟動定位與解碼相機
                 If Not String.IsNullOrWhiteSpace(_matchCameraId) Then
@@ -182,7 +181,6 @@ Partial Class HomePage
         ' 離開頁面時必須解除註冊，防止背景線程持續索取已關閉的硬體資源
         RemoveHandler CompositionTarget.Rendering, AddressOf UpdateFrame
         RemoveHandler CameraManager.CameraChanged, AddressOf OnCameraChanged
-        RemoveHandler CameraService.Instance.FrameArrived, AddressOf OnFrameArrived
 
         ' 釋放實時預覽子模板快取記憶體
         SyncLock _renderCacheLock
@@ -389,10 +387,13 @@ Partial Class HomePage
     End Sub
     ' 實時畫面流回調
     Private Sub UpdateFrame(sender As Object, e As EventArgs)
-        Dim targetCamId As String = _matchCameraId
-
+        Dim targetCamId As String = ""
         If _flowStage = DetectionFlowStage.Barcode OrElse _flowStage = DetectionFlowStage.Ocr Then
             targetCamId = _ocrCameraId
+        ElseIf _flowStage = DetectionFlowStage.Matching Then
+            targetCamId = _matchCameraId
+        Else
+            targetCamId = If(Not String.IsNullOrWhiteSpace(_previewCameraId), _previewCameraId, _matchCameraId)
         End If
 
         If String.IsNullOrWhiteSpace(targetCamId) Then Return
@@ -400,6 +401,8 @@ Partial Class HomePage
         Try
             Dim frame = CameraService.Instance.GetFrame(targetCamId)
             If frame Is Nothing Then Return
+
+            _lastFrameBitmap = frame
 
             If _flowStage = DetectionFlowStage.Matching Then
                 ' 如果背景匹配任務還在執行，直接把原生畫面丟給 UI（維持 60 FPS 預覽），不進行昂貴的 Mat 轉換與比對
@@ -464,12 +467,15 @@ Partial Class HomePage
             _ocrCameraId = allCameras(0).DeviceId
         End If
 
-        ' 實時檢測界面上的 ComboBox 顯示目前正在工作的相機（依階段決定）
-        Dim currentWorkingId = If(_flowStage = DetectionFlowStage.Ocr OrElse _flowStage = DetectionFlowStage.Barcode, _ocrCameraId, _matchCameraId)
+        ' 實時檢測界面上的 ComboBox 顯示目前正在工作的相機（手動預覽或檢測階段決定）
+        Dim currentWorkingId = _previewCameraId
+        If String.IsNullOrWhiteSpace(currentWorkingId) Then
+            currentWorkingId = If(_flowStage = DetectionFlowStage.Ocr OrElse _flowStage = DetectionFlowStage.Barcode, _ocrCameraId, _matchCameraId)
+        End If
         Dim toSelect = allCameras.FirstOrDefault(Function(c) CameraManager.IsSameDevice(c.DeviceId, currentWorkingId))
 
         CameraComboBox.SelectedItem = toSelect
-        Logger.Info($"[Camera] 實時頁面相機載入成功。定位相機：{_matchCameraId}，OCR相機：{_ocrCameraId}")
+        Logger.Info($"[Camera] 實時頁面相機載入成功。定位相機：{_matchCameraId}，OCR相機：{_ocrCameraId}，當前預覽相機：{currentWorkingId}")
     End Sub
 
     ''' <summary>
