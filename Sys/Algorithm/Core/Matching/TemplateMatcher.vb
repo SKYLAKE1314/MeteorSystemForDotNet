@@ -258,9 +258,7 @@ Public Class TemplateMatcher
                 }
             End If
 
-            ' =================================================================
             ' 執行匹配運算
-            ' =================================================================
             ' --- 正常極性匹配 ---
             Dim score As Double = 0
             Dim matchPoint As Point
@@ -311,7 +309,7 @@ Public Class TemplateMatcher
                             score = 0
                             Logger.Debug($"[MATCH] 判定攔截：匹配區域標準差過低 ({mStd.Val0:F2})，此為虛假高分點。")
                         Else
-                            ' 🚀 三次驗證：直方圖相關性校驗 (Correlation) 徹底過濾錯誤產品的虛假高分
+                            ' 三次驗證：直方圖相關性校驗 (Correlation) 徹底過濾錯誤產品的虛假高分
                             Try
                                 Using histTpl As New Mat(), histRoi As New Mat()
                                     Dim histSize() As Integer = {256}
@@ -378,17 +376,23 @@ Public Class TemplateMatcher
                 matchPt = maxLoc
             End If
 
-            ' 邊界假陽性檢驗：若匹配點落在結果圖的邊緣（±1px），
-            ' 通常是模板邊界特徵與搜尋區邊界的錯誤匹配，降低分數為 0
+            ' 邊界假陽性檢驗：僅在結果圖空間夠大時（>= 32 像素）才判定邊界假陽性。
+            ' 【關鍵修正】當模板接近搜尋圖大小時，result 空間極小（可能只有個位數像素），
+            ' 任何真實匹配點都會落在邊緣，絕不能在此情況下誤殺有效結果！
             Dim resultW = result.Width
             Dim resultH = result.Height
-            If resultW > 2 AndAlso resultH > 2 Then
-                Dim isBoundaryHit = (matchPt.X <= 1 OrElse matchPt.X >= resultW - 2 OrElse
-                                     matchPt.Y <= 1 OrElse matchPt.Y >= resultH - 2)
+            Dim minResultDim = Math.Min(resultW, resultH)
+            If minResultDim >= 32 Then
+                ' result 空間夠大，才有意義判定「邊界假陽性」
+                Dim guardPx = Math.Max(2, minResultDim \ 20) ' 動態防護像素寬度：最大 5% 邊緣
+                Dim isBoundaryHit = (matchPt.X <= guardPx OrElse matchPt.X >= resultW - guardPx OrElse
+                                     matchPt.Y <= guardPx OrElse matchPt.Y >= resultH - guardPx)
                 If isBoundaryHit AndAlso score > 0.5 Then
-                    Logger.Debug($"[MATCH] 邊界假陽性：matchPt=({matchPt.X},{matchPt.Y}) resultSize={resultW}x{resultH}，分數由 {score:F3} 降為 0")
+                    Logger.Debug($"[MATCH] 邊界假陽性：matchPt=({matchPt.X},{matchPt.Y}) resultSize={resultW}x{resultH} guard={guardPx}，分數由 {score:F3} 降為 0")
                     score = 0
                 End If
+            Else
+                Logger.Debug($"[MATCH] result 空間過小 ({resultW}x{resultH})，跳過邊界假陽性判斷。")
             End If
         End Using
     End Sub

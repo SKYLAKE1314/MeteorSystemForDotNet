@@ -43,6 +43,16 @@ Partial Class HomePage
         Dim decoding As Boolean = False
         Dim resultBox As String = Nothing
 
+        ' 【修復偶發黑畫面】將 frameHandler 宣告在 Try 外，使它在 Finally 中也可存取
+        Dim frameHandler As Action(Of String, BitmapSource) =
+            Sub(frameId As String, frameBmp As BitmapSource)
+                If Not String.Equals(frameId, cameraId, StringComparison.OrdinalIgnoreCase) Then Return
+                Dim winRef = _activePreviewWin
+                If winRef IsNot Nothing Then
+                    winRef.UpdateFrame(frameBmp)
+                End If
+            End Sub
+
         Try
             ' 1. 在 UI 執行緒建立並顯示無邊距彈窗
             Dispatcher.Invoke(Sub()
@@ -50,6 +60,7 @@ Partial Class HomePage
                                   _activePreviewWin.UpdateOcrResult("條碼辨識中...")
                                   _activePreviewWin.Show()
                               End Sub)
+            AddHandler CameraService.Instance.FrameArrived, frameHandler
 
             While sw.ElapsedMilliseconds < timeoutMs
 
@@ -148,6 +159,11 @@ Partial Class HomePage
             Return ""
 
         Finally
+            ' 取消相機事件訂閱
+            Try
+                RemoveHandler CameraService.Instance.FrameArrived, frameHandler
+            Catch
+            End Try
             If _activePreviewWin IsNot Nothing Then
                 Dispatcher.Invoke(Sub()
                                       Try

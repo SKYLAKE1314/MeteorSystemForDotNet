@@ -64,6 +64,16 @@ Partial Class HomePage
         Dim bestText As String = ""
         Dim bestScore As Double = 0
 
+        ' 【修復偶發黑畫面】將 ocrFrameHandler 宣告在 Try 外，使它在 Finally 中也可存取
+        Dim ocrFrameHandler As Action(Of String, BitmapSource) =
+            Sub(frameId As String, frameBmp As BitmapSource)
+                If Not String.Equals(frameId, cameraId, StringComparison.OrdinalIgnoreCase) Then Return
+                Dim winRef = _activePreviewWin
+                If winRef IsNot Nothing Then
+                    winRef.UpdateFrame(frameBmp)
+                End If
+            End Sub
+
         Try
             ' 1. 在 UI 執行緒建立並顯示無邊距彈窗
             Dispatcher.Invoke(Sub()
@@ -71,6 +81,7 @@ Partial Class HomePage
                                   _activePreviewWin.UpdateOcrResult("OCR 辨識中...")
                                   _activePreviewWin.Show()
                               End Sub)
+            AddHandler CameraService.Instance.FrameArrived, ocrFrameHandler
 
             Dim sw As New Stopwatch()
             sw.Start()
@@ -204,6 +215,11 @@ Partial Class HomePage
             Return New OcrFlowResult With {.Text = "", .Score = 0, .IsMatched = False}
 
         Finally
+            ' 取消相機事件訂閱
+            Try
+                RemoveHandler CameraService.Instance.FrameArrived, ocrFrameHandler
+            Catch
+            End Try
             If _activePreviewWin IsNot Nothing Then
                 Dispatcher.Invoke(Sub()
                                       Try
@@ -281,14 +297,26 @@ Partial Class HomePage
         Return d(n, m)
     End Function
 
+    Private Function CleanText(text As String) As String
+        If String.IsNullOrEmpty(text) Then Return ""
+        Dim sb As New StringBuilder()
+        For Each c In text
+            ' 僅保留字母與數字，徹底忽略空格、破折號、斜線等任何分隔符號以大幅提升匹配率與比對速度
+            If Char.IsLetterOrDigit(c) Then
+                sb.Append(Char.ToUpper(c))
+            End If
+        Next
+        Return sb.ToString()
+    End Function
+
     ''' <summary>
     ''' 滑動視窗模糊匹配，允許預期字元中存在特定長度的字元替換、缺失或多餘字元
     ''' </summary>
     Private Function IsFuzzyMatch(ocrText As String, expected As String) As Boolean
         If String.IsNullOrWhiteSpace(ocrText) OrElse String.IsNullOrWhiteSpace(expected) Then Return False
 
-        Dim cleanOcr = ocrText.Replace(" ", "").Replace("-", "").ToUpper()
-        Dim cleanExpected = expected.Replace(" ", "").Replace("-", "").ToUpper()
+        Dim cleanOcr = CleanText(ocrText)
+        Dim cleanExpected = CleanText(expected)
 
         ' 1. 精確包含
         If cleanOcr.Contains(cleanExpected) Then Return True
