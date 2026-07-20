@@ -288,7 +288,7 @@ Public Class TemplateMatcher
             ' 2. 建立返回結果
             Dim display As Mat = source.Clone()
 
-            ' 【加強防禦】如果算出來的高分依然大於閾值，但此時分數恰好是踩中 CCorrNormed 的純色陷阱
+            ' 如果算出來的高分依然大於閾值，但此時分數恰好是踩中 CCorrNormed 的純色陷阱
             ' 我們做二次安全檢查：確保匹配到的區域 (ROI)，其標準差不能跟模板天壤地別
             Dim ok As Boolean = score >= threshold
 

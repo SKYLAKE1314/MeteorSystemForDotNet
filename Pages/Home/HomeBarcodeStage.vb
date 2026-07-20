@@ -73,8 +73,8 @@ Partial Class HomePage
 
                         Dim matForDecode As Mat = Nothing
                         Try
-                            ' 直接使用高效 extension 轉換
-                            matForDecode = frameCopy.ToMat()
+                            ' 直接使用安全且執行緒安全的 ImageConvertHelper 轉換，避免背景執行緒拋出 ExecutionEngineException
+                            matForDecode = ImageConvertHelper.ToMat(frameCopy)
                         Catch ex As Exception
                             Logger.Warn("[FLOW] 影像轉 Mat 失敗: " & ex.Message)
                         End Try
