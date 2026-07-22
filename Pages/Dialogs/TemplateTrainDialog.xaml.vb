@@ -113,10 +113,7 @@ Public Class TemplateTrainDialog
 
     Private Async Sub BtnCaptureFromCamera_Click(sender As Object, e As RoutedEventArgs)
         Try
-            If HomePage.IsDetectionRunning Then
-                MeteorMessageBox.Show("當前正處於檢測流程中，為避免搶占相機硬體，請先停止流程後再進行擷取畫面。", "流程運行中", MessageBoxButton.OK, MessageBoxImage.Warning)
-                Return
-            End If
+
             Dim camInfo = TryCast(CameraComboBox.SelectedItem, CameraInfo)
             If camInfo Is Nothing Then
                 MeteorMessageBox.Show(LanguageManager.T("Train_SelectCamPrompt"))
@@ -145,6 +142,14 @@ Public Class TemplateTrainDialog
                         Return
                     End If
                 End Using
+            End If
+
+            ' 如果快取無幀且正在檢測中，嚴禁啟動相機搶佔硬體
+            If HomePage.IsDetectionRunning Then
+                MeteorMessageBox.Show("當前正處於檢測流程中，為避免搶占相機硬體導致檢測黑屏，僅允許擷取正在運行中的相機畫面。若要啟動新相機，請先停止檢測流程。", "流程運行中", MessageBoxButton.OK, MessageBoxImage.Warning)
+                BtnCaptureFromCamera.IsEnabled = True
+                BtnCaptureFromCamera.Content = "📷 " & LanguageManager.T("Train_BtnCapture")
+                Return
             End If
 
             ' 快取無幀：啟動相機並訂閱事件等待（不再輪詢快取，避免因其他頁面佔用而拿不到）

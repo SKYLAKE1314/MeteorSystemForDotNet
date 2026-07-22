@@ -76,10 +76,7 @@ Public Class AlgorithmPage
 #Region "獲取圖像"
     Private Async Sub GetSource_Click(sender As Object, e As RoutedEventArgs)
         Try
-            If HomePage.IsDetectionRunning Then
-                MeteorMessageBox.Show("當前正處於檢測流程中，為避免搶占相機硬體，請先停止流程後再進行擷取畫面。", "流程運行中", MessageBoxButton.OK, MessageBoxImage.Warning)
-                Return
-            End If
+
             ' 彈出相機選擇對話窗
             Dim picker As New CameraPickDialog()
             picker.Owner = System.Windows.Window.GetWindow(Me) ' 確保 Owner 正確
@@ -94,6 +91,12 @@ Public Class AlgorithmPage
                                                            Try
                                                                If String.IsNullOrWhiteSpace(_selectedCameraId) Then
                                                                    MeteorMessageBox.ShowError("尚未設定相機")
+                                                                   Return
+                                                               End If
+
+                                                               ' 如果正在檢測流程中，只允許「借用」已經在運行的相機畫面，嚴禁啟動新相機搶佔頻寬
+                                                               If HomePage.IsDetectionRunning AndAlso Not CameraService.Instance.IsRunning(_selectedCameraId) Then
+                                                                   MeteorMessageBox.Show("當前正處於檢測流程中，為避免搶占相機硬體導致檢測黑屏，僅允許擷取正在運行中的相機畫面。若要啟動新相機，請先停止檢測流程。", "流程運行中", MessageBoxButton.OK, MessageBoxImage.Warning)
                                                                    Return
                                                                End If
 
