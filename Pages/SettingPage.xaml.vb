@@ -238,7 +238,7 @@ If(My.Settings.AutoRun, 0, 1)
         Catch ex As Exception
             Logger.Error($"[Setting] 套用分辨率失敗: {ex.Message}")
             Dispatcher.Invoke(Sub()
-                                  MessageBox.Show($"套用分辨率失敗: {ex.Message}" & vbCrLf & vbCrLf & "建議先返回首頁停止相機流，再變更分辨率。",
+                                  MeteorMessageBox.Show($"套用分辨率失敗: {ex.Message}" & vbCrLf & vbCrLf & "建議先返回首頁停止相機流，再變更分辨率。",
                                               "錯誤", MessageBoxButton.OK, MessageBoxImage.Error)
                               End Sub)
         Finally
@@ -323,6 +323,9 @@ If(My.Settings.AutoRun, 0, 1)
 
             ' OCR 方式
             OcrModeComboBox.SelectedIndex = If(String.Equals(My.Settings.OcrMode, "AI", StringComparison.OrdinalIgnoreCase), 1, 0)
+
+            ' 解碼方式
+            DecodeModeComboBox.SelectedIndex = If(String.Equals(My.Settings.DecodeMode, "WeChat", StringComparison.OrdinalIgnoreCase), 1, 0)
 
         Finally
             _suppressEvents = False
@@ -485,6 +488,13 @@ If(My.Settings.AutoRun, 0, 1)
         My.Settings.OcrMode = If(OcrModeComboBox.SelectedIndex = 1, "AI", "Standard")
         My.Settings.Save()
         Logger.Info($"[Setting] OCR方式變更為: {My.Settings.OcrMode}")
+    End Sub
+
+    Private Sub DecodeModeComboBox_SelectionChanged(sender As Object, e As SelectionChangedEventArgs)
+        If Not _isLoaded OrElse _suppressEvents Then Return
+        My.Settings.DecodeMode = If(DecodeModeComboBox.SelectedIndex = 1, "WeChat", "Standard")
+        My.Settings.Save()
+        Logger.Info($"[Setting] 解碼方式變更為: {My.Settings.DecodeMode}")
     End Sub
 
     ''' <summary>

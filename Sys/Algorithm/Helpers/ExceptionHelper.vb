@@ -1,4 +1,4 @@
-﻿Imports System.Windows
+Imports System.Windows
 
 Public Class ExceptionHelper
 
@@ -6,7 +6,7 @@ Public Class ExceptionHelper
 
         Try
 
-            MessageBox.Show(
+            MeteorMessageBox.Show(
                 ex.Message,
                 "錯誤",
                 MessageBoxButton.OK,

@@ -348,7 +348,7 @@ Public Class TemplateEditDialog
             Me.DialogResult = True
 
         Catch ex As Exception
-            MessageBox.Show("保存失敗: " & ex.Message)
+            MeteorMessageBox.Show("保存失敗: " & ex.Message)
             Me.DialogResult = False
         End Try
     End Sub

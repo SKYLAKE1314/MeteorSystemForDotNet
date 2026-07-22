@@ -14,7 +14,7 @@ Class Application
             Dim otherProc = runningProcs.FirstOrDefault(Function(p) p.Id <> currentProc.Id)
 
             If otherProc IsNot Nothing Then
-                Dim result = MessageBox.Show(
+                Dim result = MeteorMessageBox.Show(
                     "系統檢測到另一個 MeteorSystem 正在運行中。" & vbCrLf & vbCrLf &
                     "是否強制終止（Kill）該執行個體並繼續啟動？" & vbCrLf &
                     "（選擇「否」將退出本次啟動）",

@@ -1,4 +1,4 @@
-﻿Imports System.IO
+Imports System.IO
 Imports System.Text
 Imports System.Threading
 Imports System.Windows
@@ -44,7 +44,7 @@ Partial Class HomePage
             End If
 
         Catch ex As Exception
-            ErrorDialogHelper.ShowError("ROI錯誤: " & ex.Message)
+            MeteorMessageBox.ShowError("ROI錯誤: " & ex.Message)
         End Try
 
     End Sub
@@ -172,7 +172,7 @@ Partial Class HomePage
 
         Catch ex As Exception
 
-            MessageBox.Show(ex.Message)
+            MeteorMessageBox.Show(ex.Message)
 
         End Try
 
@@ -286,7 +286,7 @@ Partial Class HomePage
             Logger.Debug($"Score={ocrResult.Score:F3}")
             Logger.Debug($"Angle={ocrResult.Angle}")
 
-            MessageBox.Show(
+            MeteorMessageBox.Show(
             $"OCR結果：{ocrResult.Text}" &
             vbCrLf &
             $"置信度：{ocrResult.Score:F3}" &
@@ -295,7 +295,7 @@ Partial Class HomePage
 
         Catch ex As Exception
 
-            ErrorDialogHelper.ShowError(
+            MeteorMessageBox.ShowError(
                 "清晰度評估失敗：" &
                 vbCrLf &
                 ex.Message)
@@ -424,13 +424,13 @@ Partial Class HomePage
             Logger.Debug($"Score={bestScore:F3}")
             Logger.Debug($"Angle={bestAngle}")
 
-            MessageBox.Show(
+            MeteorMessageBox.Show(
             $"OCR結果：{bestText}" & vbCrLf &
             $"置信度：{bestScore:F3}" & vbCrLf &
             $"角度：{bestAngle}")
 
         Catch ex As Exception
-            ErrorDialogHelper.ShowError("OCR失敗：" & ex.Message)
+            MeteorMessageBox.ShowError("OCR失敗：" & ex.Message)
         End Try
 
     End Sub

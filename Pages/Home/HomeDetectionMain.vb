@@ -73,9 +73,8 @@ Partial Class HomePage
 
             Dim snapshot = TemplateSnapshotStore.Load()
 
-            ' 【點對點修改】比對「模板建模相機」與當前使用者的「定位相機 1」
             If snapshot IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(snapshot.CameraDeviceId) Then
-                If Not String.Equals(snapshot.CameraDeviceId, _matchCameraId, StringComparison.OrdinalIgnoreCase) Then
+                If Not CameraManager.IsSameDevice(snapshot.CameraDeviceId, _matchCameraId) Then
                     Logger.Warn($"[Camera] 模板建模相機 ({snapshot.CameraDeviceId}) 與當前選定定位相機 ({_matchCameraId}) 不同，" &
                                 "已忽略模板相機設定並沿用使用者當前選擇")
                 End If

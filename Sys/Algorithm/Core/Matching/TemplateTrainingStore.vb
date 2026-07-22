@@ -124,18 +124,11 @@ Public Class TemplateTrainingStore
         Dim safeRoi As New Rect(minX, minY, maxX - minX + 1, maxY - minY + 1)
         If safeRoi.Width <= 0 OrElse safeRoi.Height <= 0 Then Throw New ArgumentException("Polygon bbox invalid")
 
-        ' 直接裁剪 ROI 區域儲存，不縮放到母版大小
-        ' 多邊形遮罩讓 ROI 外的像素填為深色背景
-        Using mask As Mat = Mat.Zeros(source.Size(), MatType.CV_8UC1),
-              solidFill As New Mat(source.Size(), source.Type(), New Scalar(32, 32, 32))
-            Cv2.FillPoly(mask, {safePoly}, Scalar.White)
-            source.CopyTo(solidFill, mask)
-            Using crop As New Mat(solidFill, safeRoi)
-                ' 軟化邊界以消除邊緣輪廓特徵
-                Dim softened = SoftenCropBoundary(crop)
-                Cv2.ImWrite(filePath, softened, {New ImageEncodingParam(ImwriteFlags.PngCompression, 3)})
-                softened.Dispose()
-            End Using
+        ' 直接裁剪 ROI 區域的原始像素儲存
+        ' 移除背景填色 (32,32,32) 和軟化邊界，因為 MatchTemplate(CCoeffNormed) 不支援 Mask，
+        ' 如果把多邊形外填成深色，匹配時會把深色當成目標特徵去和真實背景比對，導致只要稍微移動分數就暴跌到 0.2。
+        Using crop As New Mat(source, safeRoi)
+            Cv2.ImWrite(filePath, crop, {New ImageEncodingParam(ImwriteFlags.PngCompression, 3)})
         End Using
 
         Dim now = DateTimeOffset.Now.ToUnixTimeMilliseconds()
@@ -291,20 +284,27 @@ Public Class TemplateTrainingStore
 
     Public Shared Function GetTrainingSamples(groupPath As String) As List(Of TrainingSampleMeta)
         Dim groupRoot = NormalizeGroupPath(groupPath)
-        If String.IsNullOrWhiteSpace(groupRoot) Then Return New List(Of TrainingSampleMeta)()
+        Logger.Debug($"[TemplateTraining] GetTrainingSamples 輸入={groupPath} → 正規化={groupRoot}")
+        If String.IsNullOrWhiteSpace(groupRoot) Then
+            Logger.Warn($"[TemplateTraining] groupPath 正規化失敗（目錄不存在？）: {groupPath}")
+            Return New List(Of TrainingSampleMeta)()
+        End If
 
         SyncLock _cacheLock
             If _sampleMetaCache.ContainsKey(groupRoot) Then
-                Return _sampleMetaCache(groupRoot).
+                Dim cached = _sampleMetaCache(groupRoot).
                     Select(Function(x) CloneMeta(x)).
                     OrderByDescending(Function(x) x.LastMatchedAt).
                     ThenByDescending(Function(x) x.CreatedAt).
                     ToList()
+                Logger.Debug($"[TemplateTraining] 命中快取，樣本數={cached.Count}")
+                Return cached
             End If
         End SyncLock
 
         ' ── 主要：讀取 samples/ 目錄下每張圖對應的獨立 JSON ──────────────
         Dim sampleDir = IO.Path.Combine(groupRoot, "training", "samples")
+        Logger.Debug($"[TemplateTraining] sampleDir={sampleDir} 存在={IO.Directory.Exists(sampleDir)}")
         Dim merged As New Dictionary(Of String, TrainingSampleMeta)(StringComparer.OrdinalIgnoreCase)
 
         If IO.Directory.Exists(sampleDir) Then
@@ -335,6 +335,8 @@ Public Class TemplateTrainingStore
             OrderByDescending(Function(x) x.LastMatchedAt).
             ThenByDescending(Function(x) x.CreatedAt).
             ToList()
+
+        Logger.Info($"[TemplateTraining] 磁碟掃描完成：merged={merged.Count} validSamples={validSamples.Count} groupRoot={groupRoot}")
 
         SyncLock _cacheLock
             _sampleMetaCache(groupRoot) = validSamples.Select(Function(x) CloneMeta(x)).ToList()

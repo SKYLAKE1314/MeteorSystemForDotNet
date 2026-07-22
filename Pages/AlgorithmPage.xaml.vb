@@ -76,6 +76,10 @@ Public Class AlgorithmPage
 #Region "獲取圖像"
     Private Async Sub GetSource_Click(sender As Object, e As RoutedEventArgs)
         Try
+            If HomePage.IsDetectionRunning Then
+                MeteorMessageBox.Show("當前正處於檢測流程中，為避免搶占相機硬體，請先停止流程後再進行擷取畫面。", "流程運行中", MessageBoxButton.OK, MessageBoxImage.Warning)
+                Return
+            End If
             ' 彈出相機選擇對話窗
             Dim picker As New CameraPickDialog()
             picker.Owner = System.Windows.Window.GetWindow(Me) ' 確保 Owner 正確
@@ -89,7 +93,7 @@ Public Class AlgorithmPage
             Application.Current.Dispatcher.BeginInvoke(Sub()
                                                            Try
                                                                If String.IsNullOrWhiteSpace(_selectedCameraId) Then
-                                                                   ErrorDialogHelper.ShowError("尚未設定相機")
+                                                                   MeteorMessageBox.ShowError("尚未設定相機")
                                                                    Return
                                                                End If
 
@@ -115,7 +119,7 @@ Public Class AlgorithmPage
 
                 Dim handler As Action(Of String, BitmapSource) = Nothing
                 handler = Sub(id As String, img As BitmapSource)
-                              If String.Equals(id, targetId, StringComparison.OrdinalIgnoreCase) Then
+                              If CameraManager.IsSameDevice(id, targetId) Then
                                   RemoveHandler CameraService.Instance.FrameArrived, handler
                                   tcs.TrySetResult(img)
                               End If
@@ -139,7 +143,7 @@ Public Class AlgorithmPage
             End If
 
             If frame Is Nothing Then
-                ErrorDialogHelper.ShowError($"尚未取得相機 {_selectedCameraSlot + 1} 的影像（相機啟動逾時，請確認相機已連接）")
+                MeteorMessageBox.ShowError($"尚未取得相機 {_selectedCameraSlot + 1} 的影像（相機啟動逾時，請確認相機已連接）")
                 Return
             End If
 
@@ -275,7 +279,7 @@ Public Class AlgorithmPage
 
         Catch ex As Exception
             Logger.Error("ROI錯誤：" & ex.ToString())
-            ErrorDialogHelper.ShowError("ROI錯誤: " & ex.Message)
+            MeteorMessageBox.ShowError("ROI錯誤: " & ex.Message)
         End Try
     End Sub
 
@@ -283,12 +287,12 @@ Public Class AlgorithmPage
     Private Async Sub CreateTemplate_Click(sender As Object, e As RoutedEventArgs)
         Try
             If _srcMat Is Nothing Then
-                MessageBox.Show("No image")
+                MeteorMessageBox.Show("No image")
                 Return
             End If
 
             If _roi.Width <= 0 OrElse _roi.Height <= 0 Then
-                MessageBox.Show("ROI empty")
+                MeteorMessageBox.Show("ROI empty")
                 Return
             End If
 
@@ -337,7 +341,7 @@ Public Class AlgorithmPage
             Dim ap = result.Item3
             TemplateStatusText.Text = $"✓ 金字塔={ap.Pyramid}  Canny={ap.CannyLow}/{ap.CannyHigh}  MinArea={ap.MinArea}"
         Catch ex As Exception
-            MessageBox.Show(ex.ToString())
+            MeteorMessageBox.Show(ex.ToString())
         End Try
     End Sub
 
@@ -364,7 +368,7 @@ Public Class AlgorithmPage
                                   "主人是要覆蓋更新這個舊模板嗎？" & vbCrLf &
                                   "（選【是】覆蓋舊模板，選【否】為這次的心血建立全新的模板組）"
 
-                        Dim ans = MessageBox.Show(msg, "儲存確認", MessageBoxButton.YesNoCancel, MessageBoxImage.Question)
+                        Dim ans = MeteorMessageBox.Show(msg, "儲存確認", MessageBoxButton.YesNoCancel, MessageBoxImage.Question)
 
                         If ans = MessageBoxResult.Cancel Then
                             Return ' 乖乖聽話取消儲存
@@ -383,7 +387,7 @@ Public Class AlgorithmPage
                             $"Template_{DateTime.Now:yyyyMMdd_HHmmss}")
 
                         If String.IsNullOrWhiteSpace(name) Then
-                            MessageBox.Show("已取消保存")
+                            MeteorMessageBox.Show("已取消保存")
                             Return
                         End If
 
@@ -462,14 +466,14 @@ Public Class AlgorithmPage
                     Dim res = dlg.ShowDialog()
 
                     If res <> True Then
-                        MessageBox.Show("已取消保存")
+                        MeteorMessageBox.Show("已取消保存")
                         Return
                     End If
 
                     TemplateSnapshotStore.Save(snapshot)
                     LastTemplateStore.Save(path)
 
-                    MessageBox.Show($"已保存：{_currentTemplateName}/cam{_selectedCameraSlot + 1} 啦！")
+                    MeteorMessageBox.Show($"已保存：{_currentTemplateName}/cam{_selectedCameraSlot + 1} 啦！")
 
                 End Sub)
     End Sub
@@ -480,14 +484,14 @@ Public Class AlgorithmPage
 
                     ApplyTemplate(data.Template, data.Config)
                     LastTemplateStore.Save(data.TemplatePath)
-                    MessageBox.Show("模板載入成功")
+                    MeteorMessageBox.Show("模板載入成功")
                 End Sub)
     End Sub
 
     Private Sub ReviseTemplate_Click(sender As Object, e As RoutedEventArgs)
         SafeRun(Sub()
                     If _templateMat Is Nothing Then
-                        MessageBox.Show("請先載入或生成模板")
+                        MeteorMessageBox.Show("請先載入或生成模板")
                         Return
                     End If
 
@@ -506,7 +510,7 @@ Public Class AlgorithmPage
                     dlg.Owner = Application.Current?.MainWindow
                     Dim res = dlg.ShowDialog()
                     If res <> True Then
-                        MessageBox.Show("已取消修訂")
+                        MeteorMessageBox.Show("已取消修訂")
                         Return
                     End If
 
@@ -516,7 +520,7 @@ Public Class AlgorithmPage
 
                     ' 保存修訂後的 snapshot
                     TemplateSnapshotStore.Save(snapshot)
-                    MessageBox.Show("模板修訂已保存")
+                    MeteorMessageBox.Show("模板修訂已保存")
                 End Sub)
     End Sub
 
@@ -527,7 +531,7 @@ Public Class AlgorithmPage
         SafeRun(Sub()
                     Dim snapshot = TemplateSnapshotStore.Load()
                     If snapshot Is Nothing OrElse snapshot.Revisions Is Nothing OrElse snapshot.Revisions.Count = 0 Then
-                        MessageBox.Show("無修訂歷史")
+                        MeteorMessageBox.Show("無修訂歷史")
                         Return
                     End If
 
@@ -680,12 +684,12 @@ Public Class AlgorithmPage
     Private Sub OcrRegion_Click(sender As Object, e As RoutedEventArgs)
         Try
             If _srcMat Is Nothing Then
-                MessageBox.Show("請先載入圖片")
+                MeteorMessageBox.Show("請先載入圖片")
                 Return
             End If
 
             If _roi.Width <= 0 OrElse _roi.Height <= 0 Then
-                MessageBox.Show("請先畫ROI")
+                MeteorMessageBox.Show("請先畫ROI")
                 Return
             End If
 
@@ -718,7 +722,7 @@ Public Class AlgorithmPage
             End Using
 
         Catch ex As Exception
-            MessageBox.Show(ex.Message)
+            MeteorMessageBox.Show(ex.Message)
         End Try
     End Sub
 
@@ -727,12 +731,12 @@ Public Class AlgorithmPage
     Private Async Sub DecodeRegion_Click(sender As Object, e As RoutedEventArgs)
         Try
             If _srcMat Is Nothing Then
-                MessageBox.Show("請先載入圖片")
+                MeteorMessageBox.Show("請先載入圖片")
                 Return
             End If
 
             If _roi.Width <= 0 OrElse _roi.Height <= 0 Then
-                MessageBox.Show("請先畫ROI")
+                MeteorMessageBox.Show("請先畫ROI")
                 Return
             End If
 
@@ -752,7 +756,7 @@ Public Class AlgorithmPage
             ShowTemplateEditDialog(barcodeText:=text)
 
         Catch ex As Exception
-            MessageBox.Show("錯誤：" & ex.Message)
+            MeteorMessageBox.Show("錯誤：" & ex.Message)
         End Try
     End Sub
 #End Region

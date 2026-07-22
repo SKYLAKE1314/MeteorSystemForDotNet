@@ -41,6 +41,17 @@ Partial Class HomePage
     End Enum
 
     Private _flowStage As DetectionFlowStage = DetectionFlowStage.Idle
+
+    Public Shared Property Instance As HomePage
+
+    Public Shared ReadOnly Property IsDetectionRunning As Boolean
+        Get
+            If Instance IsNot Nothing Then
+                Return Instance._flowStage <> DetectionFlowStage.Idle
+            End If
+            Return False
+        End Get
+    End Property
     Private _skipCurrentStageRequested As Boolean = False
     Private _activeDetectionResult As DetectionResult
     Private _activeDetectionItem As DetectionItem
@@ -82,6 +93,7 @@ Partial Class HomePage
 
     ' Page Loaded
     Private Async Sub Page_Loaded(sender As Object, e As RoutedEventArgs) Handles Me.Loaded
+        Instance = Me
         AddHandler LanguageManager.LanguageChanged, AddressOf RefreshLanguageUI
 
         If _initialized Then
@@ -99,6 +111,9 @@ Partial Class HomePage
             ' 重新訂閱相機變更事件
             RemoveHandler CameraManager.CameraChanged, AddressOf OnCameraChanged
             AddHandler CameraManager.CameraChanged, AddressOf OnCameraChanged
+
+            ' 清除群組快取路徑，強制重新載入可能剛被訓練的子模板
+            _currentCachedGroupPath = ""
 
             ' 如果先前離開時處於串流狀態，自動恢復相機與串流更新，防止畫面凍結！
             If _wasStreamingBeforeUnload Then
@@ -175,6 +190,7 @@ Partial Class HomePage
     End Sub
 
     Private Sub Page_Unloaded(sender As Object, e As RoutedEventArgs) Handles Me.Unloaded
+        Instance = Nothing
         ' 儲存當前串流狀態，供返回首頁時自動恢復
         _wasStreamingBeforeUnload = _isStreaming
 

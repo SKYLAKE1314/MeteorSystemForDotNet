@@ -58,7 +58,7 @@ Public Class TemplateManageDialog
                 TemplateGrid.SelectedIndex = 0
             End If
         Catch ex As Exception
-            MessageBox.Show($"載入模板失敗：{ex.Message}")
+            MeteorMessageBox.Show($"載入模板失敗：{ex.Message}")
         End Try
     End Sub
 
@@ -67,18 +67,18 @@ Public Class TemplateManageDialog
         Dim fileName = CStr(btn.Tag)
         If String.IsNullOrWhiteSpace(fileName) Then Return
 
-        Dim result = MessageBox.Show($"確定要刪除 {fileName} 嗎？", "確認刪除", MessageBoxButton.YesNo, MessageBoxImage.Question)
+        Dim result = MeteorMessageBox.Show($"確定要刪除 {fileName} 嗎？", "確認刪除", MessageBoxButton.YesNo, MessageBoxImage.Question)
         If result <> MessageBoxResult.Yes Then Return
 
         Try
             If TemplateTrainingStore.DeleteTrainingSample(_groupPath, fileName) Then
                 LoadTemplates()
-                MessageBox.Show("已刪除", "成功", MessageBoxButton.OK, MessageBoxImage.Information)
+                MeteorMessageBox.Show("已刪除", "成功", MessageBoxButton.OK, MessageBoxImage.Information)
             Else
-                MessageBox.Show("找不到要刪除的模板", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error)
+                MeteorMessageBox.Show("找不到要刪除的模板", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error)
             End If
         Catch ex As Exception
-            MessageBox.Show($"刪除失敗：{ex.Message}", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error)
+            MeteorMessageBox.Show($"刪除失敗：{ex.Message}", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error)
         End Try
     End Sub
 

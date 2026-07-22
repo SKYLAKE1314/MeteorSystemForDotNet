@@ -83,7 +83,7 @@ Namespace IoBoard
 
                     _client = Nothing
 
-                    ErrorDialogHelper.ShowError(
+                    MeteorMessageBox.ShowError(
                 $"無法連線到 {_ip}:{_port}（timeout {connectTimeoutMs} ms）")
 
                     Return

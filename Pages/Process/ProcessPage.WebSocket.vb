@@ -90,11 +90,11 @@ Partial Public Class ProcessPage
                          Try
                              _router.Route(msg)
                          Catch ex As Exception
-                             Dispatcher.BeginInvoke(Sub() ErrorDialogHelper.ShowError("Router Error: " & ex.Message))
+                             Dispatcher.BeginInvoke(Sub() MeteorMessageBox.ShowError("Router Error: " & ex.Message))
                          End Try
                      End Sub)
         Catch ex As Exception
-            Dispatcher.BeginInvoke(Sub() ErrorDialogHelper.ShowError($"Parse Error [{e.Source}] {ex.Message}"))
+            Dispatcher.BeginInvoke(Sub() MeteorMessageBox.ShowError($"Parse Error [{e.Source}] {ex.Message}"))
         End Try
         Logger.Info("Receive : " & Me.GetHashCode())
     End Sub

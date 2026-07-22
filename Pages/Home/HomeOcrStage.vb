@@ -63,28 +63,44 @@ Partial Class HomePage
 
         Dim bestText As String = ""
         Dim bestScore As Double = 0
+        Dim sw As New Stopwatch()
+        sw.Start()
 
         ' 【修復偶發黑畫面】將 ocrFrameHandler 宣告在 Try 外，使它在 Finally 中也可存取
         Dim ocrFrameHandler As Action(Of String, BitmapSource) =
             Sub(frameId As String, frameBmp As BitmapSource)
-                If Not String.Equals(frameId, cameraId, StringComparison.OrdinalIgnoreCase) Then Return
+                If Not CameraManager.IsSameDevice(frameId, cameraId) Then Return
                 Dim winRef = _activePreviewWin
                 If winRef IsNot Nothing Then
                     winRef.UpdateFrame(frameBmp)
                 End If
             End Sub
 
+        ' 取得切換相機前最後一張畫面作為佔位圖，避免高畫質相機暖機時（長達數秒）發生黑畫面
+        Dim placeholderBmp As BitmapSource = _lastFrameBitmap
+        Dim lastProcessedFrame As BitmapSource = Nothing
+
         Try
             ' 1. 在 UI 執行緒建立並顯示無邊距彈窗
             Dispatcher.Invoke(Sub()
+                                  If _activePreviewWin IsNot Nothing Then
+                                      ' 若先前 Barcode 階段已有視窗，直接拿它的畫面當佔位，以維持視覺連貫
+                                      Dim existingBmp = TryCast(_activePreviewWin.PreviewImage.Source, BitmapSource)
+                                      If existingBmp IsNot Nothing Then placeholderBmp = existingBmp
+                                      Try
+                                          _activePreviewWin.Close()
+                                      Catch
+                                      End Try
+                                  End If
+
                                   _activePreviewWin = New LivePreviewWindow()
+                                  If placeholderBmp IsNot Nothing Then
+                                      _activePreviewWin.UpdateFrame(placeholderBmp)
+                                  End If
                                   _activePreviewWin.UpdateOcrResult("OCR 辨識中...")
                                   _activePreviewWin.Show()
                               End Sub)
             AddHandler CameraService.Instance.FrameArrived, ocrFrameHandler
-
-            Dim sw As New Stopwatch()
-            sw.Start()
 
             While sw.ElapsedMilliseconds < timeoutMs
                 If IsSkipRequested(DetectionFlowStage.Ocr) Then
@@ -94,15 +110,9 @@ Partial Class HomePage
 
                 ' 【即時排空】瞬間抽乾相機的所有佇列積壓，確保拿到的 100% 是此時此刻最新鮮的畫面
                 Dim frame As BitmapSource = CameraService.Instance.GetFrame(cameraId)
-                If frame IsNot Nothing Then
-                    While True
-                        Dim nextFrame As BitmapSource = CameraService.Instance.GetFrame(cameraId)
-                        If nextFrame Is Nothing OrElse nextFrame Is frame Then Exit While
-                        frame = nextFrame
-                    End While
-                End If
 
-                If frame IsNot Nothing Then
+                If frame IsNot Nothing AndAlso Not Object.ReferenceEquals(frame, lastProcessedFrame) Then
+                    lastProcessedFrame = frame
                     Dim frameCopy = frame
 
                     Dim flowResult As OcrFlowResult = Nothing
@@ -204,7 +214,7 @@ Partial Class HomePage
                     End If
                 End If
 
-                Await Task.Delay(5)
+                Await Task.Delay(50)
             End While
 
             If Not String.IsNullOrWhiteSpace(bestText) Then

@@ -61,7 +61,7 @@ Class ModelEditPage
 
             ApplyFilterAndSort()
         Catch ex As Exception
-            MessageBox.Show("載入模板列表失敗: " & ex.Message)
+            MeteorMessageBox.Show("載入模板列表失敗: " & ex.Message)
         End Try
     End Sub
 
@@ -212,7 +212,7 @@ Class ModelEditPage
         Dim newPath = IO.Path.Combine(IO.Path.GetDirectoryName(oldPath), newName)
 
         If IO.Directory.Exists(newPath) Then
-            MessageBox.Show(LanguageManager.T("ModelEdit_ErrorNameExists"))
+            MeteorMessageBox.Show(LanguageManager.T("ModelEdit_ErrorNameExists"))
             Return
         End If
 
@@ -221,7 +221,7 @@ Class ModelEditPage
             UpdateLastTemplatePathAfterMove(oldPath, newPath)
             ReloadTemplateList()
         Catch ex As Exception
-            MessageBox.Show(LanguageManager.T("ModelEdit_ErrorRevise") & ": " & ex.Message)
+            MeteorMessageBox.Show(LanguageManager.T("ModelEdit_ErrorRevise") & ": " & ex.Message)
         End Try
     End Sub
     ' 強制綁定視窗擁有者，修正莫名其妙的 Owner 為 Nothing 的問題，避免對話框失控。
@@ -259,7 +259,7 @@ Class ModelEditPage
             TemplateTrainingStore.InvalidateCache(groupPath)
             ReloadTemplateList()
         Catch ex As Exception
-            MessageBox.Show(LanguageManager.T("ModelEdit_ErrorTrain") & ": " & ex.Message)
+            MeteorMessageBox.Show(LanguageManager.T("ModelEdit_ErrorTrain") & ": " & ex.Message)
         End Try
     End Sub
 
@@ -270,7 +270,7 @@ Class ModelEditPage
         Dim targetPath = TryCast(btn.Tag, String)
         If String.IsNullOrWhiteSpace(targetPath) OrElse Not IO.Directory.Exists(targetPath) Then Return
 
-        Dim result = MessageBox.Show(
+        Dim result = MeteorMessageBox.Show(
             $"{LanguageManager.T("ModelEdit_DeleteConfirm")}{Environment.NewLine}{targetPath}",
             LanguageManager.T("ModelEdit_DeleteTitle"),
             MessageBoxButton.YesNo,
@@ -283,7 +283,7 @@ Class ModelEditPage
             ClearLastTemplateIfDeleted(targetPath)
             ReloadTemplateList()
         Catch ex As Exception
-            MessageBox.Show(LanguageManager.T("ModelEdit_ErrorDelete") & ": " & ex.Message)
+            MeteorMessageBox.Show(LanguageManager.T("ModelEdit_ErrorDelete") & ": " & ex.Message)
         End Try
     End Sub
 
@@ -297,7 +297,7 @@ Class ModelEditPage
         Try
             Process.Start("explorer.exe", targetPath)
         Catch ex As Exception
-            MessageBox.Show(LanguageManager.T("ModelEdit_ErrorOpenFolder") & ": " & ex.Message)
+            MeteorMessageBox.Show(LanguageManager.T("ModelEdit_ErrorOpenFolder") & ": " & ex.Message)
         End Try
     End Sub
 
@@ -316,7 +316,7 @@ Class ModelEditPage
             dlg.ShowDialog()
             ReloadTemplateList()
         Catch ex As Exception
-            MessageBox.Show("編輯參數失敗: " & ex.Message)
+            MeteorMessageBox.Show("編輯參數失敗: " & ex.Message)
         End Try
     End Sub
     Private Sub RefreshLanguageUI()

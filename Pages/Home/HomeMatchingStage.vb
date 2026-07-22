@@ -58,13 +58,14 @@ Partial Class HomePage
         Dim lastAttemptTime As Long = -200
 
         Dim groupPath = IO.Path.GetDirectoryName(templatePath)
+        Logger.Info($"[MATCH] templatePath={templatePath}")
+        Logger.Info($"[MATCH] groupPath(GetDirectoryName)={groupPath}")
+        Logger.Info($"[MATCH] NormalizeGroupPath={TemplateTrainingStore.NormalizeGroupPath(groupPath)}")
         Dim subTemplateMetas = TemplateTrainingStore.GetTrainingSamples(groupPath)
 
-        ' ─── 【⚡ 終極核心修復：原生裁切 + 容錯防禦（拔除錯誤縮放）】 ───
         Dim loadedSubTemplates As New List(Of Tuple(Of Object, Cv.Mat))()
         If subTemplateMetas IsNot Nothing Then
             For Each subMeta In subTemplateMetas
-                ' 此處載入的已經是 724x489 且毫無黑邊的純淨小特徵，直接用就對了！
                 Dim patchMat = TemplateTrainingStore.LoadTrainingSampleImage(groupPath, subMeta.FileName)
                 If patchMat IsNot Nothing Then
                     loadedSubTemplates.Add(Tuple.Create(DirectCast(subMeta, Object), patchMat))
@@ -215,7 +216,6 @@ Partial Class HomePage
     Optional minStdDev As Double = 5.0
 ) As Boolean
 
-        ' ── 0. 防禦性檢查 ──
         ' 如果輸入的 ROI 矩陣為空，直接攔截，避免後續 CvtColor 拋出 OpenCV 底層崩潰異常
         If roiMat Is Nothing OrElse roiMat.Empty() Then
             Logger.Warn("[MATCH] 影像驗證失敗：輸入的 ROI Mat 為空或未初始化。")
@@ -243,7 +243,7 @@ Partial Class HomePage
 
                 ' ── 2. 檢查邊緣密度 ──
                 Using edges As New Cv.Mat()
-                    ' 使用傳入的 Canny 參數，增加彈性
+                    ' 使用傳入的 Canny 參數
                     Cv2.Canny(gray, edges, cannyLow, cannyHigh)
 
                     Dim edgeCount As Integer = Cv2.CountNonZero(edges)

@@ -1,4 +1,4 @@
-﻿Imports OpenCvSharp
+Imports OpenCvSharp
 Imports System.Windows
 Imports System.Windows.Input
 Imports System.Windows.Media
@@ -97,8 +97,8 @@ Public Class RoiController
         Dim x = p.X
         Dim y = p.Y
 
-        Dim w = _rect.Width
-        Dim h = _rect.Height
+        Dim w = If(Double.IsNaN(_rect.Width), 0.0, _rect.Width)
+        Dim h = If(Double.IsNaN(_rect.Height), 0.0, _rect.Height)
 
         ' ── 【核心修正】完美支持 Stretch="Uniform" 坐標映射 ──
         Dim matW As Double = _srcMat.Width
@@ -139,10 +139,10 @@ Public Class RoiController
 
             ' 防禦邊界溢出
             Roi = New CvRect(
-                matH.Max(0, matH.Min(CInt(finalX), _srcMat.Width - 1)),
-                matH.Max(0, matH.Min(CInt(finalY), _srcMat.Height - 1)),
-                matH.Max(1, matH.Min(CInt(finalW), _srcMat.Width - CInt(finalX))),
-                matH.Max(1, matH.Min(CInt(finalH), _srcMat.Height - CInt(finalY)))
+                Math.Max(0, Math.Min(CInt(finalX), _srcMat.Width - 1)),
+                Math.Max(0, Math.Min(CInt(finalY), _srcMat.Height - 1)),
+                Math.Max(1, Math.Min(CInt(finalW), _srcMat.Width - CInt(finalX))),
+                Math.Max(1, Math.Min(CInt(finalH), _srcMat.Height - CInt(finalY)))
             )
         Else
             Roi = New CvRect(0, 0, _srcMat.Width, _srcMat.Height)

@@ -37,26 +37,31 @@ Partial Class HomePage
         Dim sw As New Stopwatch()
         sw.Start()
 
-        ' 控制頻率為 100ms 一次（對 4K 相機來說 100ms 是最安全穩定的解碼頻率）
         Const DecodeIntervalMs As Long = 100
         Dim lastAttempt As Long = -DecodeIntervalMs
         Dim decoding As Boolean = False
         Dim resultBox As String = Nothing
 
-        ' 【修復偶發黑畫面】將 frameHandler 宣告在 Try 外，使它在 Finally 中也可存取
         Dim frameHandler As Action(Of String, BitmapSource) =
             Sub(frameId As String, frameBmp As BitmapSource)
-                If Not String.Equals(frameId, cameraId, StringComparison.OrdinalIgnoreCase) Then Return
+                If Not CameraManager.IsSameDevice(frameId, cameraId) Then Return
                 Dim winRef = _activePreviewWin
                 If winRef IsNot Nothing Then
                     winRef.UpdateFrame(frameBmp)
                 End If
             End Sub
 
+        ' 取得切換相機前最後一張畫面作為佔位圖，避免高畫質相機暖機時（長達數秒）發生黑畫面
+        Dim placeholderBmp As BitmapSource = _lastFrameBitmap
+        Dim lastProcessedFrame As BitmapSource = Nothing
+
         Try
             ' 1. 在 UI 執行緒建立並顯示無邊距彈窗
             Dispatcher.Invoke(Sub()
                                   _activePreviewWin = New LivePreviewWindow()
+                                  If placeholderBmp IsNot Nothing Then
+                                      _activePreviewWin.UpdateFrame(placeholderBmp)
+                                  End If
                                   _activePreviewWin.UpdateOcrResult("條碼辨識中...")
                                   _activePreviewWin.Show()
                               End Sub)
@@ -79,7 +84,8 @@ Partial Class HomePage
                     lastAttempt = elapsed
                     Dim frame = CameraService.Instance.GetFrame(cameraId)
 
-                    If frame IsNot Nothing Then
+                    If frame IsNot Nothing AndAlso Not Object.ReferenceEquals(frame, lastProcessedFrame) Then
+                        lastProcessedFrame = frame
                         Dim frameCopy = frame
 
                         Dim matForDecode As Mat = Nothing

@@ -87,6 +87,18 @@
       <Generator>SettingsSingleFileGenerator</Generator>
       <LastGenOutput>Settings.Designer.vb</LastGenOutput>
     </None>
+    <None Update="Sys\Algorithm\Models\WeChatQRCode\detect.caffemodel">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="Sys\Algorithm\Models\WeChatQRCode\detect.prototxt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="Sys\Algorithm\Models\WeChatQRCode\sr.caffemodel">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="Sys\Algorithm\Models\WeChatQRCode\sr.prototxt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="UI\Languages\document\enUS.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

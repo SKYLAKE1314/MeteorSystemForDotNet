@@ -10,6 +10,7 @@ Imports ZXing.Windows.Compatibility
 Public Class BarcodeDecodeService
 
     Private ReadOnly _reader As BarcodeReader
+    Private _wechatDecoder As OpenCvSharp.WeChatQRCode
 
     Public Sub New()
         _reader = New BarcodeReader With {
@@ -30,6 +31,27 @@ Public Class BarcodeDecodeService
                 BarcodeFormat.AZTEC
             }
         }
+    End Sub
+
+    Private Sub EnsureWeChatDecoder()
+        If _wechatDecoder IsNot Nothing Then Return
+        Try
+            Dim basePath = IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Sys", "Algorithm", "Models", "WeChatQRCode")
+            Dim detectProto = IO.Path.Combine(basePath, "detect.prototxt")
+            Dim detectModel = IO.Path.Combine(basePath, "detect.caffemodel")
+            Dim srProto = IO.Path.Combine(basePath, "sr.prototxt")
+            Dim srModel = IO.Path.Combine(basePath, "sr.caffemodel")
+
+            If IO.File.Exists(detectProto) AndAlso IO.File.Exists(detectModel) Then
+                _wechatDecoder = New OpenCvSharp.WeChatQRCode(detectProto, detectModel, srProto, srModel)
+                Logger.Info("[Decode] OpenCV WeChatQRCode 深度學習引擎初始化成功！")
+            Else
+                Logger.Warn("[Decode] 找不到 WeChatQRCode 模型，將使用無 CNN 模式。")
+                _wechatDecoder = New OpenCvSharp.WeChatQRCode()
+            End If
+        Catch ex As Exception
+            Logger.Error($"[Decode] WeChatQRCode 初始化失敗: {ex.Message}")
+        End Try
     End Sub
 
     Public Function RunRoi(src As Mat, roi As Rect) As String
@@ -91,10 +113,40 @@ Public Class BarcodeDecodeService
     End Function
 
     Private Function DecodeFromMat(m As Mat) As String
-        Using bmp As System.Drawing.Bitmap = BitmapConverter.ToBitmap(m)
-            Dim result = _reader.Decode(bmp)
-            Return If(result IsNot Nothing, result.Text, "")
-        End Using
+        Dim useWechat = String.Equals(My.Settings.DecodeMode, "WeChat", StringComparison.OrdinalIgnoreCase)
+        Dim text As String = ""
+
+        If useWechat Then
+            EnsureWeChatDecoder()
+            If _wechatDecoder IsNot Nothing Then
+                Try
+                    ' WeChatQRCode 直接吃 Mat
+                    Dim pts As Point2f()() = Nothing
+                    Dim texts = _wechatDecoder.DetectAndDecode(m, pts)
+                    If texts IsNot Nothing AndAlso texts.Length > 0 Then
+                        text = texts(0)
+                    End If
+                Catch ex As Exception
+                    Logger.Warn($"[Decode] WeChatQRCode 推論發生錯誤: {ex.Message}")
+                End Try
+            End If
+        End If
+
+        ' 如果沒有開啟 WeChat，或者是 WeChat 找不到條碼 (例如這是一維碼或 DataMatrix)，退回 ZXing 掃描
+        If String.IsNullOrWhiteSpace(text) Then
+            Try
+                Using bmp As System.Drawing.Bitmap = BitmapConverter.ToBitmap(m)
+                    Dim result = _reader.Decode(bmp)
+                    If result IsNot Nothing Then
+                        text = result.Text
+                    End If
+                End Using
+            Catch ex As Exception
+                Logger.Warn($"[Decode] ZXing 解碼發生錯誤: {ex.Message}")
+            End Try
+        End If
+
+        Return If(text, "")
     End Function
 
     Public Function RunAdvanced(src As Mat) As String

@@ -22,6 +22,8 @@ Public Class TemplateTrainDialog
     Private _previewZoom As Double = 1.0
     Private _previewIsPanning As Boolean = False
     Private _previewLastPanPoint As WpfPoint
+    Private _currentLanguage As String = "zh-TW"
+    Private _startedCameraId As String = ""
 
     Public Sub New(groupPath As String)
         InitializeComponent()
@@ -47,7 +49,6 @@ Public Class TemplateTrainDialog
         Try
             Await Task.Run(Sub()
                                CameraManager.Initialize()
-                               CameraManager.Refresh()
                            End Sub)
             Dim cameras = CameraManager.GetCachedCameras()
             If cameras IsNot Nothing AndAlso cameras.Count > 0 Then
@@ -103,7 +104,7 @@ Public Class TemplateTrainDialog
                 Await AutoAnalyzeParamsAsync(_sourceMat)
             End If
         Catch ex As Exception
-            MessageBox.Show(LanguageManager.T("Train_ErrLoadFile") & ex.Message)
+            MeteorMessageBox.Show(LanguageManager.T("Train_ErrLoadFile") & ex.Message)
         End Try
     End Sub
 
@@ -112,57 +113,101 @@ Public Class TemplateTrainDialog
 
     Private Async Sub BtnCaptureFromCamera_Click(sender As Object, e As RoutedEventArgs)
         Try
-            If CameraComboBox.SelectedValue Is Nothing Then
-                MessageBox.Show(LanguageManager.T("Train_SelectCamPrompt"))
+            If HomePage.IsDetectionRunning Then
+                MeteorMessageBox.Show("當前正處於檢測流程中，為避免搶占相機硬體，請先停止流程後再進行擷取畫面。", "流程運行中", MessageBoxButton.OK, MessageBoxImage.Warning)
+                Return
+            End If
+            Dim camInfo = TryCast(CameraComboBox.SelectedItem, CameraInfo)
+            If camInfo Is Nothing Then
+                MeteorMessageBox.Show(LanguageManager.T("Train_SelectCamPrompt"))
                 Return
             End If
 
-            Dim cameraId = CameraComboBox.SelectedValue.ToString()
+            Dim cameraId = camInfo.DeviceId
             If String.IsNullOrWhiteSpace(cameraId) Then
-                MessageBox.Show(LanguageManager.T("Train_InvalidCamId"))
+                MeteorMessageBox.Show(LanguageManager.T("Train_InvalidCamId"))
                 Return
             End If
 
             BtnCaptureFromCamera.IsEnabled = False
             BtnCaptureFromCamera.Content = "⏳ " & LanguageManager.T("Train_Capturing")
 
-            CameraService.Instance.StartCamera(cameraId)
-            Await Task.Delay(100)
+            ' 【優先策略】若 HomePage 正在使用此相機，快取已有最新幀，直接取用
+            Dim cachedFrame = CameraService.Instance.GetFrame(cameraId)
+            If cachedFrame IsNot Nothing Then
+                Logger.Info($"[TrainDialog] 直接從快取取得畫面，DeviceId={cameraId}")
+                Using mat = ImageConvertHelper.ToMat(cachedFrame)
+                    If mat IsNot Nothing AndAlso Not mat.Empty() Then
+                        LoadImageFromMat(mat.Clone())
+                        If _sourceMat IsNot Nothing Then Await AutoAnalyzeParamsAsync(_sourceMat)
+                        BtnCaptureFromCamera.IsEnabled = True
+                        BtnCaptureFromCamera.Content = "📷 " & LanguageManager.T("Train_BtnCapture")
+                        Return
+                    End If
+                End Using
+            End If
 
-            Dim frame = Await WaitForCameraFrameAsync(cameraId, 3000)
+            ' 快取無幀：啟動相機並訂閱事件等待（不再輪詢快取，避免因其他頁面佔用而拿不到）
+            Dim wasRunning = CameraService.Instance.IsRunning(cameraId)
+            CameraService.Instance.StartCamera(cameraId)
+            If Not wasRunning Then
+                _startedCameraId = cameraId
+            Else
+                _startedCameraId = ""
+            End If
+            
+            Dim frame = Await WaitForCameraFrameAsync(cameraId, 5000)
             If frame Is Nothing Then
-                MessageBox.Show(LanguageManager.T("Train_CamTimeoutPrompt"))
+                MeteorMessageBox.Show(LanguageManager.T("Train_CamTimeoutPrompt"))
                 BtnCaptureFromCamera.IsEnabled = True
                 BtnCaptureFromCamera.Content = "📷 " & LanguageManager.T("Train_BtnCapture")
                 Return
             End If
 
             Using mat = ImageConvertHelper.ToMat(frame)
-                LoadImageFromMat(mat.Clone())
+                If mat IsNot Nothing AndAlso Not mat.Empty() Then
+                    LoadImageFromMat(mat.Clone())
+                End If
             End Using
 
-            If _sourceMat IsNot Nothing Then
-                Await AutoAnalyzeParamsAsync(_sourceMat)
-            End If
+            If _sourceMat IsNot Nothing Then Await AutoAnalyzeParamsAsync(_sourceMat)
             BtnCaptureFromCamera.IsEnabled = True
             BtnCaptureFromCamera.Content = "📷 " & LanguageManager.T("Train_BtnCapture")
 
         Catch ex As Exception
-            MessageBox.Show(LanguageManager.T("Train_ErrCapture") & ex.Message)
+            MeteorMessageBox.Show(LanguageManager.T("Train_ErrCapture") & ex.Message)
             BtnCaptureFromCamera.IsEnabled = True
             BtnCaptureFromCamera.Content = "📷 " & LanguageManager.T("Train_BtnCapture")
         End Try
     End Sub
 
+    ''' <summary>
+    ''' 【修復偶發取圖失敗】訂閱 FrameArrived 事件等待幀，不再輪詢快取。
+    ''' 快取輪詢在相機已被其他頁面佔用或剛啟動時無法拿到幀，
+    ''' 而事件訂閱能保證第一幀到達時立即返回。
+    ''' </summary>
     Private Async Function WaitForCameraFrameAsync(cameraId As String, timeoutMs As Integer) As Task(Of BitmapSource)
-        Dim sw As New Stopwatch()
-        sw.Start()
-        While sw.ElapsedMilliseconds < timeoutMs
-            Dim frame = CameraService.Instance.GetFrame(cameraId)
-            If frame IsNot Nothing Then Return frame
-            Await Task.Delay(50)
-        End While
-        Return Nothing
+        Dim tcs As New TaskCompletionSource(Of BitmapSource)()
+        Dim timerHandle As System.Threading.Timer = Nothing
+
+        Dim handler As Action(Of String, BitmapSource) =
+            Sub(frameId As String, frameBmp As BitmapSource)
+                If Not CameraManager.IsSameDevice(frameId, cameraId) Then Return
+                If frameBmp Is Nothing Then Return
+                tcs.TrySetResult(frameBmp)
+            End Sub
+
+        AddHandler CameraService.Instance.FrameArrived, handler
+        Try
+            timerHandle = New System.Threading.Timer(
+                Sub(state) tcs.TrySetResult(Nothing),
+                Nothing, timeoutMs, System.Threading.Timeout.Infinite)
+
+            Return Await tcs.Task
+        Finally
+            timerHandle?.Dispose()
+            RemoveHandler CameraService.Instance.FrameArrived, handler
+        End Try
     End Function
 
     Private Sub LoadImageFromPath(filePath As String)
@@ -170,19 +215,19 @@ Public Class TemplateTrainDialog
             Dim loaded = Cv2.ImRead(filePath)
             If loaded Is Nothing OrElse loaded.Empty() Then
                 loaded?.Dispose()
-                MessageBox.Show(LanguageManager.T("Train_ErrImgInvalid"))
+                MeteorMessageBox.Show(LanguageManager.T("Train_ErrImgInvalid"))
                 Return
             End If
             LoadImageFromMat(loaded)
         Catch ex As Exception
-            MessageBox.Show(LanguageManager.T("Train_ErrLoadFile") & ex.Message)
+            MeteorMessageBox.Show(LanguageManager.T("Train_ErrLoadFile") & ex.Message)
         End Try
     End Sub
 
     Private Sub LoadImageFromMat(mat As Mat)
         Try
             If mat Is Nothing OrElse mat.Empty() Then
-                MessageBox.Show(LanguageManager.T("Train_ErrImgInvalid"))
+                MeteorMessageBox.Show(LanguageManager.T("Train_ErrImgInvalid"))
                 Return
             End If
 
@@ -199,13 +244,13 @@ Public Class TemplateTrainDialog
             TxtPreviewInfo.Text = LanguageManager.T("Train_PreviewAutoPrompt")
             TxtRoiStatus.Text = LanguageManager.T("Train_RoiStatusDefault")
         Catch ex As Exception
-            MessageBox.Show(LanguageManager.T("Train_ErrProcessMat") & ex.Message)
+            MeteorMessageBox.Show(LanguageManager.T("Train_ErrProcessMat") & ex.Message)
         End Try
     End Sub
 
     Private Async Sub BtnAutoAnalyze_Click(sender As Object, e As RoutedEventArgs)
         If _sourceMat Is Nothing OrElse _sourceMat.Empty() Then
-            MessageBox.Show(LanguageManager.T("Train_LoadImgFirst"))
+            MeteorMessageBox.Show(LanguageManager.T("Train_LoadImgFirst"))
             Return
         End If
         Await AutoAnalyzeParamsAsync(_sourceMat)
@@ -407,7 +452,7 @@ Public Class TemplateTrainDialog
         Try
             Dim mat = TemplateTrainingStore.LoadTrainingSampleImage(_groupPath, fileName)
             If mat Is Nothing OrElse mat.Empty() Then
-                MessageBox.Show(LanguageManager.T("Train_ErrLoadSampleImg"))
+                MeteorMessageBox.Show(LanguageManager.T("Train_ErrLoadSampleImg"))
                 Return
             End If
 
@@ -440,24 +485,24 @@ Public Class TemplateTrainDialog
             TxtPreviewInfo.Text = $"{LanguageManager.T("Train_SampleLoaded")}{Environment.NewLine}{fileName}"
             If _polygonClosed Then Await UpdatePreviewAsync()
         Catch ex As Exception
-            MessageBox.Show(LanguageManager.T("Train_ErrLoadSample") & ex.Message)
+            MeteorMessageBox.Show(LanguageManager.T("Train_ErrLoadSample") & ex.Message)
         End Try
     End Function
 
     Private Async Sub BtnAddSample_Click(sender As Object, e As RoutedEventArgs)
         Try
             If String.IsNullOrWhiteSpace(_groupPath) OrElse Not IO.Directory.Exists(_groupPath) Then
-                MessageBox.Show(LanguageManager.T("Train_InvalidTemplatePath"))
+                MeteorMessageBox.Show(LanguageManager.T("Train_InvalidTemplatePath"))
                 Return
             End If
 
             If _sourceMat Is Nothing OrElse _sourceMat.Empty() Then
-                MessageBox.Show(LanguageManager.T("Train_LoadImgFirst"))
+                MeteorMessageBox.Show(LanguageManager.T("Train_LoadImgFirst"))
                 Return
             End If
 
             If Not _polygonClosed OrElse _polygonPoints.Count < 3 Then
-                MessageBox.Show(LanguageManager.T("Train_CompletePolygonFirst"))
+                MeteorMessageBox.Show(LanguageManager.T("Train_CompletePolygonFirst"))
                 Return
             End If
 
@@ -503,10 +548,10 @@ Public Class TemplateTrainDialog
                                        End Function)
 
             RefreshSampleCount(count)
-            MessageBox.Show(LanguageManager.T("Train_SampleAddedSuccess"))
+            MeteorMessageBox.Show(LanguageManager.T("Train_SampleAddedSuccess"))
 
         Catch ex As Exception
-            MessageBox.Show(LanguageManager.T("Train_ErrAddSample") & ex.Message)
+            MeteorMessageBox.Show(LanguageManager.T("Train_ErrAddSample") & ex.Message)
         Finally
             BtnAddSample.IsEnabled = True
         End Try
@@ -677,7 +722,7 @@ Public Class TemplateTrainDialog
             End If
             RefreshSampleCount()
         Catch ex As Exception
-            MessageBox.Show(LanguageManager.T("Train_ErrManageFailed") & ex.Message)
+            MeteorMessageBox.Show(LanguageManager.T("Train_ErrManageFailed") & ex.Message)
         End Try
     End Sub
 
@@ -688,6 +733,10 @@ Public Class TemplateTrainDialog
     Protected Overrides Sub OnClosed(e As EventArgs)
         MyBase.OnClosed(e)
         _sourceMat?.Dispose()
+        If Not String.IsNullOrWhiteSpace(_startedCameraId) Then
+            CameraService.Instance.StopCamera(_startedCameraId)
+            _startedCameraId = ""
+        End If
     End Sub
 
     Public Sub RefreshLanguageUI()

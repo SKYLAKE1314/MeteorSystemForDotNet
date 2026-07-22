@@ -55,7 +55,7 @@ Public Class TemplateParamEditDialog
             Dim threshold As Double
             If Not Double.TryParse(TxtThreshold.Text, threshold) OrElse
                threshold < 0.01 OrElse threshold > 1.0 Then
-                MessageBox.Show("閾值必須在 0.01 ~ 1.00 之間", "輸入錯誤",
+                MeteorMessageBox.Show("閾值必須在 0.01 ~ 1.00 之間", "輸入錯誤",
                                 MessageBoxButton.OK, MessageBoxImage.Warning)
                 Return
             End If
@@ -73,7 +73,7 @@ Public Class TemplateParamEditDialog
             Close()
 
         Catch ex As Exception
-            MessageBox.Show($"儲存失敗: {ex.Message}", "錯誤",
+            MeteorMessageBox.Show($"儲存失敗: {ex.Message}", "錯誤",
                             MessageBoxButton.OK, MessageBoxImage.Error)
         End Try
     End Sub

@@ -20,7 +20,7 @@ Partial Class HomePage
         Dim currentActiveId = If(_flowStage = DetectionFlowStage.Barcode OrElse _flowStage = DetectionFlowStage.Ocr, _ocrCameraId, _matchCameraId)
 
         ' 如果送來畫面的硬體設備不是目前階段需要的相機，直接攔截，防止畫面錯亂
-        If Not String.Equals(deviceId, currentActiveId, StringComparison.OrdinalIgnoreCase) Then Return
+        If Not CameraManager.IsSameDevice(deviceId, currentActiveId) Then Return
 
         RenderImage.Dispatcher.BeginInvoke(Sub()
 
@@ -61,7 +61,7 @@ Partial Class HomePage
             Logger.Info("相機串流已啟動")
 
         Catch ex As Exception
-            MessageBox.Show(ex.Message)
+            MeteorMessageBox.Show(ex.Message)
         End Try
     End Sub
 
@@ -74,7 +74,7 @@ Partial Class HomePage
             Logger.Info("相機已停止")
 
         Catch ex As Exception
-            MessageBox.Show(ex.Message)
+            MeteorMessageBox.Show(ex.Message)
         End Try
     End Sub
 
@@ -105,7 +105,7 @@ Partial Class HomePage
 
         Try
             If _lastFrameBitmap Is Nothing Then
-                MessageBox.Show("沒有可保存的畫面")
+                MeteorMessageBox.Show("沒有可保存的畫面")
                 Return
             End If
 
@@ -135,7 +135,7 @@ Partial Class HomePage
             Logger.Info($"畫面已保存: {dlg.FileName}")
 
         Catch ex As Exception
-            MessageBox.Show(ex.Message)
+            MeteorMessageBox.Show(ex.Message)
         End Try
 
     End Sub

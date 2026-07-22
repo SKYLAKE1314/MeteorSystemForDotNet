@@ -93,7 +93,6 @@ Public Class CameraLink
                     End If
 
                 Catch ex As Exception
-                    ' 保持絕對安靜
                 End Try
 
                 Thread.Sleep(20)
@@ -110,8 +109,6 @@ Public Class CameraLink
                 End Try
                 _capture = Nothing
             End SyncLock
-
-            GC.Collect(2, GCCollectionMode.Forced, True, True)
         End Try
     End Sub
 

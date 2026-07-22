@@ -31,7 +31,7 @@ Public Class CameraManager
         Dim result As New List(Of CameraInfo)
         Dim wmiDevices As New List(Of CameraInfo)
 
-        ' 1. 查詢 WMI 取得所有相機設備（增加 Service='usbvideo' 擴大搜尋，防止漏掉工業或特定相機）
+        ' 1. 查詢 WMI 取得所有相機設備（增加 Service='usbvideo' 擴大搜尋）
         Try
             Dim options As New EnumerationOptions With {
                 .ReturnImmediately = True,

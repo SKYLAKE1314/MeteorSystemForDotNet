@@ -1,4 +1,4 @@
-# MetroSystemForDotNet
+# MeteorSystemForDotNet
 
 [繁體中文](README.md) | [简体中文](README.zh-CN.md)
 
@@ -28,7 +28,7 @@
 
 ---
 
-## 擴充與接入其他工業相機 SDK (如海康 Hikvision / 大華 Dahua / 邁德威視 MindVision)
+## 擴充與接入其他相機 SDK
 
 本平台採用極度解耦的影像總線設計。不論相機是基於 OpenCV UVC (DirectShow) 協議，還是基於工業 SDK (HikVision MVS SDK, Dahua MV SDK 等)，均可透過簡單的包裝接入平台的 `CameraService`。
 

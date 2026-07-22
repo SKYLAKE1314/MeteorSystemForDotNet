@@ -60,16 +60,22 @@ Public Class CameraService
         Dim cam As CameraLink = Nothing
 
         SyncLock _cameras
-            If _cameras.TryGetValue(canonicalId, cam) Then
-                _cameras.Remove(canonicalId)
-            End If
+            If Not _cameras.TryGetValue(canonicalId, cam) Then Return
+            _cameras.Remove(canonicalId)
         End SyncLock
-        cam?.StopCamera()
 
-        SyncLock _frames
-            _frames.Remove(canonicalId)
-        End SyncLock
+        If cam IsNot Nothing Then
+            cam.StopCamera()
+        End If
     End Sub
+
+    Public Function IsRunning(deviceId As String) As Boolean
+        If String.IsNullOrWhiteSpace(deviceId) Then Return False
+        Dim canonicalId = ResolveCanonicalDeviceId(deviceId)
+        SyncLock _cameras
+            Return _cameras.ContainsKey(canonicalId)
+        End SyncLock
+    End Function
 
     ' =========================
     ' 啟動全部相機
