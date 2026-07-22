@@ -1,4 +1,4 @@
-﻿Imports System.IO
+Imports System.IO
 Imports System.Text
 Imports System.Threading
 Imports System.Windows
@@ -81,9 +81,11 @@ Partial Class HomePage
     Public Sub StopTaskFlow()
         Try
             FinishDetection()
-            CameraService.Instance.StopAll()
-            _isStreaming = False
-            Logger.Info("[FLOW] 任務結束，已停止流程與相機")
+            ' 【關鍵修復】不要在這裡呼叫 StopAll() 或設為 _isStreaming = False！
+            ' 在自動化生產環境中，PLC 會頻繁發送任務結束(3)與開始(0)。
+            ' 如果每次結束都關閉相機硬體，隨即又重新啟動，USB 頻寬與驅動程式極易發生死鎖導致全黑！
+            ' 我們讓相機保持常開（常駐快取），直到使用者切換到其他頁面 (Page_Unloaded) 才真正釋放。
+            Logger.Info("[FLOW] 任務結束，相機保持常駐開啟狀態以迎接下次檢測")
         Catch ex As Exception
             Logger.Error("[FLOW] 停止流程失敗: " & ex.Message)
         End Try
