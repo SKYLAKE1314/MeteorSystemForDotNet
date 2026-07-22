@@ -43,6 +43,7 @@ Public Class TemplateParamEditDialog
             TxtBarcodeExpected.Text = If(config.BarcodeExpectedText, "")
             ChkEnableOcr.IsChecked = config.EnableOcr
             TxtOcrExpected.Text = If(config.OcrExpectedText, "")
+            TxtScaleTolerance.Text = config.ScaleTolerance.ToString("F2")
 
         Catch ex As Exception
             Logger.Warn($"[TemplateParamEdit] 載入參數失敗: {ex.Message}")
@@ -59,10 +60,17 @@ Public Class TemplateParamEditDialog
                                 MessageBoxButton.OK, MessageBoxImage.Warning)
                 Return
             End If
+            
+            Dim scaleTol As Double
+            If Not Double.TryParse(TxtScaleTolerance.Text, scaleTol) OrElse scaleTol < 0 OrElse scaleTol > 0.5 Then
+                MeteorMessageBox.Show("大小容許範圍必須在 0 ~ 0.5 之間", "輸入錯誤",
+                                MessageBoxButton.OK, MessageBoxImage.Warning)
+                Return
+            End If
 
             ' 對所有 cam 目錄儲存 config
             For Each camDir In _targetCamDirs
-                SaveConfigToDir(camDir, threshold)
+                SaveConfigToDir(camDir, threshold, scaleTol)
             Next
 
             ' 若此模板是目前選用的，同步更新 TemplateSnapshot
@@ -78,7 +86,7 @@ Public Class TemplateParamEditDialog
         End Try
     End Sub
 
-    Private Sub SaveConfigToDir(camDir As String, threshold As Double)
+    Private Sub SaveConfigToDir(camDir As String, threshold As Double, scaleTol As Double)
         Dim configPath = IO.Path.Combine(camDir, "config.json")
 
         ' 若已有 config，讀取後覆寫；否則建立新的
@@ -95,6 +103,7 @@ Public Class TemplateParamEditDialog
         config.BarcodeExpectedText = TxtBarcodeExpected.Text.Trim()
         config.EnableOcr = ChkEnableOcr.IsChecked.GetValueOrDefault(False)
         config.OcrExpectedText = TxtOcrExpected.Text.Trim()
+        config.ScaleTolerance = scaleTol
 
         IO.File.WriteAllText(configPath,
             JsonConvert.SerializeObject(config, Formatting.Indented))
@@ -118,11 +127,15 @@ Public Class TemplateParamEditDialog
             Dim threshold As Double
             Double.TryParse(TxtThreshold.Text, threshold)
 
+            Dim scaleTol As Double
+            Double.TryParse(TxtScaleTolerance.Text, scaleTol)
+
             snapshot.Threshold = threshold
             snapshot.EnableBarcode = ChkEnableBarcode.IsChecked.GetValueOrDefault(False)
             snapshot.BarcodeExpectedText = TxtBarcodeExpected.Text.Trim()
             snapshot.EnableOcr = ChkEnableOcr.IsChecked.GetValueOrDefault(False)
             snapshot.OcrExpectedText = TxtOcrExpected.Text.Trim()
+            snapshot.ScaleTolerance = scaleTol
 
             TemplateSnapshotStore.Save(snapshot)
             Logger.Info("[TemplateParamEdit] 已同步更新 TemplateSnapshot")

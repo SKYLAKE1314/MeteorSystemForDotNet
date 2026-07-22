@@ -166,12 +166,14 @@ Public Class TemplateMatcher
     source As Mat,
     template As Mat,
     threshold As Double,
-    methodIndex As Integer) As MatchResult
+    methodIndex As Integer,
+    Optional scaleTolerance As Double = 0.0) As MatchResult
         Return MatchCore(
             source,
             template,
             threshold,
-            methodIndex)
+            methodIndex,
+            scaleTolerance)
 
     End Function
 
@@ -182,7 +184,8 @@ Public Class TemplateMatcher
     source As Mat,
     template As Mat,
     threshold As Double,
-    methodIndex As Integer) As Task(Of MatchResult)
+    methodIndex As Integer,
+    Optional scaleTolerance As Double = 0.0) As Task(Of MatchResult)
 
         ' 如果傳入的物件已經不合法，直接返回
         If source Is Nothing OrElse source.IsDisposed OrElse template Is Nothing OrElse template.IsDisposed Then
@@ -203,7 +206,8 @@ Public Class TemplateMatcher
                         srcCopy,
                         tplCopy,
                         threshold,
-                        methodIndex)
+                        methodIndex,
+                        scaleTolerance)
                 End Using
             End Function)
 
@@ -212,7 +216,8 @@ Public Class TemplateMatcher
     source As Mat,
     template As Mat,
     threshold As Double,
-    methodIndex As Integer) As MatchResult
+    methodIndex As Integer,
+    scaleTolerance As Double) As MatchResult
 
         Dim mode As TemplateMatchModes = IndexToMode(methodIndex)
 
@@ -253,40 +258,70 @@ Public Class TemplateMatcher
             End If
 
             ' 執行匹配運算
-            ' --- 正常極性匹配 ---
-            Dim score As Double = 0
-            Dim matchPoint As Point
+            ' --- 支援多尺度 (Scale Tolerance) ---
+            Dim bestOverallScore As Double = 0
+            Dim bestOverallMatchPoint As Point
+            Dim bestScale As Double = 1.0
 
-            TrySingleMatch(graySrc, grayTpl, mode, score, matchPoint)
+            Dim scaleStep As Double = 0.05
+            Dim minScale As Double = 1.0 - scaleTolerance
+            Dim maxScale As Double = 1.0 + scaleTolerance
+            If minScale < 0.1 Then minScale = 0.1
 
-            ' --- 極性反轉匹配 分支 ---
-            If mode <> TemplateMatchModes.SqDiffNormed AndAlso score < 0.5 Then
-                Using invTpl As New Mat()
-                    Cv2.BitwiseNot(grayTpl, invTpl)
+            For scale As Double = minScale To maxScale + 0.001 Step scaleStep
+                Using scaledTpl As New Mat()
+                    If Math.Abs(scale - 1.0) < 0.01 Then
+                        grayTpl.CopyTo(scaledTpl)
+                    Else
+                        Dim newSize As New OpenCvSharp.Size(Math.Max(1, CInt(grayTpl.Width * scale)), Math.Max(1, CInt(grayTpl.Height * scale)))
+                        If newSize.Width > graySrc.Width OrElse newSize.Height > graySrc.Height Then
+                            Continue For
+                        End If
+                        Cv2.Resize(grayTpl, scaledTpl, newSize)
+                    End If
 
-                    Dim score2 As Double = 0
-                    Dim matchPoint2 As Point
+                    ' --- 正常極性匹配 ---
+                    Dim score As Double = 0
+                    Dim matchPoint As Point
+                    TrySingleMatch(graySrc, scaledTpl, mode, score, matchPoint)
 
-                    TrySingleMatch(graySrc, invTpl, mode, score2, matchPoint2)
+                    ' --- 極性反轉匹配 分支 ---
+                    If mode <> TemplateMatchModes.SqDiffNormed AndAlso score < 0.5 Then
+                        Using invTpl As New Mat()
+                            Cv2.BitwiseNot(scaledTpl, invTpl)
+                            Dim score2 As Double = 0
+                            Dim matchPoint2 As Point
+                            TrySingleMatch(graySrc, invTpl, mode, score2, matchPoint2)
+                            If score2 > score Then
+                                score = score2
+                                matchPoint = matchPoint2
+                            End If
+                        End Using
+                    End If
 
-                    If score2 > score Then
-                        Logger.Debug($"[MATCH] 極性反轉改善分數: {score:F3} -> {score2:F3}")
-                        score = score2
-                        matchPoint = matchPoint2
+                    If score > bestOverallScore Then
+                        bestOverallScore = score
+                        bestOverallMatchPoint = matchPoint
+                        bestScale = scale
                     End If
                 End Using
-            End If
+            Next
+            
+            Dim finalScore As Double = bestOverallScore
+            Dim finalMatchPoint As Point = bestOverallMatchPoint
+            Dim finalWidth As Integer = Math.Max(1, CInt(template.Width * bestScale))
+            Dim finalHeight As Integer = Math.Max(1, CInt(template.Height * bestScale))
 
             ' 2. 建立返回結果
             Dim display As Mat = source.Clone()
 
             ' 如果算出來的高分依然大於閾值，但此時分數恰好是踩中 CCorrNormed 的純色陷阱
             ' 我們做二次安全檢查：確保匹配到的區域 (ROI)，其標準差不能跟模板天壤地別
-            Dim ok As Boolean = score >= threshold
+            Dim ok As Boolean = finalScore >= threshold
 
             If ok Then
                 ' 裁切出大圖上被匹配到的那一塊區域
-                Dim matchedRect As New Rect(matchPoint.X, matchPoint.Y, template.Width, template.Height)
+                Dim matchedRect As New Rect(finalMatchPoint.X, finalMatchPoint.Y, finalWidth, finalHeight)
 
                 ' 防止邊界溢出安全保護
                 If matchedRect.X >= 0 AndAlso matchedRect.Y >= 0 AndAlso
@@ -300,7 +335,7 @@ Public Class TemplateMatcher
                         ' 如果匹配到的地方其實是死黑一片或完全沒特徵，強行拉倒
                         If mStd.Val0 < 3.0 Then
                             ok = False
-                            score = 0
+                            finalScore = 0
                             Logger.Debug($"[MATCH] 判定攔截：匹配區域標準差過低 ({mStd.Val0:F2})，此為虛假高分點。")
                         Else
                             ' 已移除直方圖校驗，因為訓練時模板的背景會被塗抹，導致直方圖完全不同而錯誤地壓低分數
@@ -313,16 +348,18 @@ Public Class TemplateMatcher
             If ok Then
                 Cv2.Rectangle(
                     display,
-                    New Rect(matchPoint.X, matchPoint.Y, template.Width, template.Height),
+                    New Rect(finalMatchPoint.X, finalMatchPoint.Y, finalWidth, finalHeight),
                     Scalar.Lime,
                     3)
             End If
 
             Return New MatchResult With {
-                .Score = score,
-                .MatchPoint = matchPoint,
+                .Score = finalScore,
+                .MatchPoint = finalMatchPoint,
                 .IsOk = ok,
-                .ResultImage = display
+                .ResultImage = display,
+                .MatchedWidth = finalWidth,
+                .MatchedHeight = finalHeight
             }
         End Using
     End Function
@@ -343,24 +380,9 @@ Public Class TemplateMatcher
                 matchPt = maxLoc
             End If
 
-            ' 邊界假陽性檢驗：僅在結果圖空間夠大時（>= 32 像素）才判定邊界假陽性。
-            ' 【關鍵修正】當模板接近搜尋圖大小時，result 空間極小（可能只有個位數像素），
-            ' 任何真實匹配點都會落在邊緣，絕不能在此情況下誤殺有效結果！
-            Dim resultW = result.Width
-            Dim resultH = result.Height
-            Dim minResultDim = Math.Min(resultW, resultH)
-            If minResultDim >= 32 Then
-                ' result 空間夠大，才有意義判定「邊界假陽性」
-                Dim guardPx = Math.Max(2, minResultDim \ 20) ' 動態防護像素寬度：最大 5% 邊緣
-                Dim isBoundaryHit = (matchPt.X <= guardPx OrElse matchPt.X >= resultW - guardPx OrElse
-                                     matchPt.Y <= guardPx OrElse matchPt.Y >= resultH - guardPx)
-                If isBoundaryHit AndAlso score > 0.5 Then
-                    Logger.Debug($"[MATCH] 邊界假陽性：matchPt=({matchPt.X},{matchPt.Y}) resultSize={resultW}x{resultH} guard={guardPx}，分數由 {score:F3} 降為 0")
-                    score = 0
-                End If
-            Else
-                Logger.Debug($"[MATCH] result 空間過小 ({resultW}x{resultH})，跳過邊界假陽性判斷。")
-            End If
+            ' 【修正】已移除邊界假陽性檢驗 (isBoundaryHit)，
+            ' 因為此檢驗會導致產品只要稍微移動到畫面邊緣（或是模板與畫面大小接近時），
+            ' 匹配分數就會被強制歸 0，造成嚴重的誤殺（稍微移動一點就匹配不上）。
         End Using
     End Sub
 

@@ -37,6 +37,9 @@
                 <TextBlock Text="匹配閾值 (0.01 ~ 1.00)" Foreground="#CDD6F4" Margin="0,0,0,4"/>
                 <ui:TextBox x:Name="TxtThreshold" PlaceholderText="例如: 0.85" Margin="0,0,0,16"/>
 
+                <TextBlock Text="大小容許範圍 (0 ~ 0.5，例如 0.1 表示 ±10% 縮放)" Foreground="#CDD6F4" Margin="0,0,0,4"/>
+                <ui:TextBox x:Name="TxtScaleTolerance" PlaceholderText="例如: 0.1" Margin="0,0,0,16"/>
+
                 <Separator Background="#313244" Margin="0,4,0,16"/>
 
                 <!-- 解碼 -->

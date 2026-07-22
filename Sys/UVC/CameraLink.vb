@@ -54,9 +54,12 @@ Public Class CameraLink
                     Return
                 End If
 
-                ' 設定分辨率
+                ' 設定分辨率與格式
                 Dim res = CameraSettingsHelper.GetCamResolutionByDeviceId(_deviceId)
                 If res IsNot Nothing Then
+                    ' 為了避免高解析度造成 USB 頻寬瓶頸 (這會導致相機傳回全黑畫面、stdDev=0)，強制使用 MJPG 壓縮格式
+                    _capture.Set(VideoCaptureProperties.FourCC, VideoWriter.FourCC("M"c, "J"c, "P"c, "G"c))
+
                     _capture.Set(VideoCaptureProperties.FrameWidth, res.Width)
                     _capture.Set(VideoCaptureProperties.FrameHeight, res.Height)
 

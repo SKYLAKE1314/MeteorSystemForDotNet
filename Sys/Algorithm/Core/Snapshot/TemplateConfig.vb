@@ -1,4 +1,4 @@
-﻿Public Class TemplateConfig
+Public Class TemplateConfig
 
     Public Property CameraDeviceId As String ' 建模時使用的相機 DeviceId
     Public Property SupplierCode As String   ' 供應商代碼（用於 StartTask 自動查找模板）
@@ -25,5 +25,8 @@
     Public Property AngleMin As Double
     Public Property AngleMax As Double
     Public Property AngleStep As Double
+
+    Public Property ScaleTolerance As Double ' 大小範圍容許度
+
 
 End Class

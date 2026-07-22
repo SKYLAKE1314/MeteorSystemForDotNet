@@ -79,7 +79,7 @@ Public Class MeteorMessageBox
         Dim dispatcher = Application.Current.Dispatcher
         If dispatcher.CheckAccess() Then
             Dim dlg As New MeteorMessageBox(message, title, button, icon)
-            ' Ensure we don't set Owner to a window that hasn't been fully loaded yet or is closing
+            ' Ensure we don't set Owner to a window     that hasn't been fully loaded yet or is closing
             If Application.Current.MainWindow IsNot Nothing AndAlso Application.Current.MainWindow.IsLoaded Then
                 Try
                     dlg.Owner = Application.Current.MainWindow

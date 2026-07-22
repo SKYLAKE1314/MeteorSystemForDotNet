@@ -1,4 +1,4 @@
-﻿Imports Cv = OpenCvSharp
+Imports Cv = OpenCvSharp
 Imports System.Linq
 Imports System.Threading.Tasks
 Imports System.Windows.Media
@@ -41,18 +41,9 @@ Public Class Draw_opencv
             work = src.Clone()
         End If
 
-        ' 無論大圖還是小模板，都必須套用 CLAHE，保證對比度特徵絕對一致！
-        ' 透過動態計算 GridSize (最大8x8)，確保小模板不會因為網格太大而引發 OpenCV 底層崩潰。
-        Dim gridW = Math.Max(1, Math.Min(8, work.Width \ 8))
-        Dim gridH = Math.Max(1, Math.Min(8, work.Height \ 8))
-        Dim clipLimit As Double = If(config.CannyLow > 0, Math.Min(config.CannyLow / 40.0, 8.0), 2.0)
-
-        Using clahe = Cv.Cv2.CreateCLAHE(clipLimit, New Cv.Size(gridW, gridH))
-            Dim enhanced As New Cv.Mat()
-            clahe.Apply(work, enhanced)
-            work.Dispose()
-            work = enhanced
-        End Using
+        ' 已移除 CLAHE：CLAHE 是局部自適應演算法，將其套用於切割好的小面積子模板與大面積搜尋圖
+        ' 會因為網格大小差異與周邊背景資訊不同，導致兩邊拉伸出的像素對比度完全對不上。
+        ' 這會使得產品只要在畫面中稍微移動，對比度就改變，導致匹配分數暴跌。
 
         ' 強迫雙方使用完全相同的 actualLevel，保證特徵尺寸比例 1:1 完美契合！
         For i = 1 To actualLevel
@@ -114,7 +105,8 @@ Public Class Draw_opencv
                 srcWork,
                 tplWork,
                 config.Threshold,
-                config.MatchMethod)
+                config.MatchMethod,
+                config.ScaleTolerance)
 
             resultScore = result.Score
 
@@ -133,7 +125,9 @@ Public Class Draw_opencv
             isMatchOk = result.IsOk AndAlso (result.Score >= config.Threshold)
 
             If isMatchOk Then
-                Dim rect As New Cv.Rect(absMatchX, absMatchY, tplWidth, tplHeight)
+                Dim matchedW = CInt(Math.Round(result.MatchedWidth * actualScaleW))
+                Dim matchedH = CInt(Math.Round(result.MatchedHeight * actualScaleH))
+                Dim rect As New Cv.Rect(absMatchX, absMatchY, matchedW, matchedH)
 
                 rect = New Cv.Rect(
                     Math.Max(0, Math.Min(rect.X, display.Width - 1)),

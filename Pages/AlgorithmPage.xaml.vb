@@ -448,6 +448,7 @@ Public Class AlgorithmPage
                         .AngleMin = config.AngleMin
                         .AngleMax = config.AngleMax
                         .AngleStep = config.AngleStep
+                        .ScaleTolerance = config.ScaleTolerance
                     End With
 
                     ' 彈出編輯對話窗

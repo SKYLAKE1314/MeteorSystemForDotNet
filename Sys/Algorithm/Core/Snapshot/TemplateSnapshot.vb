@@ -1,4 +1,4 @@
-﻿Public Class TemplateSnapshot
+Public Class TemplateSnapshot
 
     Public Property TemplatePath As String
     Public Property CameraDeviceId As String ' 建模時使用的相機 DeviceId
@@ -44,5 +44,7 @@
     Public Property AngleMin As Double
     Public Property AngleMax As Double
     Public Property AngleStep As Double
+
+    Public Property ScaleTolerance As Double ' 大小範圍容許度 (例如 0.1 表示 +- 10% 縮放)
 
 End Class
